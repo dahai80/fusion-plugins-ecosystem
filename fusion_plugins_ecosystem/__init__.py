@@ -85,9 +85,7 @@ def __getattr__(name: str) -> object:
                 f"module 'fusion_plugins_ecosystem' has no attribute {name!r} "
                 f"(lazy import {mod_name!r} failed: {exc})"
             ) from None
-    raise AttributeError(
-        f"module 'fusion_plugins_ecosystem' has no attribute {name!r}"
-    )
+    raise AttributeError(f"module 'fusion_plugins_ecosystem' has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:

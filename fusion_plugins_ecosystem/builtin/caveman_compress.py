@@ -64,9 +64,7 @@ def _compress_text(text: str, keep_comments: bool = False) -> str:
     return "\n".join(lines).rstrip()
 
 
-def caveman_compress(
-    desk: Any, params: dict[str, Any]
-) -> dict[str, Any]:
+def caveman_compress(desk: Any, params: dict[str, Any]) -> dict[str, Any]:
     """插件入口：对输入文本做 token 压缩。
 
     Args (params):
@@ -100,9 +98,7 @@ def caveman_compress(
     original_chars = len(text)
     compressed = _compress_text(text, keep_comments=keep_comments)
     compressed_chars = len(compressed)
-    ratio = (
-        compressed_chars / original_chars if original_chars > 0 else 0.0
-    )
+    ratio = compressed_chars / original_chars if original_chars > 0 else 0.0
 
     # 通过 desk 统一日志（对应 PRD「插件日志统一汇总到 Desk」）
     if desk is not None:

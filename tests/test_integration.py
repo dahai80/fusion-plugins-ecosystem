@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from fusion_plugins_ecosystem.agent_adapter import AgentAdapter
 from fusion_plugins_ecosystem.claude_gateway import ClaudeGateway
@@ -115,22 +112,26 @@ async def test_flow_register_to_mcp_jsonrpc() -> None:
     )
     registry.register(_compressor_manifest())
 
-    resp = await handler.handle({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/list",
-        "params": {},
-    })
+    resp = await handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {},
+        }
+    )
     assert "tools" in resp["result"]
     tools = resp["result"]["tools"]
     assert len(tools) == 1
     assert tools[0]["name"] == "caveman_compress"
 
-    resp = await handler.handle({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "ping",
-    })
+    resp = await handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "ping",
+        }
+    )
     assert resp["result"] == {}
 
 
@@ -218,18 +219,22 @@ def test_flow_token_meter_persist_roundtrip() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = str(Path(tmp) / "tokens.json")
         meter = TokenMeter(persist_path=path)
-        meter.record(TokenRecord(
-            plugin_id="caveman_compress",
-            kind=TokenKind.CLAUDE_MODEL,
-            input_tokens=100,
-            output_tokens=50,
-        ))
-        meter.record(TokenRecord(
-            plugin_id="code_reviewer",
-            kind=TokenKind.PLUGIN_LOCAL,
-            input_tokens=200,
-            output_tokens=100,
-        ))
+        meter.record(
+            TokenRecord(
+                plugin_id="caveman_compress",
+                kind=TokenKind.CLAUDE_MODEL,
+                input_tokens=100,
+                output_tokens=50,
+            )
+        )
+        meter.record(
+            TokenRecord(
+                plugin_id="code_reviewer",
+                kind=TokenKind.PLUGIN_LOCAL,
+                input_tokens=200,
+                output_tokens=100,
+            )
+        )
 
         meter2 = TokenMeter(persist_path=path)
         records = meter2.records_for("caveman_compress")
@@ -328,12 +333,14 @@ async def test_flow_jsonrpc_method_not_found() -> None:
         desk=desk,
         config=config,
     )
-    resp = await handler.handle({
-        "jsonrpc": "2.0",
-        "id": 99,
-        "method": "nonexistent/method",
-        "params": {},
-    })
+    resp = await handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 99,
+            "method": "nonexistent/method",
+            "params": {},
+        }
+    )
     assert "error" in resp
     assert resp["error"]["code"] == -32601
 
@@ -355,12 +362,14 @@ def test_flow_token_meter_prune_and_query() -> None:
         path = str(Path(tmp) / "tokens.json")
         meter = TokenMeter(persist_path=path, max_records=5)
         for i in range(10):
-            meter.record(TokenRecord(
-                plugin_id="p1",
-                kind=TokenKind.CLAUDE_MODEL,
-                input_tokens=i * 10,
-                output_tokens=i * 5,
-            ))
+            meter.record(
+                TokenRecord(
+                    plugin_id="p1",
+                    kind=TokenKind.CLAUDE_MODEL,
+                    input_tokens=i * 10,
+                    output_tokens=i * 5,
+                )
+            )
         meter.prune()
         records = meter.records_for("p1")
         assert len(records) <= 5

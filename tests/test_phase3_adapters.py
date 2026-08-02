@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
 from fusion_plugins_ecosystem.agent_adapter import AgentAdapter
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
@@ -113,8 +112,8 @@ class TestSkillAdapter:
         assert bundle is not None
         lines = bundle.skill_md.split("\n")
         assert lines[0] == "---"
-        assert any("name: p1" in l for l in lines)
-        assert any("version: 0.1.0" in l for l in lines)
+        assert any("name: p1" in ln for ln in lines)
+        assert any("version: 0.1.0" in ln for ln in lines)
 
     def test_skill_references_generated(self) -> None:
         reg = _make_registry(_make_manifest("p1"))
@@ -172,10 +171,12 @@ class TestAgentAdapter:
 
     def test_export_all(self) -> None:
         m1 = _make_manifest(
-            "a1", capabilities=(PluginCapability.SUBAGENT,),
+            "a1",
+            capabilities=(PluginCapability.SUBAGENT,),
         )
         m2 = _make_manifest(
-            "a2", capabilities=(PluginCapability.MCP_TOOL,),
+            "a2",
+            capabilities=(PluginCapability.MCP_TOOL,),
         )
         reg = _make_registry(m1, m2)
         adapter = AgentAdapter(reg)
@@ -246,7 +247,9 @@ class TestPluginBundleGenerator:
         assert "mcp_tool" in data["capabilities"]
 
     def test_mcp_config_generated_for_mcp_tool(self) -> None:
-        reg = _make_registry(_make_manifest("p1", capabilities=(PluginCapability.MCP_TOOL,)))
+        reg = _make_registry(
+            _make_manifest("p1", capabilities=(PluginCapability.MCP_TOOL,))
+        )
         gen = PluginBundleGenerator(reg)
         bundle = gen.generate("p1")
         assert bundle is not None
@@ -272,7 +275,8 @@ class TestPluginBundleGenerator:
 
     def test_agents_included_for_subagent(self) -> None:
         m = _make_manifest(
-            "a1", capabilities=(PluginCapability.SUBAGENT, PluginCapability.MCP_TOOL),
+            "a1",
+            capabilities=(PluginCapability.SUBAGENT, PluginCapability.MCP_TOOL),
         )
         reg = _make_registry(m)
         gen = PluginBundleGenerator(reg)

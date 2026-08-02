@@ -1,6 +1,6 @@
 [project]
 name = "fusion-plugins-ecosystem"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fusion 插件生态 — 基于 fusion-desk 的标准化插件注册中心、生命周期管理、Claude 全链路适配"
 authors = [
     { name = "Fusion-MLX Team" },

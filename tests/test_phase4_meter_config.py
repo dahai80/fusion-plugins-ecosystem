@@ -6,7 +6,6 @@ import json
 import os
 import tempfile
 
-import pytest
 
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.token_meter import TokenKind, TokenMeter, TokenRecord
@@ -38,12 +37,14 @@ def test_persist_saves_to_file() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "tokens.json")
         meter = TokenMeter(persist_path=path)
-        meter.record(TokenRecord(
-            plugin_id="test_p",
-            kind=TokenKind.CLAUDE_MODEL,
-            input_tokens=10,
-            output_tokens=5,
-        ))
+        meter.record(
+            TokenRecord(
+                plugin_id="test_p",
+                kind=TokenKind.CLAUDE_MODEL,
+                input_tokens=10,
+                output_tokens=5,
+            )
+        )
         assert os.path.exists(path)
         data = json.loads(open(path).read())
         assert len(data) == 1
@@ -101,14 +102,16 @@ def test_persist_roundtrip() -> None:
         path = os.path.join(tmp, "roundtrip.json")
 
         meter1 = TokenMeter(persist_path=path)
-        meter1.record(TokenRecord(
-            plugin_id="rt_p",
-            kind=TokenKind.MLX_INFERENCE,
-            input_tokens=100,
-            output_tokens=50,
-            wall_seconds=2.0,
-            metadata={"model": "llama"},
-        ))
+        meter1.record(
+            TokenRecord(
+                plugin_id="rt_p",
+                kind=TokenKind.MLX_INFERENCE,
+                input_tokens=100,
+                output_tokens=50,
+                wall_seconds=2.0,
+                metadata={"model": "llama"},
+            )
+        )
 
         meter2 = TokenMeter(persist_path=path)
         records = meter2.all_records()
@@ -133,9 +136,11 @@ def test_config_token_persist_path_to_dict() -> None:
 
 
 def test_config_from_dict_with_persist_path() -> None:
-    config, warnings = EcosystemConfig.from_dict({
-        "token_persist_path": "/data/tokens.json",
-    })
+    config, warnings = EcosystemConfig.from_dict(
+        {
+            "token_persist_path": "/data/tokens.json",
+        }
+    )
     assert config.token_persist_path == "/data/tokens.json"
 
 

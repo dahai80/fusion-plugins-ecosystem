@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from fusion_plugins_ecosystem.config import EcosystemConfig
 
@@ -181,9 +180,7 @@ def test_from_dict_bool_invalid_type_warns() -> None:
 
 
 def test_from_dict_int_out_of_range_warns() -> None:
-    restored, warnings = EcosystemConfig.from_dict(
-        {"subagent_timeout_seconds": 999999}
-    )
+    restored, warnings = EcosystemConfig.from_dict({"subagent_timeout_seconds": 999999})
     assert len(warnings) > 0
 
 
@@ -195,38 +192,38 @@ def test_from_dict_int_invalid_type_warns() -> None:
 
 
 def test_from_dict_transport_invalid_warns() -> None:
-    restored, warnings = EcosystemConfig.from_dict(
-        {"mcp_transport": "websocket"}
-    )
+    restored, warnings = EcosystemConfig.from_dict({"mcp_transport": "websocket"})
     assert len(warnings) > 0
     assert restored.mcp_transport == "stdio"
 
 
 def test_from_dict_sandbox_mode_invalid_warns() -> None:
-    restored, warnings = EcosystemConfig.from_dict(
-        {"sandbox_default_mode": "docker"}
-    )
+    restored, warnings = EcosystemConfig.from_dict({"sandbox_default_mode": "docker"})
     assert len(warnings) > 0
     assert restored.sandbox_default_mode == "inline"
 
 
 def test_from_dict_mcp_fields() -> None:
-    restored, _ = EcosystemConfig.from_dict({
-        "mcp_transport": "sse",
-        "mcp_host": "0.0.0.0",
-        "mcp_port": 8080,
-    })
+    restored, _ = EcosystemConfig.from_dict(
+        {
+            "mcp_transport": "sse",
+            "mcp_host": "0.0.0.0",
+            "mcp_port": 8080,
+        }
+    )
     assert restored.mcp_transport == "sse"
     assert restored.mcp_host == "0.0.0.0"
     assert restored.mcp_port == 8080
 
 
 def test_from_dict_sandbox_and_token_fields() -> None:
-    restored, _ = EcosystemConfig.from_dict({
-        "sandbox_default_mode": "process",
-        "max_token_records": 5000,
-        "token_persist_path": "/tmp/tokens.json",
-    })
+    restored, _ = EcosystemConfig.from_dict(
+        {
+            "sandbox_default_mode": "process",
+            "max_token_records": 5000,
+            "token_persist_path": "/tmp/tokens.json",
+        }
+    )
     assert restored.sandbox_default_mode == "process"
     assert restored.max_token_records == 5000
     assert restored.token_persist_path == "/tmp/tokens.json"

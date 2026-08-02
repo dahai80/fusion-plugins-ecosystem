@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fusion_plugins_ecosystem.registry import (
     PluginCapability,
@@ -56,7 +55,9 @@ class AgentAdapter:
             logger.warning("agent_adapter: plugin %s not found", plugin_id)
             return None
         if PluginCapability.SUBAGENT not in manifest.capabilities:
-            logger.info("agent_adapter: %s lacks SUBAGENT capability, skipping", plugin_id)
+            logger.info(
+                "agent_adapter: %s lacks SUBAGENT capability, skipping", plugin_id
+            )
             return None
         return self._build_agent_md(manifest)
 
@@ -79,7 +80,7 @@ class AgentAdapter:
         lines = [
             f"name: {manifest.id}",
             f"description: {self._escape_yaml(manifest.description)}",
-            f"model: inherit",
+            "model: inherit",
             f"color: {self._category_to_color(manifest.category)}",
         ]
         tools = self._capability_to_tools(manifest.capabilities)

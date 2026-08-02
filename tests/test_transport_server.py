@@ -8,9 +8,6 @@ import json
 import pytest
 
 from fusion_plugins_ecosystem.config import EcosystemConfig
-from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-from fusion_plugins_ecosystem.jsonrpc import MCPHandler
-from fusion_plugins_ecosystem.registry import PluginRegistry
 from fusion_plugins_ecosystem.server import MCPServer
 from fusion_plugins_ecosystem.transport import (
     HTTPTransport,
@@ -21,6 +18,7 @@ from fusion_plugins_ecosystem.transport import (
 
 
 # ── create_transport 工厂 ──
+
 
 def test_create_transport_stdio() -> None:
     t = create_transport("stdio")
@@ -44,6 +42,7 @@ def test_create_transport_unknown_raises() -> None:
 
 # ── StdioTransport basic ──
 
+
 def test_stdio_transport_init() -> None:
     t = StdioTransport()
     assert t._running is False
@@ -57,6 +56,7 @@ def test_stdio_transport_set_handler() -> None:
 
 
 # ── SSETransport ──
+
 
 async def test_sse_transport_start_stop() -> None:
     t = SSETransport(host="127.0.0.1", port=0)
@@ -74,6 +74,7 @@ async def test_sse_send_to_missing_session_noop() -> None:
 
 # ── HTTPTransport ──
 
+
 async def test_http_transport_start_stop() -> None:
     t = HTTPTransport(host="127.0.0.1", port=0)
     await t.start()
@@ -90,6 +91,7 @@ async def test_http_send_is_noop() -> None:
 
 # ── HTTPTransport request/response ──
 
+
 async def test_http_transport_request_response() -> None:
     async def handler(request: dict) -> dict:
         return {
@@ -102,12 +104,14 @@ async def test_http_transport_request_response() -> None:
     await t.start()
     port = t.port
 
-    body = json.dumps({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "ping",
-        "params": {},
-    }).encode("utf-8")
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "ping",
+            "params": {},
+        }
+    ).encode("utf-8")
 
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
     writer.write(
@@ -144,6 +148,7 @@ async def test_http_transport_request_response() -> None:
 
 # ── MCPServer ──
 
+
 def test_mcp_server_init() -> None:
     server = MCPServer()
     assert server.config is not None
@@ -168,21 +173,25 @@ async def test_mcp_server_register_builtin() -> None:
 async def test_mcp_server_handler_ping() -> None:
     server = MCPServer()
     server.registry.register_builtin()
-    resp = await server.handler.handle({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "ping",
-    })
+    resp = await server.handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "ping",
+        }
+    )
     assert resp["result"] == {}
 
 
 async def test_mcp_server_handler_tools_list() -> None:
     server = MCPServer()
     server.registry.register_builtin()
-    resp = await server.handler.handle({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/list",
-        "params": {},
-    })
+    resp = await server.handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {},
+        }
+    )
     assert "tools" in resp["result"]

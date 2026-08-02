@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 class TokenKind(str, Enum):
     """Token 消耗分类。"""
 
-    CLAUDE_MODEL = "claude_model"        # Claude 模型推理
-    PLUGIN_LOCAL = "plugin_local"        # 插件本地计算
-    MLX_INFERENCE = "mlx_inference"      # fusion-mlx 本地推理
-    MCP_RELAY = "mcp_relay"              # MCP 协议中继开销
+    CLAUDE_MODEL = "claude_model"  # Claude 模型推理
+    PLUGIN_LOCAL = "plugin_local"  # 插件本地计算
+    MLX_INFERENCE = "mlx_inference"  # fusion-mlx 本地推理
+    MCP_RELAY = "mcp_relay"  # MCP 协议中继开销
 
 
 @dataclass
@@ -150,8 +150,7 @@ class TokenMeter:
             for rec in removed:
                 if rec.plugin_id in self._by_plugin:
                     self._by_plugin[rec.plugin_id] = [
-                        r for r in self._by_plugin[rec.plugin_id]
-                        if r is not rec
+                        r for r in self._by_plugin[rec.plugin_id] if r is not rec
                     ]
 
     def _records_since(self, since: float) -> list[TokenRecord]:

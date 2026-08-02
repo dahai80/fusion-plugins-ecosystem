@@ -55,9 +55,7 @@ class ClaudeSkillAdapter:
                 skills.append(skill)
         return skills
 
-    def _manifest_to_skill(
-        self, manifest: PluginManifest
-    ) -> dict[str, Any]:
+    def _manifest_to_skill(self, manifest: PluginManifest) -> dict[str, Any]:
         """将 PluginManifest 转换为 Claude Skill 描述。"""
         # 构建 input_schema（JSON Schema）
         properties: dict[str, Any] = {}

@@ -18,7 +18,7 @@ from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.jsonrpc import MCPHandler
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 from fusion_plugins_ecosystem.registry import PluginRegistry
-from fusion_plugins_ecosystem.transport import StdioTransport, create_transport
+from fusion_plugins_ecosystem.transport import create_transport
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,9 @@ class MCPServer:
         self._running = True
         logger.info(
             "MCPServer starting: transport=%s host=%s port=%s",
-            transport_type, host, port,
+            transport_type,
+            host,
+            port,
         )
 
         await self._transport.start()
@@ -111,7 +113,8 @@ def main() -> None:
         description="Fusion Plugins Ecosystem MCP Server",
     )
     parser.add_argument(
-        "--transport", "-t",
+        "--transport",
+        "-t",
         choices=["stdio", "sse", "http"],
         default="stdio",
         help="MCP transport type (default: stdio)",
@@ -122,7 +125,8 @@ def main() -> None:
         help="Host for SSE/HTTP transport (default: 127.0.0.1)",
     )
     parser.add_argument(
-        "--port", "-p",
+        "--port",
+        "-p",
         type=int,
         default=0,
         help="Port for SSE/HTTP transport (0=auto)",

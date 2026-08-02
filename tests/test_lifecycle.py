@@ -24,6 +24,7 @@ from fusion_plugins_ecosystem.registry import (
 
 # ── 测试用插件工厂 ──
 
+
 def _make_manifest(
     plugin_id: str = "test_plugin",
     vram_mb: int = 0,
@@ -51,6 +52,7 @@ def _make_registry(*manifests: PluginManifest) -> PluginRegistry:
 
 
 # ── load ──
+
 
 def test_load_unknown_plugin_raises_keyerror() -> None:
     registry = _make_registry()
@@ -84,6 +86,7 @@ def test_load_string_entry_point_resolves() -> None:
 
 # ── enable / disable ──
 
+
 async def test_enable_no_vram_succeeds() -> None:
     def entry(_desk, _params):
         return {"ok": True}
@@ -108,7 +111,6 @@ async def test_enable_with_vram_succeeds() -> None:
 
 
 async def test_enable_vram_exceeds_budget_crashes() -> None:
-    from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
     def entry(_desk, _params):
         return {"ok": True}
@@ -143,6 +145,7 @@ async def test_disable_unknown_plugin_noop() -> None:
 
 # ── unload ──
 
+
 def test_unload_releases_vram() -> None:
     def entry(_desk, _params):
         return {"ok": True}
@@ -163,6 +166,7 @@ def test_unload_unknown_plugin_noop() -> None:
 
 
 # ── execute ──
+
 
 async def test_execute_sync_entry_point() -> None:
     def entry(_desk, params):
@@ -262,6 +266,7 @@ async def test_execute_crash_sets_crashed_state() -> None:
 
 # ── _maybe_restart ──
 
+
 async def test_maybe_restart_respects_max_restart() -> None:
     def entry(_desk, _params):
         raise RuntimeError("always fail")
@@ -288,6 +293,7 @@ async def test_maybe_restart_unknown_plugin_noop() -> None:
 
 # ── _invoke ──
 
+
 async def test_invoke_uncallable_entry_raises() -> None:
     m = _make_manifest(entry_point=None)
     registry = _make_registry(m)
@@ -300,6 +306,7 @@ async def test_invoke_uncallable_entry_raises() -> None:
 
 
 # ── watcher ──
+
 
 async def test_watcher_detects_stale_heartbeat() -> None:
     def entry(_desk, _params):
@@ -336,6 +343,7 @@ async def test_stop_watcher_when_none_noop() -> None:
 
 
 # ── PluginInstance dataclass ──
+
 
 def test_plugin_instance_defaults() -> None:
     m = _make_manifest()

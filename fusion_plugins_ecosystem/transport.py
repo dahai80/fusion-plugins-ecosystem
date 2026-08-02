@@ -116,11 +116,13 @@ class StdioTransport(Transport):
                     request = json.loads(text)
                 except json.JSONDecodeError as e:
                     logger.warning("StdioTransport: invalid JSON: %s", e)
-                    await self.send({
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32700, "message": "Parse error"},
-                        "id": None,
-                    })
+                    await self.send(
+                        {
+                            "jsonrpc": "2.0",
+                            "error": {"code": -32700, "message": "Parse error"},
+                            "id": None,
+                        }
+                    )
                     continue
                 if self._handler:
                     try:
@@ -230,7 +232,9 @@ class SSETransport(Transport):
                         writer.write(
                             b"HTTP/1.1 200 OK\r\n"
                             b"Content-Type: application/json\r\n"
-                            b"Content-Length: " + str(len(resp_bytes)).encode() + b"\r\n"
+                            b"Content-Length: "
+                            + str(len(resp_bytes)).encode()
+                            + b"\r\n"
                             b"\r\n" + resp_bytes
                         )
                         await writer.drain()

@@ -52,9 +52,7 @@ class DeskRuntime:
     # 已注册的插件 ID 集合
     registered_plugin_ids: set[str] = field(default_factory=set)
     # vRAM 操作锁（线程安全）
-    _vram_lock: asyncio.Lock = field(
-        default_factory=asyncio.Lock, repr=False
-    )
+    _vram_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     # ── 显存调度 ──
 
@@ -71,21 +69,15 @@ class DeskRuntime:
                 self.vram_total_mb,
             )
             return False
-        self.vram_allocations[plugin_id] = (
-            self.vram_allocations.get(plugin_id, 0) + mb
-        )
-        logger.info(
-            "desk_runtime: 插件 %s 申请 %dMB 显存成功", plugin_id, mb
-        )
+        self.vram_allocations[plugin_id] = self.vram_allocations.get(plugin_id, 0) + mb
+        logger.info("desk_runtime: 插件 %s 申请 %dMB 显存成功", plugin_id, mb)
         return True
 
     def release_vram(self, plugin_id: str) -> None:
         """释放插件占用的显存。"""
         freed = self.vram_allocations.pop(plugin_id, 0)
         if freed:
-            logger.info(
-                "desk_runtime: 插件 %s 释放 %dMB 显存", plugin_id, freed
-            )
+            logger.info("desk_runtime: 插件 %s 释放 %dMB 显存", plugin_id, freed)
 
     def vram_usage(self) -> dict[str, int]:
         """返回当前显存台账快照。"""
@@ -142,13 +134,11 @@ class DeskRuntime:
                 return True
         return False
 
-    def grant_permission(
-        self, plugin_id: str, allowed_paths: list[str]
-    ) -> None:
+    def grant_permission(self, plugin_id: str, allowed_paths: list[str]) -> None:
         """授予插件路径访问权限。"""
-        self.plugin_permissions.setdefault(plugin_id, {})[
-            "allowed_paths"
-        ] = allowed_paths
+        self.plugin_permissions.setdefault(plugin_id, {})["allowed_paths"] = (
+            allowed_paths
+        )
 
     # ── API 密钥 ──
 
@@ -177,9 +167,7 @@ class DeskRuntime:
 
     # ── MLX 推理 ──
 
-    async def mlx_chat(
-        self, model: str, messages: list[dict], **kwargs: Any
-    ) -> Any:
+    async def mlx_chat(self, model: str, messages: list[dict], **kwargs: Any) -> Any:
         """调用 fusion-mlx 本地推理（fusion-mlx 作为 Claude 视觉/图像生成后端）。"""
         if self.mlx_client is None:
             raise RuntimeError("fusion-mlx 客户端未注入")

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 import time
 from unittest.mock import MagicMock
 
-import pytest
 
 from fusion_plugins_ecosystem.token_meter import (
     TokenKind,
@@ -16,6 +14,7 @@ from fusion_plugins_ecosystem.token_meter import (
 
 
 # ── TokenRecord ──
+
 
 def test_token_record_default_total_is_sum() -> None:
     rec = TokenRecord(
@@ -49,11 +48,10 @@ def test_token_record_defaults_zero() -> None:
 
 # ── TokenMeter.record ──
 
+
 def test_record_appends_to_records() -> None:
     meter = TokenMeter()
-    meter.record(
-        TokenRecord("p1", TokenKind.CLAUDE_MODEL, 10, 20)
-    )
+    meter.record(TokenRecord("p1", TokenKind.CLAUDE_MODEL, 10, 20))
     assert len(meter.all_records()) == 1
     assert meter.all_records()[0].total_tokens == 30
 
@@ -112,6 +110,7 @@ def test_record_with_tokens_does_not_warn() -> None:
 
 # ── measure context manager ──
 
+
 def test_measure_records_wall_seconds() -> None:
     meter = TokenMeter()
     with meter.measure("p1", TokenKind.PLUGIN_LOCAL):
@@ -161,17 +160,12 @@ def test_measure_exception_still_records() -> None:
 
 # ── summary / records_for / all_records ──
 
+
 def test_summary_aggregates_by_plugin_and_kind() -> None:
     meter = TokenMeter()
-    meter.record(
-        TokenRecord("p1", TokenKind.CLAUDE_MODEL, 100, 50)
-    )
-    meter.record(
-        TokenRecord("p1", TokenKind.PLUGIN_LOCAL, 30, 20)
-    )
-    meter.record(
-        TokenRecord("p2", TokenKind.CLAUDE_MODEL, 200, 100)
-    )
+    meter.record(TokenRecord("p1", TokenKind.CLAUDE_MODEL, 100, 50))
+    meter.record(TokenRecord("p1", TokenKind.PLUGIN_LOCAL, 30, 20))
+    meter.record(TokenRecord("p2", TokenKind.CLAUDE_MODEL, 200, 100))
     summary = meter.summary()
     assert summary["p1"]["claude_model"] == 150
     assert summary["p1"]["plugin_local"] == 50
@@ -200,9 +194,7 @@ def test_records_for_returns_plugin_records() -> None:
 def test_all_returns_all_in_order() -> None:
     meter = TokenMeter()
     for i in range(5):
-        meter.record(
-            TokenRecord(f"p{i}", TokenKind.CLAUDE_MODEL, i, i)
-        )
+        meter.record(TokenRecord(f"p{i}", TokenKind.CLAUDE_MODEL, i, i))
     all_records = meter.all_records()
     assert len(all_records) == 5
     # 按插入顺序
@@ -211,6 +203,7 @@ def test_all_returns_all_in_order() -> None:
 
 
 # ── TokenKind enum ──
+
 
 def test_token_kind_values() -> None:
     assert TokenKind.CLAUDE_MODEL.value == "claude_model"

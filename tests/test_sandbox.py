@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,7 +12,6 @@ from fusion_plugins_ecosystem.registry import (
     PluginCapability,
     PluginCategory,
     PluginManifest,
-    PluginParam,
     PluginRegistry,
 )
 from fusion_plugins_ecosystem.sandbox import (
@@ -28,6 +25,7 @@ from fusion_plugins_ecosystem.schema import SandboxMode
 
 # ── ResourceLimits ──
 
+
 def test_resource_limits_defaults() -> None:
     limits = ResourceLimits()
     assert limits.memory_limit_mb == 512
@@ -38,7 +36,9 @@ def test_resource_limits_defaults() -> None:
 
 
 def test_resource_limits_custom() -> None:
-    limits = ResourceLimits(memory_limit_mb=1024, timeout_seconds=300, vram_budget_mb=256)
+    limits = ResourceLimits(
+        memory_limit_mb=1024, timeout_seconds=300, vram_budget_mb=256
+    )
     assert limits.memory_limit_mb == 1024
     assert limits.timeout_seconds == 300
     assert limits.vram_budget_mb == 256
@@ -52,6 +52,7 @@ def test_resource_limits_frozen() -> None:
 
 # ── SandboxHealth ──
 
+
 def test_sandbox_health_values() -> None:
     assert SandboxHealth.ALIVE.value == "alive"
     assert SandboxHealth.DEAD.value == "dead"
@@ -60,6 +61,7 @@ def test_sandbox_health_values() -> None:
 
 
 # ── PluginSandbox init ──
+
 
 def test_sandbox_init() -> None:
     sandbox = PluginSandbox()
@@ -75,6 +77,7 @@ def test_sandbox_init_with_custom_limits() -> None:
 
 # ── PluginSandbox health ──
 
+
 def test_sandbox_health_unknown_returns_dead() -> None:
     sandbox = PluginSandbox()
     assert sandbox.health("nonexistent") == SandboxHealth.DEAD
@@ -84,7 +87,9 @@ def test_sandbox_health_known_alive() -> None:
     sandbox = PluginSandbox()
     mock_proc = MagicMock()
     sandbox._processes["p1"] = SandboxProcess(
-        plugin_id="p1", process=mock_proc, limits=ResourceLimits(),
+        plugin_id="p1",
+        process=mock_proc,
+        limits=ResourceLimits(),
     )
     assert sandbox.health("p1") == SandboxHealth.ALIVE
 
@@ -99,6 +104,7 @@ def test_sandbox_health_known_dead() -> None:
 
 
 # ── PluginSandbox kill ──
+
 
 async def test_sandbox_kill_unknown_noop() -> None:
     sandbox = PluginSandbox()
@@ -121,6 +127,7 @@ async def test_sandbox_kill_terminates_process() -> None:
 
 # ── PluginSandbox shutdown_all ──
 
+
 async def test_sandbox_shutdown_all() -> None:
     sandbox = PluginSandbox()
     for pid in ("p1", "p2"):
@@ -136,6 +143,7 @@ async def test_sandbox_shutdown_all() -> None:
 
 
 # ── PluginSandbox call ──
+
 
 async def test_sandbox_call_unknown_plugin_raises() -> None:
     sandbox = PluginSandbox()
@@ -155,9 +163,12 @@ async def test_sandbox_call_dead_plugin_raises() -> None:
 
 # ── PluginSandbox spawn ──
 
+
 async def test_sandbox_spawn_creates_process() -> None:
     sandbox = PluginSandbox()
-    with patch("fusion_plugins_ecosystem.sandbox.asyncio.create_subprocess_exec") as mock_exec:
+    with patch(
+        "fusion_plugins_ecosystem.sandbox.asyncio.create_subprocess_exec"
+    ) as mock_exec:
         mock_process = MagicMock()
         mock_process.pid = 12345
         mock_process.stdin = MagicMock()
@@ -179,7 +190,9 @@ async def test_sandbox_spawn_kills_old_first() -> None:
     sp = SandboxProcess(plugin_id="p1", process=mock_proc, limits=ResourceLimits())
     sandbox._processes["p1"] = sp
 
-    with patch("fusion_plugins_ecosystem.sandbox.asyncio.create_subprocess_exec") as mock_exec:
+    with patch(
+        "fusion_plugins_ecosystem.sandbox.asyncio.create_subprocess_exec"
+    ) as mock_exec:
         mock_process = MagicMock()
         mock_process.pid = 99999
         mock_process.stdin = MagicMock()
@@ -191,6 +204,7 @@ async def test_sandbox_spawn_kills_old_first() -> None:
 
 
 # ── _build_worker_script ──
+
 
 def test_build_worker_script_string_entry() -> None:
     sandbox = PluginSandbox()
@@ -206,7 +220,9 @@ def test_build_worker_script_callable_entry() -> None:
     def my_entry(config, params):
         return "ok"
 
-    script = sandbox._build_worker_script(my_entry, {}, ResourceLimits(memory_limit_mb=1024))
+    script = sandbox._build_worker_script(
+        my_entry, {}, ResourceLimits(memory_limit_mb=1024)
+    )
     assert "_ENTRY=" in script
     assert "_MEM_LIMIT_MB=1024" in script
     # _MEM_LIMIT_MB must be resolved at script generation time, not at runtime
@@ -214,6 +230,7 @@ def test_build_worker_script_callable_entry() -> None:
 
 
 # ── Lifecycle INLINE mode ──
+
 
 def _make_inline_manifest() -> PluginManifest:
     def entry(desk, params):
@@ -242,6 +259,7 @@ async def test_lifecycle_inline_execute() -> None:
 
 
 # ── Lifecycle PROCESS mode (mocked sandbox) ──
+
 
 def _make_process_manifest() -> PluginManifest:
     def entry(config, params):

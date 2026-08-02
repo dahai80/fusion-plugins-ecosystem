@@ -14,12 +14,8 @@ IPC 协议：
 from __future__ import annotations
 
 import asyncio
-import importlib
 import json
 import logging
-import os
-import resource
-import signal
 import sys
 import time
 import uuid
@@ -27,7 +23,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from fusion_plugins_ecosystem.schema import SandboxMode
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +92,9 @@ class PluginSandbox:
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                sys.executable, "-c", worker_code,
+                sys.executable,
+                "-c",
+                worker_code,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -112,9 +109,7 @@ class PluginSandbox:
             limits=res_limits,
         )
 
-        sandbox_proc.reader_task = asyncio.create_task(
-            self._read_loop(sandbox_proc)
-        )
+        sandbox_proc.reader_task = asyncio.create_task(self._read_loop(sandbox_proc))
         sandbox_proc.heartbeat_task = asyncio.create_task(
             self._heartbeat_monitor(sandbox_proc)
         )
@@ -168,7 +163,9 @@ class PluginSandbox:
         try:
             proc.process.terminate()
             try:
-                await asyncio.wait_for(proc.process.wait(), timeout=proc.limits.grace_period_seconds)
+                await asyncio.wait_for(
+                    proc.process.wait(), timeout=proc.limits.grace_period_seconds
+                )
             except asyncio.TimeoutError:
                 proc.process.kill()
                 await proc.process.wait()
@@ -204,7 +201,9 @@ class PluginSandbox:
                 try:
                     msg = json.loads(text)
                 except json.JSONDecodeError:
-                    logger.warning("sandbox: %s invalid JSON: %s", proc.plugin_id, text[:100])
+                    logger.warning(
+                        "sandbox: %s invalid JSON: %s", proc.plugin_id, text[:100]
+                    )
                     continue
 
                 msg_type = msg.get("type")
@@ -217,7 +216,9 @@ class PluginSandbox:
                 elif msg_type == "log":
                     self._handle_log(proc, msg)
                 else:
-                    logger.warning("sandbox: unknown msg type %r from %s", msg_type, proc.plugin_id)
+                    logger.warning(
+                        "sandbox: unknown msg type %r from %s", msg_type, proc.plugin_id
+                    )
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -234,7 +235,9 @@ class PluginSandbox:
                 elapsed = time.time() - proc.last_heartbeat
                 if elapsed > proc.limits.timeout_seconds:
                     proc.health = SandboxHealth.TIMEOUT
-                    logger.warning("sandbox: %s heartbeat timeout (%.0fs)", proc.plugin_id, elapsed)
+                    logger.warning(
+                        "sandbox: %s heartbeat timeout (%.0fs)", proc.plugin_id, elapsed
+                    )
                     await self.kill(proc.plugin_id)
                     break
         except asyncio.CancelledError:

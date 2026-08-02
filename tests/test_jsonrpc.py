@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
 
-from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-from fusion_plugins_ecosystem.jsonrpc import MCPHandler, _error_response, _result_response
-from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
+from fusion_plugins_ecosystem.jsonrpc import (
+    MCPHandler,
+    _error_response,
+    _result_response,
+)
 from fusion_plugins_ecosystem.registry import (
     PluginCapability,
     PluginCategory,
@@ -35,8 +36,19 @@ def _mcp_tool_manifest() -> PluginManifest:
         description="A test MCP tool",
         capabilities=(PluginCapability.MCP_TOOL,),
         params=(
-            PluginParam(name="input", type=PluginParamType.STRING, description="input text", required=True),
-            PluginParam(name="count", type=PluginParamType.INT, description="repeat count", required=False, default=1),
+            PluginParam(
+                name="input",
+                type=PluginParamType.STRING,
+                description="input text",
+                required=True,
+            ),
+            PluginParam(
+                name="count",
+                type=PluginParamType.INT,
+                description="repeat count",
+                required=False,
+                default=1,
+            ),
         ),
     )
 
@@ -53,6 +65,7 @@ def _no_tool_manifest() -> PluginManifest:
 
 
 # ── 响应构造 ──
+
 
 def test_error_response_structure() -> None:
     resp = _error_response(1, -32600, "Invalid Request")
@@ -76,13 +89,16 @@ def test_result_response_structure() -> None:
 
 # ── initialize ──
 
+
 async def test_initialize_negotiates_protocol() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
-    result = await handler._initialize({
-        "protocolVersion": "2026-07-28",
-        "clientInfo": {"name": "test-client", "version": "1.0"},
-    })
+    result = await handler._initialize(
+        {
+            "protocolVersion": "2026-07-28",
+            "clientInfo": {"name": "test-client", "version": "1.0"},
+        }
+    )
     assert result["protocolVersion"] == "2026-07-28"
     assert result["serverInfo"]["name"] == "fusion-plugins-ecosystem"
     assert "tools" in result["capabilities"]
@@ -91,24 +107,29 @@ async def test_initialize_negotiates_protocol() -> None:
 async def test_initialize_fallback_to_latest() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
-    result = await handler._initialize({
-        "protocolVersion": "2024-11-05",
-        "clientInfo": {"name": "old-client"},
-    })
+    result = await handler._initialize(
+        {
+            "protocolVersion": "2024-11-05",
+            "clientInfo": {"name": "old-client"},
+        }
+    )
     assert result["protocolVersion"] == "2024-11-05"
 
 
 async def test_initialize_unknown_version_uses_default() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
-    result = await handler._initialize({
-        "protocolVersion": "2099-01-01",
-        "clientInfo": {"name": "future-client"},
-    })
+    result = await handler._initialize(
+        {
+            "protocolVersion": "2099-01-01",
+            "clientInfo": {"name": "future-client"},
+        }
+    )
     assert result["protocolVersion"] == "2026-07-28"
 
 
 # ── ping ──
+
 
 async def test_ping_returns_empty() -> None:
     registry = _make_registry()
@@ -118,6 +139,7 @@ async def test_ping_returns_empty() -> None:
 
 
 # ── tools/list ──
+
 
 async def test_tools_list_returns_mcp_tools() -> None:
     registry = _make_registry(_mcp_tool_manifest(), _no_tool_manifest())
@@ -149,6 +171,7 @@ async def test_tools_list_includes_annotations() -> None:
 
 # ── tools/call ──
 
+
 async def test_tools_call_unknown_tool_returns_error() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
@@ -159,11 +182,14 @@ async def test_tools_call_unknown_tool_returns_error() -> None:
 async def test_tools_call_disabled_plugin_returns_error() -> None:
     registry = _make_registry(_mcp_tool_manifest())
     handler = MCPHandler(registry=registry)
-    result = await handler._tools_call({"name": "test_tool", "arguments": {"input": "hi"}})
+    result = await handler._tools_call(
+        {"name": "test_tool", "arguments": {"input": "hi"}}
+    )
     assert result["isError"] is True
 
 
 # ── resources ──
+
 
 async def test_resources_list_returns_empty() -> None:
     registry = _make_registry()
@@ -181,6 +207,7 @@ async def test_resources_read_returns_not_implemented() -> None:
 
 # ── prompts ──
 
+
 async def test_prompts_list_returns_empty() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
@@ -197,6 +224,7 @@ async def test_prompts_get_returns_not_implemented() -> None:
 
 # ── server/discover ──
 
+
 async def test_server_discover_returns_info() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
@@ -208,18 +236,21 @@ async def test_server_discover_returns_info() -> None:
 
 # ── handle() dispatch ──
 
+
 async def test_handle_dispatches_initialize() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
-    resp = await handler.handle({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2026-07-28",
-            "clientInfo": {"name": "test"},
-        },
-    })
+    resp = await handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2026-07-28",
+                "clientInfo": {"name": "test"},
+            },
+        }
+    )
     assert resp["id"] == 1
     assert "result" in resp
 
@@ -227,32 +258,38 @@ async def test_handle_dispatches_initialize() -> None:
 async def test_handle_unknown_method_returns_error() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
-    resp = await handler.handle({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "nonexistent/method",
-        "params": {},
-    })
+    resp = await handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "nonexistent/method",
+            "params": {},
+        }
+    )
     assert resp["error"]["code"] == -32601
 
 
 async def test_handle_notification_returns_none() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
-    resp = await handler.handle({
-        "jsonrpc": "2.0",
-        "method": "initialized",
-        "params": {},
-    })
+    resp = await handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "method": "initialized",
+            "params": {},
+        }
+    )
     assert resp is None
 
 
 async def test_handle_ping_returns_result() -> None:
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
-    resp = await handler.handle({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "ping",
-    })
+    resp = await handler.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "ping",
+        }
+    )
     assert resp["result"] == {}

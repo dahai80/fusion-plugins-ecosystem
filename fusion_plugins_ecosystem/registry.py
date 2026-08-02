@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable
 
@@ -25,25 +25,25 @@ logger = logging.getLogger(__name__)
 class PluginCategory(str, Enum):
     """插件分类（对应 PRD「Claude Code 专属插件分类」）。"""
 
-    CODING_PLAN = "coding_plan"          # coding-plan 加速插件
+    CODING_PLAN = "coding_plan"  # coding-plan 加速插件
     CONTEXT_COMPRESS = "context_compress"  # 代码上下文压缩（caveman 等）
-    MLX_INFERENCE = "mlx_inference"       # 本地 MLX 模型推理插件
-    TERMINAL_PROXY = "terminal_proxy"     # 终端命令代理插件
-    FILE_INDEX = "file_index"             # 本地文件检索
-    QUANTIZATION = "quantization"         # 混合量化工具
-    VISUAL_BACKEND = "visual_backend"     # Claude 视觉/图像生成后端
+    MLX_INFERENCE = "mlx_inference"  # 本地 MLX 模型推理插件
+    TERMINAL_PROXY = "terminal_proxy"  # 终端命令代理插件
+    FILE_INDEX = "file_index"  # 本地文件检索
+    QUANTIZATION = "quantization"  # 混合量化工具
+    VISUAL_BACKEND = "visual_backend"  # Claude 视觉/图像生成后端
     CUSTOM = "custom"
 
 
 class PluginCapability(str, Enum):
     """插件能力声明，驱动 MCP Tools / Claude Skill 自动暴露。"""
 
-    MCP_TOOL = "mcp_tool"                # 暴露为 MCP Tool
-    CLAUDE_SKILL = "claude_skill"        # 自动转 Claude Skill
-    SUBAGENT = "subagent"                # Claude Code 子代理
-    FILE_ACCESS = "file_access"          # 本地文件读写
-    VRAM_CONSUMER = "vram_consumer"      # 占用显存，需 Desk 调度
-    LONG_TASK = "long_task"              # 长任务，需超时熔断
+    MCP_TOOL = "mcp_tool"  # 暴露为 MCP Tool
+    CLAUDE_SKILL = "claude_skill"  # 自动转 Claude Skill
+    SUBAGENT = "subagent"  # Claude Code 子代理
+    FILE_ACCESS = "file_access"  # 本地文件读写
+    VRAM_CONSUMER = "vram_consumer"  # 占用显存，需 Desk 调度
+    LONG_TASK = "long_task"  # 长任务，需超时熔断
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class PluginParam:
     """插件参数 schema（用于 Claude Skill 参数描述 + Desk 配置面板）。"""
 
     name: str
-    type: PluginParamType | str    # PluginParamType 枚举，向后兼容字符串
+    type: PluginParamType | str  # PluginParamType 枚举，向后兼容字符串
     description: str
     required: bool = False
     default: Any = None
@@ -72,8 +72,8 @@ class PluginParam:
 class PluginManifest:
     """插件清单（声明式，不含实例，不可变）。"""
 
-    id: str                                    # 全局唯一，如 "caveman_compress"
-    name: str                                  # 用户友好名称
+    id: str  # 全局唯一，如 "caveman_compress"
+    name: str  # 用户友好名称
     version: str
     category: PluginCategory
     description: str
@@ -169,9 +169,7 @@ class PluginRegistry:
 
         import fusion_plugins_ecosystem.builtin as builtin_pkg
 
-        for importer, mod_name, is_pkg in pkgutil.iter_modules(
-            builtin_pkg.__path__
-        ):
+        for importer, mod_name, is_pkg in pkgutil.iter_modules(builtin_pkg.__path__):
             if is_pkg:
                 continue
             fqn = f"fusion_plugins_ecosystem.builtin.{mod_name}"

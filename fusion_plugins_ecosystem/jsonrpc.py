@@ -178,7 +178,9 @@ class MCPHandler:
         """MCP resources/read：读取资源。"""
         uri = params.get("uri", "")
         return {
-            "contents": [{"uri": uri, "text": "Not implemented", "mimeType": "text/plain"}],
+            "contents": [
+                {"uri": uri, "text": "Not implemented", "mimeType": "text/plain"}
+            ],
         }
 
     async def _prompts_list(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -208,9 +210,7 @@ class MCPHandler:
 
     # ── 内部工具 ──
 
-    def _manifest_to_mcp_tool(
-        self, manifest: Any
-    ) -> dict[str, Any] | None:
+    def _manifest_to_mcp_tool(self, manifest: Any) -> dict[str, Any] | None:
         """将 PluginManifest 转为 MCP Tool 描述（2026-07-28 增强）。"""
         properties: dict[str, Any] = {}
         required: list[str] = []
@@ -257,6 +257,7 @@ class MCPHandler:
             if "content" in result and isinstance(result["content"], list):
                 return result["content"]
             import json
+
             text = json.dumps(result, ensure_ascii=False, default=str)
             return [{"type": "text", "text": text}]
         if isinstance(result, str):
@@ -264,5 +265,6 @@ class MCPHandler:
         if isinstance(result, list):
             return result
         import json
+
         text = json.dumps(result, ensure_ascii=False, default=str)
         return [{"type": "text", "text": text}]

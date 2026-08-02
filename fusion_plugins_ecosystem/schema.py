@@ -45,7 +45,7 @@ _PARAM_TYPE_MAP: dict[str, str] = {
 class SandboxMode(str, Enum):
     """插件运行沙箱模式。"""
 
-    INLINE = "inline"    # 进程内执行（向后兼容）
+    INLINE = "inline"  # 进程内执行（向后兼容）
     PROCESS = "process"  # 独立子进程（需沙箱隔离）
 
 

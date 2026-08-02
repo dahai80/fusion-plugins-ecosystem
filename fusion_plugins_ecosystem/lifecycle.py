@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 class PluginState(str, Enum):
     """插件运行状态。"""
 
-    REGISTERED = "registered"    # 已注册，未加载
-    LOADED = "loaded"            # 已加载，未启用
-    ENABLED = "enabled"          # 运行中
-    DISABLED = "disabled"        # 手动禁用
-    CRASHED = "crashed"          # 崩溃，等待重启
-    TIMEOUT = "timeout"          # 超时熔断
+    REGISTERED = "registered"  # 已注册，未加载
+    LOADED = "loaded"  # 已加载，未启用
+    ENABLED = "enabled"  # 运行中
+    DISABLED = "disabled"  # 手动禁用
+    CRASHED = "crashed"  # 崩溃，等待重启
+    TIMEOUT = "timeout"  # 超时熔断
 
 
 @dataclass
@@ -74,7 +74,11 @@ class PluginLifecycle:
     _VALID_TRANSITIONS: dict[PluginState, set[PluginState]] = {
         PluginState.REGISTERED: {PluginState.LOADED},
         PluginState.LOADED: {PluginState.ENABLED, PluginState.DISABLED},
-        PluginState.ENABLED: {PluginState.DISABLED, PluginState.CRASHED, PluginState.TIMEOUT},
+        PluginState.ENABLED: {
+            PluginState.DISABLED,
+            PluginState.CRASHED,
+            PluginState.TIMEOUT,
+        },
         PluginState.DISABLED: {PluginState.LOADED, PluginState.ENABLED},
         PluginState.CRASHED: {PluginState.LOADED, PluginState.DISABLED},
         PluginState.TIMEOUT: {PluginState.LOADED, PluginState.DISABLED},
@@ -89,9 +93,7 @@ class PluginLifecycle:
         # 异常检测任务句柄
         self._watcher_task: asyncio.Task[None] | None = None
 
-    def _transition(
-        self, inst: PluginInstance, new_state: PluginState
-    ) -> None:
+    def _transition(self, inst: PluginInstance, new_state: PluginState) -> None:
         """执行状态转换（带合法性校验）。"""
         allowed = self._VALID_TRANSITIONS.get(inst.state, set())
         if new_state not in allowed:
@@ -147,9 +149,7 @@ class PluginLifecycle:
             ok = self.desk.acquire_vram(plugin_id, manifest.vram_mb)
             if not ok:
                 self._transition(inst, PluginState.CRASHED)
-                self.desk.log(
-                    plugin_id, "ERROR", "显存申请失败，插件未启用"
-                )
+                self.desk.log(plugin_id, "ERROR", "显存申请失败，插件未启用")
                 return inst
 
         self._transition(inst, PluginState.ENABLED)
@@ -163,6 +163,7 @@ class PluginLifecycle:
         if inst is None:
             return
         from fusion_plugins_ecosystem.schema import SandboxMode
+
         if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
             await self._sandbox.kill(plugin_id)
         if inst.manifest.vram_mb > 0:
@@ -180,7 +181,9 @@ class PluginLifecycle:
             self.desk.log(plugin_id, "INFO", "插件已卸载")
 
     async def execute(
-        self, plugin_id: str, params: dict[str, Any],
+        self,
+        plugin_id: str,
+        params: dict[str, Any],
         timeout_override: int | None = None,
     ) -> Any:
         """执行插件，带超时熔断。
@@ -191,11 +194,11 @@ class PluginLifecycle:
         """
         inst = self._instances.get(plugin_id)
         if inst is None or inst.state != PluginState.ENABLED:
-            raise RuntimeError(
-                f"插件 {plugin_id!r} 未启用，无法执行"
-            )
+            raise RuntimeError(f"插件 {plugin_id!r} 未启用，无法执行")
 
-        timeout = timeout_override or inst.manifest.timeout_seconds or self.DEFAULT_TIMEOUT
+        timeout = (
+            timeout_override or inst.manifest.timeout_seconds or self.DEFAULT_TIMEOUT
+        )
         inst.last_heartbeat = time.time()
 
         try:
@@ -206,22 +209,16 @@ class PluginLifecycle:
             return result
         except asyncio.TimeoutError:
             self._transition(inst, PluginState.TIMEOUT)
-            self.desk.log(
-                plugin_id, "ERROR", "插件执行超时，已熔断", timeout=timeout
-            )
+            self.desk.log(plugin_id, "ERROR", "插件执行超时，已熔断", timeout=timeout)
             await self._maybe_restart(plugin_id)
             raise
         except Exception as exc:
             self._transition(inst, PluginState.CRASHED)
-            self.desk.log(
-                plugin_id, "ERROR", "插件执行崩溃", error=str(exc)
-            )
+            self.desk.log(plugin_id, "ERROR", "插件执行崩溃", error=str(exc))
             await self._maybe_restart(plugin_id)
             raise
 
-    async def _invoke(
-        self, inst: PluginInstance, params: dict[str, Any]
-    ) -> Any:
+    async def _invoke(self, inst: PluginInstance, params: dict[str, Any]) -> Any:
         """实际调用插件入口。根据 sandbox_mode 选择进程内或沙箱执行。"""
         from fusion_plugins_ecosystem.schema import SandboxMode
 
@@ -230,18 +227,14 @@ class PluginLifecycle:
 
         return await self._invoke_inline(inst, params)
 
-    async def _invoke_inline(
-        self, inst: PluginInstance, params: dict[str, Any]
-    ) -> Any:
+    async def _invoke_inline(self, inst: PluginInstance, params: dict[str, Any]) -> Any:
         """进程内调用插件入口。"""
         instance = inst.instance
         if inspect.iscoroutinefunction(instance):
             return await instance(self.desk, params)
         if callable(instance):
             return instance(self.desk, params)
-        raise RuntimeError(
-            f"插件 {inst.manifest.id!r} 入口不可调用"
-        )
+        raise RuntimeError(f"插件 {inst.manifest.id!r} 入口不可调用")
 
     async def _invoke_sandbox(
         self, inst: PluginInstance, params: dict[str, Any]
@@ -254,7 +247,8 @@ class PluginLifecycle:
                 entry_point=inst.manifest.entry_point,
                 config=params,
                 limits=ResourceLimits(
-                    timeout_seconds=inst.manifest.timeout_seconds or self.DEFAULT_TIMEOUT,
+                    timeout_seconds=inst.manifest.timeout_seconds
+                    or self.DEFAULT_TIMEOUT,
                 ),
             )
         return await self._sandbox.call(plugin_id, "execute", params)
@@ -265,9 +259,7 @@ class PluginLifecycle:
         if inst is None:
             return
         if inst.restart_count >= self.MAX_RESTART:
-            self.desk.log(
-                plugin_id, "ERROR", "达到最大重启次数，插件保持崩溃状态"
-            )
+            self.desk.log(plugin_id, "ERROR", "达到最大重启次数，插件保持崩溃状态")
             return
         # 保存计数，unload 会删除旧 instance
         new_count = inst.restart_count + 1
@@ -275,9 +267,7 @@ class PluginLifecycle:
         new_inst = self.load(plugin_id)
         new_inst.restart_count = new_count
         await self.enable(plugin_id)
-        self.desk.log(
-            plugin_id, "INFO", "插件已自动重启", count=new_count
-        )
+        self.desk.log(plugin_id, "INFO", "插件已自动重启", count=new_count)
 
     async def start_watcher(self) -> None:
         """启动异常检测循环，发现卡死插件自动熔断。"""
@@ -300,9 +290,7 @@ class PluginLifecycle:
                     continue
                 if now - inst.last_heartbeat > self.HEARTBEAT_STALE:
                     self._transition(inst, PluginState.TIMEOUT)
-                    self.desk.log(
-                        plugin_id, "ERROR", "心跳超时，判定卡死，熔断"
-                    )
+                    self.desk.log(plugin_id, "ERROR", "心跳超时，判定卡死，熔断")
                     await self._maybe_restart(plugin_id)
             await asyncio.sleep(self.HEARTBEAT_STALE // 2)
 

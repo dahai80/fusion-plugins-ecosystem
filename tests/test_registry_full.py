@@ -75,8 +75,11 @@ def test_list_by_category() -> None:
     registry = PluginRegistry()
     registry.register(_make_manifest("p1"))
     m2 = PluginManifest(
-        id="p2", name="Test", version="0.1.0",
-        category=PluginCategory.MLX_INFERENCE, description="d",
+        id="p2",
+        name="Test",
+        version="0.1.0",
+        category=PluginCategory.MLX_INFERENCE,
+        description="d",
     )
     registry.register(m2)
     mlx_plugins = registry.list(PluginCategory.MLX_INFERENCE)
@@ -99,12 +102,20 @@ def test_register_builtin_loads_caveman() -> None:
 def test_default_mounted_returns_only_mounted() -> None:
     registry = PluginRegistry()
     m1 = PluginManifest(
-        id="p1", name="Test", version="0.1.0",
-        category=PluginCategory.CUSTOM, description="d", default_mounted=True,
+        id="p1",
+        name="Test",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="d",
+        default_mounted=True,
     )
     m2 = PluginManifest(
-        id="p2", name="Test", version="0.1.0",
-        category=PluginCategory.CUSTOM, description="d", default_mounted=False,
+        id="p2",
+        name="Test",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="d",
+        default_mounted=False,
     )
     registry.register(m1)
     registry.register(m2)
@@ -242,10 +253,15 @@ def test_list_as_dicts() -> None:
 def test_list_as_dicts_with_category_filter() -> None:
     registry = PluginRegistry()
     registry.register(_make_manifest("p1"))
-    registry.register(PluginManifest(
-        id="p2", name="MLX", version="0.1.0",
-        category=PluginCategory.MLX_INFERENCE, description="d",
-    ))
+    registry.register(
+        PluginManifest(
+            id="p2",
+            name="MLX",
+            version="0.1.0",
+            category=PluginCategory.MLX_INFERENCE,
+            description="d",
+        )
+    )
     result = registry.list_as_dicts(category=PluginCategory.MLX_INFERENCE)
     assert len(result) == 1
     assert result[0]["category"] == "mlx_inference"
