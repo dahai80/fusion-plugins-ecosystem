@@ -9,8 +9,8 @@
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python">
   <img src="https://img.shields.io/badge/base-fusion--desk-orange" alt="fusion-desk">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
-  <img src="https://img.shields.io/badge/MCP-2024--11--05-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-222%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
+  <img src="https://img.shields.io/badge/tests-362%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/coverage-99%25-success" alt="Coverage">
 </p>
 
@@ -27,15 +27,17 @@
 `fusion-plugins-ecosystem` is the **upper-layer submodule** of `fusion-desk`. It is **not** a standalone project — process hosting, permission control, log collection, and resource throttling are all provided by `fusion-desk`. This package only adds:
 
 1. **Plugin registry** — declarative manifests, param schemas, capability declarations
-2. **Lifecycle manager** — load/unload/enable/disable/hot-reload, timeout meltdown, auto-restart
-3. **Claude full-chain adaptation** — plugins auto-convert to Claude Skills, expose as MCP Tools
-4. **Token metering** — split Claude model consumption vs plugin local compute
-5. **Desk context bridge** — reuse Desk's MCP gateway, hardware scheduler, session pool
+2. **Lifecycle manager** — load/unload/enable/disable/hot-reload, timeout meltdown, auto-restart, INLINE/PROCESS sandbox modes
+3. **Claude full-chain adaptation** — plugins auto-convert to Claude Code Skills, Agents, Plugin Bundles; expose as MCP Tools (2026-07-28)
+4. **Token metering** — split Claude model consumption vs plugin local compute, JSON persistence
+5. **MCP protocol stack** — stdio/SSE/HTTP transports, JSON-RPC 2.0 handler, MCP Server CLI
+6. **Plugin sandbox** — process isolation via subprocess IPC, resource limits, heartbeat monitoring
+7. **Desk context bridge** — reuse Desk's MCP gateway, hardware scheduler, session pool
 
 ### Architecture
 
 ```
-fusion-plugin-ecosystem        ← this package: registry, lifecycle, Claude adaptation
+fusion-plugin-ecosystem        ← this package: registry, lifecycle, Claude adaptation, sandbox, MCP server
         ↓ depends on API
 fusion-desk runtime            ← base runtime: MCP gateway, hardware, sessions, logging
         ↓
@@ -73,10 +75,8 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 222 passed, 99% coverage
+# → 362 passed
 ```
-
-### Minimal usage
 
 ```python
 import fusion_plugins_ecosystem as fpe
@@ -164,20 +164,27 @@ fusion-plugins-ecosystem/
 ├── fusion_plugins_ecosystem/
 │   ├── __init__.py               ← top-level exports + Lazy Import
 │   ├── desk_runtime.py           ← fusion-desk runtime handle wrapper
-│   ├── desk_context.py           ← thin bridge to DeskRuntime
-│   ├── registry.py               ← plugin registry + manifest
-│   ├── lifecycle.py              ← load/enable/execute + meltdown + restart
-│   ├── token_meter.py            ← unified token accounting by kind
-│   ├── claude_adapter.py         ← plugin → Claude Skill
+│   ├── registry.py               ← plugin registry + frozen manifest
+│   ├── lifecycle.py              ← load/enable/execute + meltdown + restart + INLINE/PROCESS
+│   ├── sandbox.py                ← plugin sandbox (process isolation, IPC)
+│   ├── transport.py              ← MCP transport layer (stdio/SSE/HTTP)
+│   ├── jsonrpc.py                ← MCP JSON-RPC 2.0 handler
+│   ├── server.py                 ← MCP Server entry + CLI
+│   ├── schema.py                 ← shared schema (SandboxMode, MCPAnnotations, types)
+│   ├── skill_adapter.py          ← plugin → Claude Code Skill bundle
+│   ├── agent_adapter.py          ← plugin → Claude Code Agent .md
+│   ├── plugin_bundle.py          ← Claude Code Plugin bundle generator
+│   ├── claude_adapter.py         ← legacy adapter (backward compat)
 │   ├── mcp_exporter.py           ← plugin → MCP Tools
 │   ├── claude_gateway.py         ← unified Claude full-chain gateway
-│   ├── config.py                 ← one-toggle config panel
+│   ├── token_meter.py            ← unified token accounting + persistence
+│   ├── config.py                 ← one-toggle config panel + observers
 │   └
     builtin/
 │       ├── __init__.py
 │       └
         caveman_compress.py        ← built-in token compressor
-└── tests/                        ← 222 tests, 99% coverage
+└── tests/                        ← 362 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -188,8 +195,14 @@ fusion-plugins-ecosystem/
     ├── test_mcp_exporter.py
     ├── test_registry.py
     ├── test_registry_full.py
-    └
-    test_token_meter.py
+    ├── test_token_meter.py
+    ├── test_jsonrpc.py
+    ├── test_transport_server.py
+    ├── test_sandbox.py
+    ├── test_phase3_adapters.py
+    ├── test_phase4_meter_config.py
+    ├── test_schema.py
+    └── test_integration.py
 ```
 
 ## 🔧 Configuration (one-click panel)
@@ -204,6 +217,10 @@ fusion-plugins-ecosystem/
 | `subagent_timeout_destroy` | `dispatch_subagent` | no unload on timeout |
 | `enable_volcengine_claude_plan` | volcengine credential store/get | refused / `None` |
 | `enable_mixed_quantization` | `mlx_visual_backend` | raises `RuntimeError` |
+| `mcp_transport` | MCP transport type | `stdio` / `sse` / `http` |
+| `sandbox_default_mode` | Default sandbox mode | `inline` / `process` |
+| `max_token_records` | Max token meter records | pruning threshold |
+| `token_persist_path` | Token persistence file | `None` = in-memory |
 
 ```python
 from fusion_plugins_ecosystem import EcosystemConfig
@@ -233,7 +250,7 @@ restored = EcosystemConfig.from_dict(d)
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **222 passed, 99% coverage in 0.64s**.
+Latest run: **362 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -271,15 +288,17 @@ MIT — part of the [Fusion-MLX](https://github.com/fusion-mlx) Apple Silicon lo
 `fusion-plugins-ecosystem` 是 `fusion-desk` 的**上层子模块**，**不是**独立项目——进程托管、权限控制、日志采集、资源限流全部由 `fusion-desk` 统一提供。本包只负责：
 
 1. **插件注册中心**：声明式清单、参数 schema、能力声明
-2. **生命周期管理**：加载/卸载/启用/禁用/热重载，超时熔断，进程自动重启
-3. **Claude 全链路适配**：插件自动转 Claude Skill，暴露为 MCP Tools
-4. **Token 统一计量**：区分 Claude 模型消耗 vs 插件本地计算开销
-5. **Desk 上下文桥**：复用 Desk 的 MCP 网关、硬件调度器、会话池
+2. **生命周期管理**：加载/卸载/启用/禁用/热重载，超时熔断，进程自动重启，INLINE/PROCESS 沙箱双模
+3. **Claude 全链路适配**：插件自动转 Claude Code Skill/Agent/Plugin Bundle，暴露为 MCP Tools（2026-07-28）
+4. **Token 统一计量**：区分 Claude 模型消耗 vs 插件本地计算开销，JSON 持久化
+5. **MCP 协议栈**：stdio/SSE/HTTP 传输层，JSON-RPC 2.0 处理器，MCP Server CLI
+6. **插件沙箱**：子进程 IPC 进程隔离，资源限制，心跳监控
+7. **Desk 上下文桥**：复用 Desk 的 MCP 网关、硬件调度器、会话池
 
 ### 架构分层
 
 ```
-fusion-plugin-ecosystem        ← 本包：注册、生命周期、Claude 适配
+fusion-plugin-ecosystem        ← 本包：注册、生命周期、Claude 适配、沙箱、MCP Server
         ↓ 依赖 API
 fusion-desk runtime            ← 底座：MCP 网关、硬件、会话、日志
         ↓
@@ -317,7 +336,7 @@ python3 -m venv .venv
 
 # 运行测试
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 222 passed, 99% coverage
+# → 362 passed
 ```
 
 ### 最小用法
@@ -422,7 +441,7 @@ MY_MANIFEST = PluginManifest(
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-最新结果：**222 passed, 99% coverage in 0.64s**。
+最新结果：**362 passed**。
 
 ## ⚠️ 技术约束
 

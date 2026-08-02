@@ -74,8 +74,13 @@ def test_list_all() -> None:
 def test_list_by_category() -> None:
     registry = PluginRegistry()
     registry.register(_make_manifest("p1"))
-    m2 = _make_manifest("p2")
-    m2.category = PluginCategory.MLX_INFERENCE
+    m2 = PluginManifest(
+        id="p2",
+        name="Test",
+        version="0.1.0",
+        category=PluginCategory.MLX_INFERENCE,
+        description="d",
+    )
     registry.register(m2)
     mlx_plugins = registry.list(PluginCategory.MLX_INFERENCE)
     assert len(mlx_plugins) == 1
@@ -96,10 +101,22 @@ def test_register_builtin_loads_caveman() -> None:
 
 def test_default_mounted_returns_only_mounted() -> None:
     registry = PluginRegistry()
-    m1 = _make_manifest("p1")
-    m1.default_mounted = True
-    m2 = _make_manifest("p2")
-    m2.default_mounted = False
+    m1 = PluginManifest(
+        id="p1",
+        name="Test",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="d",
+        default_mounted=True,
+    )
+    m2 = PluginManifest(
+        id="p2",
+        name="Test",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="d",
+        default_mounted=False,
+    )
     registry.register(m1)
     registry.register(m2)
     mounted = registry.default_mounted()
@@ -147,9 +164,104 @@ def test_plugin_manifest_defaults() -> None:
         category=PluginCategory.CUSTOM,
         description="d",
     )
-    assert m.capabilities == []
-    assert m.params == []
+    assert m.capabilities == ()
+    assert m.params == ()
     assert m.entry_point is None
     assert m.default_mounted is False
     assert m.timeout_seconds is None
     assert m.vram_mb == 0
+
+
+def test_plugin_param_to_dict() -> None:
+    p = PluginParam(
+        name="x",
+        type="string",
+        description="test param",
+        required=True,
+        default="hello",
+        enum=("a", "b"),
+    )
+    d = p.to_dict()
+    assert d["name"] == "x"
+    assert d["type"] == "string"
+    assert d["required"] is True
+    assert d["default"] == "hello"
+    assert d["enum"] == ["a", "b"]
+
+
+def test_plugin_param_to_dict_no_enum() -> None:
+    p = PluginParam(name="y", type="int", description="d")
+    d = p.to_dict()
+    assert d["enum"] is None
+
+
+def test_manifest_to_dict() -> None:
+    m = _make_manifest("p1")
+    d = m.to_dict()
+    assert d["id"] == "p1"
+    assert d["name"] == "Test"
+    assert d["category"] == "custom"
+    assert d["capabilities"] == ["mcp_tool"]
+    assert len(d["params"]) == 1
+    assert d["params"][0]["name"] == "x"
+    assert d["sandbox_mode"] == "inline"
+    assert d["depends_on"] == []
+    assert d["vram_mb"] == 0
+
+
+def test_manifest_to_dict_callable_entry_point() -> None:
+    def my_entry(desk, params):
+        return {}
+
+    m = PluginManifest(
+        id="p1",
+        name="Test",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="d",
+        entry_point=my_entry,
+    )
+    d = m.to_dict()
+    assert ":" in d["entry_point"]
+    assert "my_entry" in d["entry_point"]
+
+
+def test_manifest_to_dict_string_entry_point() -> None:
+    m = PluginManifest(
+        id="p1",
+        name="Test",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="d",
+        entry_point="mymodule:main",
+    )
+    d = m.to_dict()
+    assert d["entry_point"] == "mymodule:main"
+
+
+def test_list_as_dicts() -> None:
+    registry = PluginRegistry()
+    registry.register(_make_manifest("p1"))
+    registry.register(_make_manifest("p2"))
+    result = registry.list_as_dicts()
+    assert len(result) == 2
+    assert all(isinstance(r, dict) for r in result)
+    ids = {r["id"] for r in result}
+    assert ids == {"p1", "p2"}
+
+
+def test_list_as_dicts_with_category_filter() -> None:
+    registry = PluginRegistry()
+    registry.register(_make_manifest("p1"))
+    registry.register(
+        PluginManifest(
+            id="p2",
+            name="MLX",
+            version="0.1.0",
+            category=PluginCategory.MLX_INFERENCE,
+            description="d",
+        )
+    )
+    result = registry.list_as_dicts(category=PluginCategory.MLX_INFERENCE)
+    assert len(result) == 1
+    assert result[0]["category"] == "mlx_inference"

@@ -8,3 +8,9 @@ htmlcov/
 .DS_Store
 build/
 dist/
+
+# Local-only docs, not tracked in repo
+CLAUDE.md
+ARCHITECTURE_COMPLIANCE.md
+docs/
+plugins-ecosystem-enhance.md

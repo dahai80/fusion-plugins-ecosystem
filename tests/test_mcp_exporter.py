@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from fusion_plugins_ecosystem.mcp_exporter import MCPExporter
 from fusion_plugins_ecosystem.registry import (
@@ -122,16 +121,14 @@ async def test_call_tool_propagates_arguments_in_response() -> None:
 
 def test_gateway_info_returns_mcp_metadata() -> None:
     from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-    from fusion_plugins_ecosystem.desk_context import DeskContext
 
-    rt = DeskRuntime(mcp_gateway_port=9999)
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(mcp_gateway_port=9999)
     registry = PluginRegistry(desk=desk)
     exporter = MCPExporter(registry)
     info = exporter.gateway_info()
     assert info["port"] == 9999
     assert info["transport"] == "stdio"
-    assert info["protocol_version"] == "2024-11-05"
+    assert info["protocol_version"] == "2026-07-28"
     assert info["tools_count"] == 0  # 未注册插件
 
 
@@ -148,19 +145,176 @@ def test_list_tools_multiple_plugins() -> None:
 
 
 def test_mcp_exporter_uses_registry_desk_by_default() -> None:
-    from fusion_plugins_ecosystem.desk_context import DeskContext
+    from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
-    desk = DeskContext()
+    desk = DeskRuntime()
     registry = PluginRegistry(desk=desk)
     exporter = MCPExporter(registry)
     assert exporter.desk is desk
 
 
 def test_mcp_exporter_explicit_desk_overrides() -> None:
-    from fusion_plugins_ecosystem.desk_context import DeskContext
+    from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
-    desk1 = DeskContext()
-    desk2 = DeskContext()
+    desk1 = DeskRuntime()
+    desk2 = DeskRuntime()
     registry = PluginRegistry(desk=desk1)
     exporter = MCPExporter(registry, desk=desk2)
     assert exporter.desk is desk2
+
+
+# ── Edge cases ──
+
+
+def test_list_tools_plugin_no_params() -> None:
+    registry = PluginRegistry()
+    registry.register(
+        PluginManifest(
+            id="no_params",
+            name="No Params",
+            version="0.1.0",
+            category=PluginCategory.CUSTOM,
+            description="无参数插件",
+            capabilities=(PluginCapability.MCP_TOOL,),
+            params=(),
+        )
+    )
+    exporter = MCPExporter(registry)
+    tools = exporter.list_tools()
+    assert len(tools) == 1
+    assert tools[0]["inputSchema"]["properties"] == {}
+    assert "required" not in tools[0]["inputSchema"]
+
+
+def test_list_tools_all_params_required() -> None:
+    registry = PluginRegistry()
+    registry.register(
+        PluginManifest(
+            id="all_req",
+            name="All Required",
+            version="0.1.0",
+            category=PluginCategory.CUSTOM,
+            description="全部必填",
+            capabilities=(PluginCapability.MCP_TOOL,),
+            params=(
+                PluginParam(name="a", type="string", description="A", required=True),
+                PluginParam(name="b", type="int", description="B", required=True),
+            ),
+        )
+    )
+    exporter = MCPExporter(registry)
+    tools = exporter.list_tools()
+    assert set(tools[0]["inputSchema"]["required"]) == {"a", "b"}
+
+
+def test_list_tools_unknown_param_type_falls_back() -> None:
+    registry = PluginRegistry()
+    registry.register(
+        PluginManifest(
+            id="weird_type",
+            name="Weird",
+            version="0.1.0",
+            category=PluginCategory.CUSTOM,
+            description="未知类型",
+            capabilities=(PluginCapability.MCP_TOOL,),
+            params=(PluginParam(name="x", type="unknown_type", description="X"),),
+        )
+    )
+    exporter = MCPExporter(registry)
+    tools = exporter.list_tools()
+    assert tools[0]["inputSchema"]["properties"]["x"]["type"] == "string"
+
+
+def test_list_tools_param_no_enum_no_default() -> None:
+    registry = PluginRegistry()
+    registry.register(
+        PluginManifest(
+            id="bare_param",
+            name="Bare",
+            version="0.1.0",
+            category=PluginCategory.CUSTOM,
+            description="裸参数",
+            capabilities=(PluginCapability.MCP_TOOL,),
+            params=(PluginParam(name="y", type="float", description="Y"),),
+        )
+    )
+    exporter = MCPExporter(registry)
+    tools = exporter.list_tools()
+    prop = tools[0]["inputSchema"]["properties"]["y"]
+    assert "enum" not in prop
+    assert "default" not in prop
+    assert prop["type"] == "number"
+
+
+async def test_call_tool_empty_arguments() -> None:
+    registry = PluginRegistry()
+    registry.register(_make_manifest("p1"))
+    exporter = MCPExporter(registry)
+    result = await exporter.call_tool("p1", {})
+    assert result["isError"] is False
+    assert "content" in result
+
+
+def test_gateway_info_with_registered_tools() -> None:
+    registry = PluginRegistry()
+    registry.register(_make_manifest("p1"))
+    registry.register(_make_manifest("p2"))
+    exporter = MCPExporter(registry)
+    info = exporter.gateway_info()
+    assert info["tools_count"] == 2
+
+
+def test_list_tools_mixed_capabilities() -> None:
+    registry = PluginRegistry()
+    registry.register(_make_manifest("mcp_only"))
+    registry.register(
+        _make_manifest(
+            "skill_only",
+            capabilities=[PluginCapability.CLAUDE_SKILL],
+            has_mcp=False,
+        )
+    )
+    registry.register(
+        _make_manifest(
+            "mcp_and_skill",
+            capabilities=[PluginCapability.MCP_TOOL, PluginCapability.CLAUDE_SKILL],
+        )
+    )
+    exporter = MCPExporter(registry)
+    tools = exporter.list_tools()
+    tool_ids = {t["name"] for t in tools}
+    assert tool_ids == {"mcp_only", "mcp_and_skill"}
+    assert "skill_only" not in tool_ids
+
+
+def test_list_tools_param_types_mapping() -> None:
+    from fusion_plugins_ecosystem.schema import PluginParamType
+
+    registry = PluginRegistry()
+    registry.register(
+        PluginManifest(
+            id="type_test",
+            name="Type Test",
+            version="0.1.0",
+            category=PluginCategory.CUSTOM,
+            description="类型映射测试",
+            capabilities=(PluginCapability.MCP_TOOL,),
+            params=(
+                PluginParam(name="s", type=PluginParamType.STRING, description="S"),
+                PluginParam(name="i", type=PluginParamType.INT, description="I"),
+                PluginParam(name="b", type=PluginParamType.BOOL, description="B"),
+                PluginParam(name="f", type=PluginParamType.FLOAT, description="F"),
+                PluginParam(name="a", type=PluginParamType.ARRAY, description="A"),
+                PluginParam(name="o", type=PluginParamType.OBJECT, description="O"),
+            ),
+        )
+    )
+    exporter = MCPExporter(registry)
+    tools = exporter.list_tools()
+    props = tools[0]["inputSchema"]["properties"]
+    assert props["s"]["type"] == "string"
+    assert props["i"]["type"] == "integer"
+    assert props["b"]["type"] == "boolean"
+    assert props["f"]["type"] == "number"
+    assert props["a"]["type"] == "array"
+    assert props["o"]["type"] == "object"

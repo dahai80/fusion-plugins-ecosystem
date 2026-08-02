@@ -11,6 +11,7 @@ from fusion_plugins_ecosystem.builtin.caveman_compress import (
 
 # ── 注册中心 ──
 
+
 def test_registry_register_and_get() -> None:
     registry = fpe.PluginRegistry()
     registry.register(CAVEMAN_MANIFEST)
@@ -31,9 +32,7 @@ def test_registry_register_builtin_loads_caveman() -> None:
     registry = fpe.PluginRegistry()
     registry.register_builtin()
     assert registry.get("caveman_compress") is not None
-    assert any(
-        m.id == "caveman_compress" for m in registry.list()
-    )
+    assert any(m.id == "caveman_compress" for m in registry.list())
 
 
 def test_registry_default_mounted_includes_caveman() -> None:
@@ -44,6 +43,7 @@ def test_registry_default_mounted_includes_caveman() -> None:
 
 
 # ── Claude Skill 适配 ──
+
 
 def test_claude_adapter_exports_caveman_skill() -> None:
     registry = fpe.PluginRegistry()
@@ -68,6 +68,7 @@ def test_claude_adapter_export_default_mounted() -> None:
 
 # ── MCP 导出 ──
 
+
 def test_mcp_exporter_lists_caveman_tool() -> None:
     registry = fpe.PluginRegistry()
     registry.register_builtin()
@@ -79,6 +80,7 @@ def test_mcp_exporter_lists_caveman_tool() -> None:
 
 
 # ── caveman 压缩功能 ──
+
 
 def test_caveman_compress_removes_comments() -> None:
     text = "# 这是注释\n代码行\n// 另一种注释\n实际内容"
@@ -105,14 +107,18 @@ def test_caveman_compress_empty_text() -> None:
 
 def test_caveman_compress_keep_comments() -> None:
     text = "# 注释\n内容"
-    result = caveman_compress(None, {
-        "text": text,
-        "keep_comments": True,
-    })
+    result = caveman_compress(
+        None,
+        {
+            "text": text,
+            "keep_comments": True,
+        },
+    )
     assert "# 注释" in result["compressed"]
 
 
 # ── 配置面板 ──
+
 
 def test_ecosystem_config_defaults_all_enabled() -> None:
     config = fpe.EcosystemConfig()
@@ -125,5 +131,6 @@ def test_ecosystem_config_defaults_all_enabled() -> None:
 def test_ecosystem_config_roundtrip() -> None:
     config = fpe.EcosystemConfig()
     d = config.to_dict()
-    restored = fpe.EcosystemConfig.from_dict(d)
+    restored, warnings = fpe.EcosystemConfig.from_dict(d)
     assert restored.to_dict() == d
+    assert warnings == []

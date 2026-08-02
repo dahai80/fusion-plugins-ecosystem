@@ -7,10 +7,6 @@ import json
 
 import pytest
 
-from fusion_plugins_ecosystem.builtin.caveman_compress import (
-    CAVEMAN_MANIFEST,
-    caveman_compress,
-)
 from fusion_plugins_ecosystem.claude_gateway import (
     CLAUDE_CODE,
     CLAUDE_DESKTOP,
@@ -20,7 +16,6 @@ from fusion_plugins_ecosystem.claude_gateway import (
     SubagentTask,
 )
 from fusion_plugins_ecosystem.config import EcosystemConfig
-from fusion_plugins_ecosystem.desk_context import DeskContext
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 from fusion_plugins_ecosystem.registry import (
@@ -33,6 +28,7 @@ from fusion_plugins_ecosystem.registry import (
 
 
 # ── 测试 fixtures ──
+
 
 def _make_manifest(
     plugin_id: str = "test_plugin",
@@ -71,9 +67,9 @@ def _make_manifest(
 def _make_gateway(
     manifests: list[PluginManifest] | None = None,
     config: EcosystemConfig | None = None,
-    desk: DeskContext | None = None,
+    desk: DeskRuntime | None = None,
 ) -> tuple[ClaudeGateway, PluginRegistry]:
-    registry = PluginRegistry(desk=desk or DeskContext())
+    registry = PluginRegistry(desk=desk or DeskRuntime())
     for m in manifests or []:
         registry.register(m)
     lifecycle = PluginLifecycle(registry)
@@ -88,6 +84,7 @@ def _make_gateway(
 
 # ── 接入方式常量 ──
 
+
 def test_claude_access_constants() -> None:
     assert CLAUDE_DESKTOP == "claude_desktop"
     assert CLAUDE_CODE == "claude_code"
@@ -96,6 +93,7 @@ def test_claude_access_constants() -> None:
 
 
 # ── SubagentTask dataclass ──
+
 
 def test_subagent_task_defaults() -> None:
     task = SubagentTask(name="t", plugin_id="p", arguments={"x": 1})
@@ -120,6 +118,7 @@ def test_subagent_task_with_metadata() -> None:
 
 # ── export_skills ──
 
+
 def test_export_skills_default_on() -> None:
     gw, _ = _make_gateway([_make_manifest("p1", default_mounted=True)])
     skills = gw.export_skills()
@@ -140,6 +139,7 @@ def test_export_skills_empty_registry() -> None:
 
 # ── export_default_mounted_skills ──
 
+
 def test_export_default_mounted_skills() -> None:
     gw, _ = _make_gateway(
         [
@@ -153,13 +153,12 @@ def test_export_default_mounted_skills() -> None:
 
 def test_export_default_mounted_disabled_by_config() -> None:
     config = EcosystemConfig(default_mount_compressor=False)
-    gw, _ = _make_gateway(
-        [_make_manifest("p1", default_mounted=True)], config=config
-    )
+    gw, _ = _make_gateway([_make_manifest("p1", default_mounted=True)], config=config)
     assert gw.export_default_mounted_skills() == []
 
 
 # ── list_mcp_tools ──
+
 
 def test_list_mcp_tools_default_on() -> None:
     gw, _ = _make_gateway([_make_manifest("p1")])
@@ -180,6 +179,7 @@ def test_list_mcp_tools_empty_registry() -> None:
 
 
 # ── invoke_mcp_tool ──
+
 
 async def test_invoke_mcp_tool_success() -> None:
     def entry(_desk, params):
@@ -243,10 +243,9 @@ async def test_invoke_mcp_tool_non_dict_result_serialized() -> None:
 
 # ── gateway_info ──
 
+
 def test_gateway_info_contains_metadata() -> None:
-    gw, _ = _make_gateway(
-        [_make_manifest("p1", default_mounted=True)]
-    )
+    gw, _ = _make_gateway([_make_manifest("p1", default_mounted=True)])
     info = gw.gateway_info()
     assert "transport" in info
     assert "port" in info
@@ -265,6 +264,7 @@ def test_gateway_info_empty_registry() -> None:
 
 
 # ── dispatch_subagent ──
+
 
 async def test_dispatch_subagent_success() -> None:
     def entry(_desk, params):
@@ -306,9 +306,7 @@ async def test_dispatch_subagent_timeout_destroy_on() -> None:
         return {}
 
     config = EcosystemConfig(subagent_timeout_seconds=0.1)
-    gw, _ = _make_gateway(
-        [_make_manifest("p1", entry_point=entry)], config=config
-    )
+    gw, _ = _make_gateway([_make_manifest("p1", entry_point=entry)], config=config)
     task = SubagentTask(name="t", plugin_id="p1", arguments={})
     result = await gw.dispatch_subagent(task)
     assert result["state"] == "failed"
@@ -325,9 +323,7 @@ async def test_dispatch_subagent_timeout_destroy_off() -> None:
         subagent_timeout_seconds=0.1,
         subagent_timeout_destroy=False,
     )
-    gw, _ = _make_gateway(
-        [_make_manifest("p1", entry_point=entry)], config=config
-    )
+    gw, _ = _make_gateway([_make_manifest("p1", entry_point=entry)], config=config)
     task = SubagentTask(name="t", plugin_id="p1", arguments={})
     result = await gw.dispatch_subagent(task)
     assert result["state"] == "failed"
@@ -359,6 +355,7 @@ async def test_dispatch_subagent_preserves_manifest_timeout() -> None:
 
 # ── list_subagent_capable_plugins ──
 
+
 def test_list_subagent_capable_plugins() -> None:
     gw, _ = _make_gateway(
         [
@@ -383,6 +380,7 @@ def test_list_subagent_capable_plugins_empty() -> None:
 
 # ── store_credentials / get_credentials / has_credentials ──
 
+
 class _FakeConfigCenter:
     """Desk 配置中心 fake，支持 get/set API 密钥。"""
 
@@ -396,10 +394,9 @@ class _FakeConfigCenter:
         self._store[key] = value
 
 
-def _make_desk_with_config() -> DeskContext:
-    """构造带 config_center 的 DeskContext，供鉴权测试。"""
-    rt = DeskRuntime(config_center=_FakeConfigCenter())
-    return DeskContext(runtime=rt)
+def _make_desk_with_config() -> DeskRuntime:
+    """构造带 config_center 的 DeskRuntime，供鉴权测试。"""
+    return DeskRuntime(config_center=_FakeConfigCenter())
 
 
 def test_store_credentials_writes_to_desk() -> None:
@@ -452,14 +449,14 @@ def test_has_credentials_volcengine_disabled() -> None:
 
 # ── mlx_visual_backend ──
 
+
 class _FakeMLXClient:
     async def chat(self, model, messages, **kw):
         return {"content": "fake", "model": model}
 
 
 async def test_mlx_visual_backend_success() -> None:
-    rt = DeskRuntime(mlx_client=_FakeMLXClient())
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(mlx_client=_FakeMLXClient())
     gw, _ = _make_gateway([], desk=desk)
     result = await gw.mlx_visual_backend("qwen3.5", [{"role": "user", "content": "hi"}])
     assert result["content"] == "fake"
@@ -467,14 +464,14 @@ async def test_mlx_visual_backend_success() -> None:
 
 async def test_mlx_visual_backend_disabled_raises() -> None:
     config = EcosystemConfig(enable_mixed_quantization=False)
-    rt = DeskRuntime(mlx_client=_FakeMLXClient())
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(mlx_client=_FakeMLXClient())
     gw, _ = _make_gateway([], config=config, desk=desk)
     with pytest.raises(RuntimeError, match="混合量化"):
         await gw.mlx_visual_backend("m", [])
 
 
 # ── 与 caveman 内置插件集成 ──
+
 
 def test_gateway_with_builtin_caveman() -> None:
     registry = PluginRegistry()
@@ -518,6 +515,7 @@ async def test_gateway_dispatch_caveman_subagent() -> None:
 
 # ── 构造器默认参数 ──
 
+
 def test_gateway_defaults_lifecycle_and_desk() -> None:
     registry = PluginRegistry()
     registry.register_builtin()
@@ -536,12 +534,13 @@ def test_gateway_uses_registry_desk_when_not_passed() -> None:
 
 def test_gateway_explicit_desk_overrides() -> None:
     registry = PluginRegistry()
-    desk2 = DeskContext()
+    desk2 = DeskRuntime()
     gw = ClaudeGateway(registry=registry, desk=desk2)
     assert gw.desk is desk2
 
 
 # ── token meter 集成 ──
+
 
 async def test_invoke_mcp_tool_records_mcp_relay_token() -> None:
     def entry(_desk, _params):
@@ -570,8 +569,7 @@ async def test_dispatch_subagent_records_plugin_local_token() -> None:
 
 
 async def test_mlx_visual_backend_records_mlx_inference_token() -> None:
-    rt = DeskRuntime(mlx_client=_FakeMLXClient())
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(mlx_client=_FakeMLXClient())
     gw, _ = _make_gateway([], desk=desk)
     await gw.mlx_visual_backend("m", [])
     records = gw.token_meter.records_for("mlx_visual_backend")

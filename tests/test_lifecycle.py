@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from fusion_plugins_ecosystem.desk_context import DeskContext
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import (
     PluginInstance,
     PluginLifecycle,
@@ -23,6 +23,7 @@ from fusion_plugins_ecosystem.registry import (
 
 
 # ── 测试用插件工厂 ──
+
 
 def _make_manifest(
     plugin_id: str = "test_plugin",
@@ -51,6 +52,7 @@ def _make_registry(*manifests: PluginManifest) -> PluginRegistry:
 
 
 # ── load ──
+
 
 def test_load_unknown_plugin_raises_keyerror() -> None:
     registry = _make_registry()
@@ -84,6 +86,7 @@ def test_load_string_entry_point_resolves() -> None:
 
 # ── enable / disable ──
 
+
 async def test_enable_no_vram_succeeds() -> None:
     def entry(_desk, _params):
         return {"ok": True}
@@ -108,14 +111,12 @@ async def test_enable_with_vram_succeeds() -> None:
 
 
 async def test_enable_vram_exceeds_budget_crashes() -> None:
-    from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
     def entry(_desk, _params):
         return {"ok": True}
 
     m = _make_manifest(entry_point=entry, vram_mb=200)
-    rt = DeskRuntime(vram_total_mb=100)
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(vram_total_mb=100)
     registry = PluginRegistry(desk=desk)
     registry.register(m)
     lifecycle = PluginLifecycle(registry)
@@ -144,6 +145,7 @@ async def test_disable_unknown_plugin_noop() -> None:
 
 # ── unload ──
 
+
 def test_unload_releases_vram() -> None:
     def entry(_desk, _params):
         return {"ok": True}
@@ -164,6 +166,7 @@ def test_unload_unknown_plugin_noop() -> None:
 
 
 # ── execute ──
+
 
 async def test_execute_sync_entry_point() -> None:
     def entry(_desk, params):
@@ -263,6 +266,7 @@ async def test_execute_crash_sets_crashed_state() -> None:
 
 # ── _maybe_restart ──
 
+
 async def test_maybe_restart_respects_max_restart() -> None:
     def entry(_desk, _params):
         raise RuntimeError("always fail")
@@ -289,6 +293,7 @@ async def test_maybe_restart_unknown_plugin_noop() -> None:
 
 # ── _invoke ──
 
+
 async def test_invoke_uncallable_entry_raises() -> None:
     m = _make_manifest(entry_point=None)
     registry = _make_registry(m)
@@ -301,6 +306,7 @@ async def test_invoke_uncallable_entry_raises() -> None:
 
 
 # ── watcher ──
+
 
 async def test_watcher_detects_stale_heartbeat() -> None:
     def entry(_desk, _params):
@@ -338,6 +344,7 @@ async def test_stop_watcher_when_none_noop() -> None:
 
 # ── PluginInstance dataclass ──
 
+
 def test_plugin_instance_defaults() -> None:
     m = _make_manifest()
     inst = PluginInstance(manifest=m)
@@ -345,3 +352,30 @@ def test_plugin_instance_defaults() -> None:
     assert inst.instance is None
     assert inst.restart_count == 0
     assert inst.last_token_record is None
+
+
+def test_plugin_instance_to_dict() -> None:
+    m = _make_manifest()
+    inst = PluginInstance(manifest=m, state=PluginState.ENABLED, restart_count=2)
+    d = inst.to_dict()
+    assert d["plugin_id"] == "test_plugin"
+    assert d["state"] == "enabled"
+    assert d["restart_count"] == 2
+    assert "last_heartbeat" in d
+
+
+async def test_lifecycle_list_states() -> None:
+    manifest = _make_manifest()
+    registry = _make_registry(manifest)
+    lifecycle = PluginLifecycle(registry)
+    assert lifecycle.list_states() == []
+
+    lifecycle.load("test_plugin")
+    states = lifecycle.list_states()
+    assert len(states) == 1
+    assert states[0]["plugin_id"] == "test_plugin"
+    assert states[0]["state"] == "loaded"
+
+    await lifecycle.enable("test_plugin")
+    states = lifecycle.list_states()
+    assert states[0]["state"] == "enabled"

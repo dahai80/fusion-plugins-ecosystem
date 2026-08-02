@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from fusion_plugins_ecosystem.builtin.caveman_compress import (
     CAVEMAN_MANIFEST,
@@ -14,6 +13,7 @@ from fusion_plugins_ecosystem.builtin.caveman_compress import (
 
 
 # ── _compress_text ──
+
 
 def test_compress_text_removes_hash_comments() -> None:
     text = "# comment\ncode\n# another\nmore"
@@ -79,6 +79,7 @@ def test_compress_text_strips_trailing_whitespace() -> None:
 
 # ── caveman_compress entry point ──
 
+
 def test_caveman_compress_basic() -> None:
     text = "# c\ncode"
     result = caveman_compress(None, {"text": text})
@@ -106,9 +107,7 @@ def test_caveman_compress_keep_comments_param() -> None:
 
 
 def test_caveman_compress_strategy_param() -> None:
-    result = caveman_compress(
-        None, {"text": "x", "strategy": "caveman"}
-    )
+    result = caveman_compress(None, {"text": "x", "strategy": "caveman"})
     assert result["strategy"] == "caveman"
 
 
@@ -140,6 +139,7 @@ def test_caveman_compress_reduces_size_with_comments() -> None:
 
 # ── CAVEMAN_MANIFEST ──
 
+
 def test_caveman_manifest_id() -> None:
     assert CAVEMAN_MANIFEST.id == "caveman_compress"
 
@@ -150,15 +150,17 @@ def test_caveman_manifest_default_mounted() -> None:
 
 def test_caveman_manifest_category() -> None:
     from fusion_plugins_ecosystem.registry import PluginCategory
+
     assert CAVEMAN_MANIFEST.category == PluginCategory.CONTEXT_COMPRESS
 
 
 def test_caveman_manifest_capabilities() -> None:
     from fusion_plugins_ecosystem.registry import PluginCapability
+
     caps = CAVEMAN_MANIFEST.capabilities
     assert PluginCapability.MCP_TOOL in caps
     assert PluginCapability.CLAUDE_SKILL in caps
-    assert PluginCapability.LONG_TASK in caps
+    # LONG_TASK removed: caveman is a fast sync operation
 
 
 def test_caveman_manifest_params() -> None:
@@ -169,17 +171,13 @@ def test_caveman_manifest_params() -> None:
 
 
 def test_caveman_manifest_text_required() -> None:
-    text_param = next(
-        p for p in CAVEMAN_MANIFEST.params if p.name == "text"
-    )
+    text_param = next(p for p in CAVEMAN_MANIFEST.params if p.name == "text")
     assert text_param.required is True
 
 
 def test_caveman_manifest_strategy_enum() -> None:
-    strategy_param = next(
-        p for p in CAVEMAN_MANIFEST.params if p.name == "strategy"
-    )
-    assert strategy_param.enum == ["caveman"]
+    strategy_param = next(p for p in CAVEMAN_MANIFEST.params if p.name == "strategy")
+    assert strategy_param.enum == ("caveman",)
 
 
 def test_caveman_manifest_timeout() -> None:

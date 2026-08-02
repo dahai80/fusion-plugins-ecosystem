@@ -11,6 +11,7 @@ from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
 # ── 显存调度 ──
 
+
 def test_acquire_vram_zero_mb_returns_true() -> None:
     rt = DeskRuntime()
     assert rt.acquire_vram("p1", 0) is True
@@ -51,6 +52,7 @@ def test_release_vram_unknown_plugin_noop() -> None:
 
 # ── 日志采集 ──
 
+
 def test_log_with_desk_logger(caplog: pytest.LogCaptureFixture) -> None:
     desk_logger = logging.getLogger("test_desk_logger")
     desk_logger.setLevel(logging.DEBUG)
@@ -63,7 +65,9 @@ def test_log_with_desk_logger(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_log_falls_back_to_module_logger(caplog: pytest.LogCaptureFixture) -> None:
     rt = DeskRuntime()
-    with caplog.at_level(logging.WARNING, logger="fusion_plugins_ecosystem.desk_runtime"):
+    with caplog.at_level(
+        logging.WARNING, logger="fusion_plugins_ecosystem.desk_runtime"
+    ):
         rt.log("p1", "WARNING", "warning msg")
     assert "plugin=p1" in caplog.text
     assert "warning msg" in caplog.text
@@ -77,6 +81,7 @@ def test_log_invalid_level_defaults_to_info(caplog: pytest.LogCaptureFixture) ->
 
 
 # ── 文件权限 ──
+
 
 def test_check_file_permission_empty_allowlist_returns_true() -> None:
     rt = DeskRuntime()
@@ -104,6 +109,7 @@ def test_grant_permission_overwrites() -> None:
 
 
 # ── API 密钥 ──
+
 
 def test_get_api_key_no_config_center_returns_none() -> None:
     rt = DeskRuntime()
@@ -145,6 +151,7 @@ def test_get_api_key_config_center_exception_returns_none() -> None:
 
 # ── MLX 推理 ──
 
+
 class _FakeMLXClient:
     def __init__(self) -> None:
         self.chat_calls: list[tuple] = []
@@ -172,7 +179,9 @@ async def test_mlx_chat_no_client_raises() -> None:
 async def test_mlx_chat_with_client() -> None:
     fake = _FakeMLXClient()
     rt = DeskRuntime(mlx_client=fake)
-    result = await rt.mlx_chat("qwen3.5", [{"role": "user", "content": "hi"}], temperature=0.5)
+    result = await rt.mlx_chat(
+        "qwen3.5", [{"role": "user", "content": "hi"}], temperature=0.5
+    )
     assert result["content"] == "fake-response"
     assert len(fake.chat_calls) == 1
 
@@ -198,6 +207,7 @@ async def test_mlx_health_with_client() -> None:
 
 
 # ── 节点/调度器桥 ──
+
 
 class _FakeNodeRegistry:
     def __init__(self) -> None:
@@ -254,7 +264,7 @@ def test_gateway_info_default() -> None:
     info = rt.gateway_info()
     assert info["port"] == 8080
     assert info["transport"] == "stdio"
-    assert info["protocol_version"] == "2024-11-05"
+    assert info["protocol_version"] == "2026-07-28"
 
 
 def test_gateway_info_no_port() -> None:

@@ -30,6 +30,11 @@ _LAZY_IMPORTS: dict[str, str] = {
     "TokenKind": "fusion_plugins_ecosystem.token_meter",
     # Claude 适配
     "ClaudeSkillAdapter": "fusion_plugins_ecosystem.claude_adapter",
+    "SkillAdapter": "fusion_plugins_ecosystem.skill_adapter",
+    "SkillBundle": "fusion_plugins_ecosystem.skill_adapter",
+    "AgentAdapter": "fusion_plugins_ecosystem.agent_adapter",
+    "PluginBundle": "fusion_plugins_ecosystem.plugin_bundle",
+    "PluginBundleGenerator": "fusion_plugins_ecosystem.plugin_bundle",
     "MCPExporter": "fusion_plugins_ecosystem.mcp_exporter",
     "ClaudeGateway": "fusion_plugins_ecosystem.claude_gateway",
     "SubagentTask": "fusion_plugins_ecosystem.claude_gateway",
@@ -37,11 +42,26 @@ _LAZY_IMPORTS: dict[str, str] = {
     "CLAUDE_CODE": "fusion_plugins_ecosystem.claude_gateway",
     "CLAUDE_WEB": "fusion_plugins_ecosystem.claude_gateway",
     "CLAUDE_VOLCENGINE": "fusion_plugins_ecosystem.claude_gateway",
-    # Desk 上下文桥
-    "DeskContext": "fusion_plugins_ecosystem.desk_context",
+    # Desk runtime
     "DeskRuntime": "fusion_plugins_ecosystem.desk_runtime",
     # 配置
     "EcosystemConfig": "fusion_plugins_ecosystem.config",
+    # Schema
+    "PluginParamType": "fusion_plugins_ecosystem.schema",
+    "SandboxMode": "fusion_plugins_ecosystem.schema",
+    "MCPAnnotations": "fusion_plugins_ecosystem.schema",
+    "AsyncMeasureContext": "fusion_plugins_ecosystem.token_meter",
+    # MCP Server
+    "MCPServer": "fusion_plugins_ecosystem.server",
+    "MCPHandler": "fusion_plugins_ecosystem.jsonrpc",
+    "StdioTransport": "fusion_plugins_ecosystem.transport",
+    "SSETransport": "fusion_plugins_ecosystem.transport",
+    "HTTPTransport": "fusion_plugins_ecosystem.transport",
+    "create_transport": "fusion_plugins_ecosystem.transport",
+    # Sandbox
+    "PluginSandbox": "fusion_plugins_ecosystem.sandbox",
+    "SandboxHealth": "fusion_plugins_ecosystem.sandbox",
+    "ResourceLimits": "fusion_plugins_ecosystem.sandbox",
 }
 
 _lazy_cache: dict[str, object] = {}
@@ -65,9 +85,7 @@ def __getattr__(name: str) -> object:
                 f"module 'fusion_plugins_ecosystem' has no attribute {name!r} "
                 f"(lazy import {mod_name!r} failed: {exc})"
             ) from None
-    raise AttributeError(
-        f"module 'fusion_plugins_ecosystem' has no attribute {name!r}"
-    )
+    raise AttributeError(f"module 'fusion_plugins_ecosystem' has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:

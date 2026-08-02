@@ -20,19 +20,9 @@ from fusion_plugins_ecosystem.registry import (
     PluginManifest,
     PluginRegistry,
 )
+from fusion_plugins_ecosystem.schema import _PARAM_TYPE_MAP
 
 logger = logging.getLogger(__name__)
-
-
-# JSON Schema 类型映射
-_PARAM_TYPE_MAP: dict[str, str] = {
-    "string": "string",
-    "int": "integer",
-    "bool": "boolean",
-    "array": "array",
-    "object": "object",
-    "float": "number",
-}
 
 
 class ClaudeSkillAdapter:
@@ -65,9 +55,7 @@ class ClaudeSkillAdapter:
                 skills.append(skill)
         return skills
 
-    def _manifest_to_skill(
-        self, manifest: PluginManifest
-    ) -> dict[str, Any]:
+    def _manifest_to_skill(self, manifest: PluginManifest) -> dict[str, Any]:
         """将 PluginManifest 转换为 Claude Skill 描述。"""
         # 构建 input_schema（JSON Schema）
         properties: dict[str, Any] = {}

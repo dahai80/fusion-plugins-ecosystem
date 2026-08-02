@@ -13,11 +13,15 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fusion_plugins_ecosystem.desk_context import DeskContext
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.registry import (
     PluginCapability,
     PluginManifest,
     PluginRegistry,
+)
+from fusion_plugins_ecosystem.schema import (
+    MCP_PROTOCOL_VERSION,
+    _PARAM_TYPE_MAP,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,7 +30,7 @@ logger = logging.getLogger(__name__)
 # MCP Tool 描述模板（基于 MCP 规范的 tools/list 响应项）
 _MCP_TOOL_TEMPLATE = {
     "jsonrpc": "2.0",
-    "protocolVersion": "2024-11-05",  # MCP 协议版本
+    "protocolVersion": MCP_PROTOCOL_VERSION,
 }
 
 
@@ -42,7 +46,7 @@ class MCPExporter:
     def __init__(
         self,
         registry: PluginRegistry,
-        desk: DeskContext | None = None,
+        desk: DeskRuntime | None = None,
     ) -> None:
         self.registry = registry
         self.desk = desk or registry.desk
@@ -61,24 +65,14 @@ class MCPExporter:
                 tools.append(tool)
         return tools
 
-    def _manifest_to_mcp_tool(
-        self, manifest: PluginManifest
-    ) -> dict[str, Any]:
+    def _manifest_to_mcp_tool(self, manifest: PluginManifest) -> dict[str, Any]:
         """将 PluginManifest 转换为 MCP Tool 描述。"""
         # 构建 inputSchema（MCP 复用 JSON Schema）
         properties: dict[str, Any] = {}
         required: list[str] = []
-        type_map = {
-            "string": "string",
-            "int": "integer",
-            "bool": "boolean",
-            "array": "array",
-            "object": "object",
-            "float": "number",
-        }
         for param in manifest.params:
             prop: dict[str, Any] = {
-                "type": type_map.get(param.type, "string"),
+                "type": _PARAM_TYPE_MAP.get(param.type, "string"),
                 "description": param.description,
             }
             if param.enum is not None:
@@ -114,9 +108,7 @@ class MCPExporter:
         """
         # 真实实现：通过 desk.runtime 获取 lifecycle 并执行
         # 此处仅返回结构占位，由 Desk 侧 runtime 注入实际调用
-        self.desk.log(
-            plugin_id, "INFO", "MCP tools/call 转发", arguments=arguments
-        )
+        self.desk.log(plugin_id, "INFO", "MCP tools/call 转发", arguments=arguments)
         return {
             "content": [
                 {
@@ -130,8 +122,8 @@ class MCPExporter:
     def gateway_info(self) -> dict[str, Any]:
         """返回 MCP 网关信息（供 Claude Desktop / Claude Code 对接）。"""
         return {
-            "transport": "stdio",          # Claude Desktop 默认 stdio
+            "transport": "stdio",  # Claude Desktop 默认 stdio
             "port": self.desk.mcp_gateway_port,
             "tools_count": len(self.list_tools()),
-            "protocol_version": "2024-11-05",
+            "protocol_version": MCP_PROTOCOL_VERSION,
         }

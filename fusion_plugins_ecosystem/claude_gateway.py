@@ -26,10 +26,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from fusion_plugins_ecosystem.claude_adapter import ClaudeSkillAdapter
+from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
 from fusion_plugins_ecosystem.config import EcosystemConfig
-from fusion_plugins_ecosystem.desk_context import DeskContext
-from fusion_plugins_ecosystem.lifecycle import PluginLifecycle, PluginState
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
+from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 from fusion_plugins_ecosystem.mcp_exporter import MCPExporter
 from fusion_plugins_ecosystem.registry import (
     PluginCapability,
@@ -42,9 +42,9 @@ logger = logging.getLogger(__name__)
 
 # Claude 接入方式（对应 PRD「支持网页版 Claude、Claude Desktop 客户端、
 # VS Code Claude Code 插件三种接入方式」）
-CLAUDE_DESKTOP = "claude_desktop"        # Claude Desktop 客户端
-CLAUDE_CODE = "claude_code"              # VS Code Claude Code 插件
-CLAUDE_WEB = "claude_web"                 # 网页版 Claude
+CLAUDE_DESKTOP = "claude_desktop"  # Claude Desktop 客户端
+CLAUDE_CODE = "claude_code"  # VS Code Claude Code 插件
+CLAUDE_WEB = "claude_web"  # 网页版 Claude
 CLAUDE_VOLCENGINE = "claude_volcengine"  # 火山方舟 Claude Coding Plan
 
 
@@ -52,9 +52,9 @@ CLAUDE_VOLCENGINE = "claude_volcengine"  # 火山方舟 Claude Coding Plan
 class SubagentTask:
     """Claude Code 子代理任务描述（反向互通）。"""
 
-    name: str                          # 任务名称（如 "batch-refactor"）
-    plugin_id: str                     # 执行插件 ID
-    arguments: dict[str, Any]          # 插件入参
+    name: str  # 任务名称（如 "batch-refactor"）
+    plugin_id: str  # 执行插件 ID
+    arguments: dict[str, Any]  # 插件入参
     timeout_seconds: int | None = None  # 超时（None 继承 config）
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -79,19 +79,17 @@ class ClaudeGateway:
         self,
         registry: PluginRegistry,
         lifecycle: PluginLifecycle | None = None,
-        desk: DeskContext | None = None,
+        desk: DeskRuntime | None = None,
         config: EcosystemConfig | None = None,
         token_meter: TokenMeter | None = None,
     ) -> None:
         self.registry = registry
-        self.desk: DeskContext = desk or registry.desk
-        self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(
-            registry
-        )
+        self.desk: DeskRuntime = desk or registry.desk
+        self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(registry)
         self.config: EcosystemConfig = config or EcosystemConfig()
         self.token_meter: TokenMeter = token_meter or TokenMeter(self.desk)
         # 委托适配器
-        self._skill_adapter = ClaudeSkillAdapter(registry)
+        self._skill_adapter = SkillAdapter(registry)
         self._mcp_exporter = MCPExporter(registry, self.desk)
 
     # ── 正向：Claude 调用 fusion 能力 ──
@@ -104,7 +102,12 @@ class ClaudeGateway:
         if not self.config.auto_export_claude_skill:
             logger.info("claude_gateway: Skill 自动导出已关闭")
             return []
-        return self._skill_adapter.export_all()
+        skills: list[dict[str, Any]] = []
+        for manifest in self.registry.list():
+            skill = self._skill_adapter.export_one(manifest.id)
+            if skill is not None:
+                skills.append(skill)
+        return skills
 
     def export_default_mounted_skills(self) -> list[dict[str, Any]]:
         """导出默认挂载插件 Skill（对应 PRD「默认挂载给 Claude 会话」）。
@@ -113,7 +116,12 @@ class ClaudeGateway:
         """
         if not self.config.default_mount_compressor:
             return []
-        return self._skill_adapter.export_default_mounted()
+        skills: list[dict[str, Any]] = []
+        for manifest in self.registry.default_mounted():
+            skill = self._skill_adapter.export_one(manifest.id)
+            if skill is not None:
+                skills.append(skill)
+        return skills
 
     def list_mcp_tools(self) -> list[dict[str, Any]]:
         """列出 MCP Tools（供给 Claude Desktop / Claude Code 对接）。
@@ -147,9 +155,7 @@ class ClaudeGateway:
         # 校验插件是否具备 MCP_TOOL 能力
         manifest = self.registry.get(plugin_id)
         if manifest is None:
-            return self._mcp_error(
-                plugin_id, f"插件 {plugin_id!r} 未注册"
-            )
+            return self._mcp_error(plugin_id, f"插件 {plugin_id!r} 未注册")
         if PluginCapability.MCP_TOOL not in manifest.capabilities:
             return self._mcp_error(
                 plugin_id,
@@ -178,40 +184,30 @@ class ClaudeGateway:
         """返回 MCP 网关元信息（供 Claude Desktop / Claude Code 配置对接）。"""
         info = self._mcp_exporter.gateway_info()
         info["skills_count"] = len(self.export_skills())
-        info["default_mounted_count"] = len(
-            self.export_default_mounted_skills()
-        )
+        info["default_mounted_count"] = len(self.export_default_mounted_skills())
         info["config"] = self.config.to_dict()
         return info
 
     # ── 反向：fusion-desk 拉起 Claude Code 子代理 ──
 
-    async def dispatch_subagent(
-        self, task: SubagentTask
-    ) -> dict[str, Any]:
+    async def dispatch_subagent(self, task: SubagentTask) -> dict[str, Any]:
         """拉起 Claude Code 子代理执行任务（反向互通）。
 
-        对应 PRD「fusion-desk 可主动拉起 Claude Code 子代理，完成项目
-       批量重构、PR 生成、代码优化」。
+         对应 PRD「fusion-desk 可主动拉起 Claude Code 子代理，完成项目
+        批量重构、PR 生成、代码优化」。
 
-        受 config.subagent_timeout_destroy 控制：超时后自动销毁。
+         受 config.subagent_timeout_destroy 控制：超时后自动销毁。
         """
         manifest = self.registry.get(task.plugin_id)
         if manifest is None:
-            raise KeyError(
-                f"子代理任务 {task.name!r} 的插件 {task.plugin_id!r} 未注册"
-            )
-        # 应用 config 默认超时
+            raise KeyError(f"子代理任务 {task.name!r} 的插件 {task.plugin_id!r} 未注册")
+        # 计算 timeout：task > manifest > config
         timeout = (
             task.timeout_seconds
             or manifest.timeout_seconds
             or self.config.subagent_timeout_seconds
         )
-        # 临时覆写 lifecycle 超时（仅本次任务）
-        original_timeout = manifest.timeout_seconds
-        original_state = self.lifecycle._instances.get(task.plugin_id)
         try:
-            manifest.timeout_seconds = timeout
             await self.lifecycle.enable(task.plugin_id)
             with self.token_meter.measure(
                 task.plugin_id,
@@ -222,7 +218,9 @@ class ClaudeGateway:
                 },
             ):
                 result = await self.lifecycle.execute(
-                    task.plugin_id, task.arguments
+                    task.plugin_id,
+                    task.arguments,
+                    timeout_override=timeout,
                 )
             return {
                 "task": task.name,
@@ -253,8 +251,6 @@ class ClaudeGateway:
                 "state": "failed",
                 "error": str(exc),
             }
-        finally:
-            manifest.timeout_seconds = original_timeout
 
     def list_subagent_capable_plugins(self) -> list[str]:
         """列出具备 SUBAGENT 能力的插件 ID（供 Claude Code 子代理调度面板）。"""
@@ -266,9 +262,7 @@ class ClaudeGateway:
 
     # ── 火山方舟 Claude Coding Plan 鉴权 ──
 
-    def store_credentials(
-        self, provider: str, api_key: str
-    ) -> None:
+    def store_credentials(self, provider: str, api_key: str) -> None:
         """存储 Claude API 密钥到 Desk 配置中心。
 
         兼容火山方舟 Claude Coding Plan 套餐鉴权：
