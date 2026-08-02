@@ -46,6 +46,14 @@ class PluginInstance:
     # 最近一次执行的 token 记录（由 token_meter 写入）
     last_token_record: Any | None = None
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "plugin_id": self.manifest.id,
+            "state": self.state.value,
+            "restart_count": self.restart_count,
+            "last_heartbeat": self.last_heartbeat,
+        }
+
 
 class PluginLifecycle:
     """插件生命周期管理器。
@@ -297,3 +305,7 @@ class PluginLifecycle:
                     )
                     await self._maybe_restart(plugin_id)
             await asyncio.sleep(self.HEARTBEAT_STALE // 2)
+
+    def list_states(self) -> list[dict[str, Any]]:
+        """返回所有插件实例状态快照（供消费端查询）。"""
+        return [inst.to_dict() for inst in self._instances.values()]

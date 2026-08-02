@@ -57,6 +57,16 @@ class PluginParam:
     default: Any = None
     enum: tuple[str, ...] | None = None
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "type": str(self.type),
+            "description": self.description,
+            "required": self.required,
+            "default": self.default,
+            "enum": list(self.enum) if self.enum else None,
+        }
+
 
 @dataclass(frozen=True)
 class PluginManifest:
@@ -81,6 +91,26 @@ class PluginManifest:
     depends_on: tuple[str, ...] = ()
     # 沙箱运行模式
     sandbox_mode: SandboxMode = SandboxMode.INLINE
+
+    def to_dict(self) -> dict[str, Any]:
+        ep = self.entry_point
+        if callable(ep):
+            ep = f"{ep.__module__}:{ep.__qualname__}"
+        return {
+            "id": self.id,
+            "name": self.name,
+            "version": self.version,
+            "category": self.category.value,
+            "description": self.description,
+            "capabilities": [c.value for c in self.capabilities],
+            "params": [p.to_dict() for p in self.params],
+            "entry_point": ep,
+            "default_mounted": self.default_mounted,
+            "timeout_seconds": self.timeout_seconds,
+            "vram_mb": self.vram_mb,
+            "depends_on": list(self.depends_on),
+            "sandbox_mode": self.sandbox_mode.value,
+        }
 
 
 class PluginRegistry:
@@ -121,6 +151,12 @@ class PluginRegistry:
         if category is not None:
             result = [m for m in result if m.category == category]
         return result
+
+    def list_as_dicts(
+        self, category: PluginCategory | None = None
+    ) -> list[dict[str, Any]]:
+        """列出插件为 JSON 友好字典（供 Swift/Kotlin/TS 消费端）。"""
+        return [m.to_dict() for m in self.list(category=category)]
 
     def register_builtin(self) -> None:
         """注册内置插件（自动扫描 builtin 包）。

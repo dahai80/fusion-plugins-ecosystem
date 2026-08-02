@@ -344,3 +344,30 @@ def test_plugin_instance_defaults() -> None:
     assert inst.instance is None
     assert inst.restart_count == 0
     assert inst.last_token_record is None
+
+
+def test_plugin_instance_to_dict() -> None:
+    m = _make_manifest()
+    inst = PluginInstance(manifest=m, state=PluginState.ENABLED, restart_count=2)
+    d = inst.to_dict()
+    assert d["plugin_id"] == "test_plugin"
+    assert d["state"] == "enabled"
+    assert d["restart_count"] == 2
+    assert "last_heartbeat" in d
+
+
+async def test_lifecycle_list_states() -> None:
+    manifest = _make_manifest()
+    registry = _make_registry(manifest)
+    lifecycle = PluginLifecycle(registry)
+    assert lifecycle.list_states() == []
+
+    lifecycle.load("test_plugin")
+    states = lifecycle.list_states()
+    assert len(states) == 1
+    assert states[0]["plugin_id"] == "test_plugin"
+    assert states[0]["state"] == "loaded"
+
+    await lifecycle.enable("test_plugin")
+    states = lifecycle.list_states()
+    assert states[0]["state"] == "enabled"

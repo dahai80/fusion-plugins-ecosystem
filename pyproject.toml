@@ -8,15 +8,14 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0.0",
-    "fusion-desk>=0.1.0",
 ]
 
 [project.scripts]
 fusion-plugin-server = "fusion_plugins_ecosystem.server:main"
 
 [project.optional-dependencies]
-mcp = [
-    # MCP 协议 SDK，仅在对外暴露时启用
+desk = [
+    "fusion-desk>=0.1.0",
 ]
 test = [
     "pytest>=8.0.0",
@@ -24,7 +23,7 @@ test = [
     "pytest-mock>=3.14.0",
 ]
 dev = [
-    "fusion-plugins-ecosystem[test]",
+    "fusion-plugins-ecosystem[test,desk]",
 ]
 
 [tool.pytest.ini_options]
