@@ -18,6 +18,7 @@ from typing import Any
 
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.registry import PluginManifest, PluginRegistry
+from fusion_plugins_ecosystem.sandbox import PluginSandbox, ResourceLimits
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class PluginLifecycle:
         self.desk: DeskRuntime = registry.desk
         self._instances: dict[str, PluginInstance] = {}
         self._instances_lock = asyncio.Lock()
+        self._sandbox = PluginSandbox()
         # 异常检测任务句柄
         self._watcher_task: asyncio.Task[None] | None = None
 
@@ -147,11 +149,14 @@ class PluginLifecycle:
         self.desk.log(plugin_id, "INFO", "插件已启用")
         return inst
 
-    def disable(self, plugin_id: str) -> None:
-        """禁用插件（释放显存）。"""
+    async def disable(self, plugin_id: str) -> None:
+        """禁用插件（释放显存 + 终止沙箱进程）。"""
         inst = self._instances.get(plugin_id)
         if inst is None:
             return
+        from fusion_plugins_ecosystem.schema import SandboxMode
+        if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
+            await self._sandbox.kill(plugin_id)
         if inst.manifest.vram_mb > 0:
             self.desk.release_vram(plugin_id)
         self._transition(inst, PluginState.DISABLED)
@@ -209,9 +214,19 @@ class PluginLifecycle:
     async def _invoke(
         self, inst: PluginInstance, params: dict[str, Any]
     ) -> Any:
-        """实际调用插件入口。"""
+        """实际调用插件入口。根据 sandbox_mode 选择进程内或沙箱执行。"""
+        from fusion_plugins_ecosystem.schema import SandboxMode
+
+        if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
+            return await self._invoke_sandbox(inst, params)
+
+        return await self._invoke_inline(inst, params)
+
+    async def _invoke_inline(
+        self, inst: PluginInstance, params: dict[str, Any]
+    ) -> Any:
+        """进程内调用插件入口。"""
         instance = inst.instance
-        # 约定：插件入口接受 (desk_context, params) 并返回结果
         if inspect.iscoroutinefunction(instance):
             return await instance(self.desk, params)
         if callable(instance):
@@ -219,6 +234,22 @@ class PluginLifecycle:
         raise RuntimeError(
             f"插件 {inst.manifest.id!r} 入口不可调用"
         )
+
+    async def _invoke_sandbox(
+        self, inst: PluginInstance, params: dict[str, Any]
+    ) -> Any:
+        """沙箱进程调用插件入口。"""
+        plugin_id = inst.manifest.id
+        if self._sandbox.health(plugin_id) != "alive":
+            await self._sandbox.spawn(
+                plugin_id,
+                entry_point=inst.manifest.entry_point,
+                config=params,
+                limits=ResourceLimits(
+                    timeout_seconds=inst.manifest.timeout_seconds or self.DEFAULT_TIMEOUT,
+                ),
+            )
+        return await self._sandbox.call(plugin_id, "execute", params)
 
     async def _maybe_restart(self, plugin_id: str) -> None:
         """崩溃后自动重启（限制 MAX_RESTART 次）。"""

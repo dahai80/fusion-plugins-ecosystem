@@ -130,7 +130,7 @@ async def test_disable_releases_vram() -> None:
     registry = _make_registry(m)
     lifecycle = PluginLifecycle(registry)
     await lifecycle.enable("test_plugin")
-    lifecycle.disable("test_plugin")
+    await lifecycle.disable("test_plugin")
     assert lifecycle._instances["test_plugin"].state == PluginState.DISABLED
     assert lifecycle.desk.vram_usage() == {}
 
@@ -138,7 +138,7 @@ async def test_disable_releases_vram() -> None:
 async def test_disable_unknown_plugin_noop() -> None:
     registry = _make_registry()
     lifecycle = PluginLifecycle(registry)
-    lifecycle.disable("unknown")  # 不应抛异常
+    await lifecycle.disable("unknown")  # 不应抛异常
 
 
 # ── unload ──

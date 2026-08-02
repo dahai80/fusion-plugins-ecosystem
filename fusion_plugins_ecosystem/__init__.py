@@ -53,6 +53,10 @@ _LAZY_IMPORTS: dict[str, str] = {
     "SSETransport": "fusion_plugins_ecosystem.transport",
     "HTTPTransport": "fusion_plugins_ecosystem.transport",
     "create_transport": "fusion_plugins_ecosystem.transport",
+    # Sandbox
+    "PluginSandbox": "fusion_plugins_ecosystem.sandbox",
+    "SandboxHealth": "fusion_plugins_ecosystem.sandbox",
+    "ResourceLimits": "fusion_plugins_ecosystem.sandbox",
 }
 
 _lazy_cache: dict[str, object] = {}
