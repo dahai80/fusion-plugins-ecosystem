@@ -64,6 +64,8 @@ class EcosystemConfig:
     # ── 计量 ──
     # Token 记录最大条数
     max_token_records: int = 10000
+    # Token 记录持久化路径（None=纯内存）
+    token_persist_path: str | None = None
 
     # ── 变更回调 ──
     _observers: list[Callable[[str, Any, Any], None]] = field(
@@ -88,6 +90,7 @@ class EcosystemConfig:
             "mcp_port": self.mcp_port,
             "sandbox_default_mode": self.sandbox_default_mode,
             "max_token_records": self.max_token_records,
+            "token_persist_path": self.token_persist_path,
         }
 
     @classmethod
@@ -146,6 +149,7 @@ class EcosystemConfig:
             mcp_port=_safe_int("mcp_port", 0, 65535),
             sandbox_default_mode=_safe_str("sandbox_default_mode", ("inline", "process")),
             max_token_records=_safe_int("max_token_records", 100),
+            token_persist_path=merged.get("token_persist_path"),
         )
 
         for w in warnings:
