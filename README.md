@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/base-fusion--desk-orange" alt="fusion-desk">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-301%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-362%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/coverage-99%25-success" alt="Coverage">
 </p>
 
@@ -75,7 +75,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 301 passed
+# → 362 passed
 ```
 
 ```python
@@ -184,7 +184,7 @@ fusion-plugins-ecosystem/
 │       ├── __init__.py
 │       └
         caveman_compress.py        ← built-in token compressor
-└── tests/                        ← 301 tests
+└── tests/                        ← 362 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -200,8 +200,9 @@ fusion-plugins-ecosystem/
     ├── test_transport_server.py
     ├── test_sandbox.py
     ├── test_phase3_adapters.py
-    └
-    test_phase4_meter_config.py
+    ├── test_phase4_meter_config.py
+    ├── test_schema.py
+    └── test_integration.py
 ```
 
 ## 🔧 Configuration (one-click panel)
@@ -249,7 +250,7 @@ restored = EcosystemConfig.from_dict(d)
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **301 passed**.
+Latest run: **362 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -335,7 +336,7 @@ python3 -m venv .venv
 
 # 运行测试
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 301 passed
+# → 362 passed
 ```
 
 ### 最小用法
@@ -440,7 +441,7 @@ MY_MANIFEST = PluginManifest(
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-最新结果：**301 passed**。
+最新结果：**362 passed**。
 
 ## ⚠️ 技术约束
 
