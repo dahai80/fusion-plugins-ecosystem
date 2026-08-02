@@ -379,3 +379,158 @@ async def test_lifecycle_list_states() -> None:
     await lifecycle.enable("test_plugin")
     states = lifecycle.list_states()
     assert states[0]["state"] == "enabled"
+
+
+# ── 依赖自动加载 ──
+
+
+def test_load_auto_loads_dependencies() -> None:
+    dep = _make_manifest(plugin_id="dep_a", entry_point=lambda d, p: None)
+    main_w_dep = PluginManifest(
+        id="main_b",
+        name="Main",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="depends on dep_a",
+        capabilities=[PluginCapability.CLAUDE_SKILL],
+        entry_point=lambda d, p: None,
+        depends_on=("dep_a",),
+    )
+    registry = PluginRegistry()
+    registry.register(dep)
+    registry.register(main_w_dep)
+    lifecycle = PluginLifecycle(registry)
+    lifecycle.load("main_b")
+    assert "dep_a" in lifecycle._instances
+    assert "main_b" in lifecycle._instances
+
+
+def test_load_circular_dependency_raises() -> None:
+    a = PluginManifest(
+        id="a",
+        name="A",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=[],
+        entry_point=lambda d, p: None,
+        depends_on=("b",),
+    )
+    b = PluginManifest(
+        id="b",
+        name="B",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=[],
+        entry_point=lambda d, p: None,
+        depends_on=("a",),
+    )
+    registry = PluginRegistry()
+    registry.register(a)
+    registry.register(b)
+    lifecycle = PluginLifecycle(registry)
+    with pytest.raises(ValueError, match="循环依赖"):
+        lifecycle.load("a")
+
+
+def test_load_missing_dependency_raises() -> None:
+    m = PluginManifest(
+        id="orphan",
+        name="Orphan",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=[],
+        entry_point=lambda d, p: None,
+        depends_on=("nonexistent",),
+    )
+    registry = PluginRegistry()
+    registry.register(m)
+    lifecycle = PluginLifecycle(registry)
+    with pytest.raises(KeyError, match="未注册"):
+        lifecycle.load("orphan")
+
+
+async def test_per_plugin_max_restart_overrides_global() -> None:
+    def entry(_desk, _params):
+        raise RuntimeError("always fail")
+
+    m = PluginManifest(
+        id="limited",
+        name="Limited",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=[PluginCapability.CLAUDE_SKILL],
+        entry_point=entry,
+        max_restart=0,
+    )
+    registry = PluginRegistry()
+    registry.register(m)
+    lifecycle = PluginLifecycle(registry)
+    lifecycle.MAX_RESTART = 3
+    await lifecycle.enable("limited")
+    with pytest.raises(RuntimeError, match="always fail"):
+        await lifecycle.execute("limited", {})
+    inst = lifecycle._instances["limited"]
+    assert inst.state == PluginState.CRASHED
+
+
+async def test_per_plugin_timeout_overrides_global() -> None:
+    async def entry(_desk, _params):
+        await asyncio.sleep(10)
+        return {}
+
+    m = PluginManifest(
+        id="quick_timeout",
+        name="Quick",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=[PluginCapability.CLAUDE_SKILL],
+        entry_point=entry,
+        timeout_seconds=1,
+    )
+    registry = PluginRegistry()
+    registry.register(m)
+    lifecycle = PluginLifecycle(registry)
+    lifecycle.DEFAULT_TIMEOUT = 600
+    await lifecycle.enable("quick_timeout")
+    with pytest.raises(asyncio.TimeoutError):
+        await lifecycle.execute("quick_timeout", {})
+
+
+# ── 状态查询 API ──
+
+
+def test_get_state_returns_loaded() -> None:
+    m = _make_manifest(entry_point=lambda d, p: None)
+    registry = _make_registry(m)
+    lifecycle = PluginLifecycle(registry)
+    lifecycle.load("test_plugin")
+    state = lifecycle.get_state("test_plugin")
+    assert state is not None
+    assert state["plugin_id"] == "test_plugin"
+    assert state["state"] == "loaded"
+
+
+def test_get_state_returns_none_for_unknown() -> None:
+    registry = _make_registry()
+    lifecycle = PluginLifecycle(registry)
+    assert lifecycle.get_state("no_such") is None
+
+
+def test_list_by_state_filters() -> None:
+    m1 = _make_manifest(plugin_id="a", entry_point=lambda d, p: None)
+    m2 = _make_manifest(plugin_id="b", entry_point=lambda d, p: None)
+    registry = PluginRegistry()
+    registry.register(m1)
+    registry.register(m2)
+    lifecycle = PluginLifecycle(registry)
+    lifecycle.load("a")
+    lifecycle.load("b")
+    loaded = lifecycle.list_by_state(PluginState.LOADED)
+    assert len(loaded) == 2
+    enabled = lifecycle.list_by_state(PluginState.ENABLED)
+    assert len(enabled) == 0

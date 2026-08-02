@@ -164,7 +164,7 @@ def test_list_mcp_tools_default_on() -> None:
     gw, _ = _make_gateway([_make_manifest("p1")])
     tools = gw.list_mcp_tools()
     assert len(tools) == 1
-    assert tools[0]["name"] == "p1"
+    assert tools[0]["name"] == "mcp__plugin__p1"
 
 
 def test_list_mcp_tools_disabled_by_config() -> None:
@@ -482,7 +482,7 @@ def test_gateway_with_builtin_caveman() -> None:
     assert skills[0]["name"] == "caveman_compress"
     mcp_tools = gw.list_mcp_tools()
     assert len(mcp_tools) == 1
-    assert mcp_tools[0]["name"] == "caveman_compress"
+    assert mcp_tools[0]["name"] == "mcp__plugin__caveman_compress"
 
 
 async def test_gateway_invoke_caveman_via_mcp() -> None:

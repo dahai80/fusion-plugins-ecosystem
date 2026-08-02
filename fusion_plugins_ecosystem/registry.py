@@ -91,6 +91,14 @@ class PluginManifest:
     depends_on: tuple[str, ...] = ()
     # 沙箱运行模式
     sandbox_mode: SandboxMode = SandboxMode.INLINE
+    # 插件级最大重启次数（None 表示继承全局 MAX_RESTART）
+    max_restart: int | None = None
+    # MCP 工具输出 JSON Schema（MCP 2026-07-28 outputSchema）
+    output_schema: dict[str, Any] | None = None
+    # MCP 工具行为注解
+    mcp_annotations: Any = None
+    # 子代理使用的 Claude 模型（None 表示使用默认模型）
+    agent_model: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         ep = self.entry_point
@@ -110,6 +118,10 @@ class PluginManifest:
             "vram_mb": self.vram_mb,
             "depends_on": list(self.depends_on),
             "sandbox_mode": self.sandbox_mode.value,
+            "max_restart": self.max_restart,
+            "output_schema": self.output_schema,
+            "mcp_annotations": self.mcp_annotations.to_dict() if self.mcp_annotations else None,
+            "agent_model": self.agent_model,
         }
 
 
@@ -127,9 +139,15 @@ class PluginRegistry:
         self.desk: DeskRuntime = desk or DeskRuntime()
 
     def register(self, manifest: PluginManifest) -> None:
-        """注册插件清单。"""
-        if manifest.id in self._manifests:
-            raise ValueError(f"插件 {manifest.id!r} 已注册")
+        """注册插件清单。相同 ID + 相同版本幂等；不同版本拒绝。"""
+        existing = self._manifests.get(manifest.id)
+        if existing is not None:
+            if existing.version == manifest.version:
+                logger.debug("registry: 插件 %s v%s 重复注册（幂等忽略）", manifest.id, manifest.version)
+                return
+            raise ValueError(
+                f"插件 {manifest.id!r} 版本冲突: 已注册 v{existing.version}, 尝试注册 v{manifest.version}"
+            )
         self._manifests[manifest.id] = manifest
         self.desk.registered_plugin_ids.add(manifest.id)
         logger.info("registry: 插件 %s v%s 已注册", manifest.id, manifest.version)
@@ -157,6 +175,45 @@ class PluginRegistry:
     ) -> list[dict[str, Any]]:
         """列出插件为 JSON 友好字典（供 Swift/Kotlin/TS 消费端）。"""
         return [m.to_dict() for m in self.list(category=category)]
+
+    def resolve_load_order(
+        self, plugin_ids: list[str] | None = None
+    ) -> list[str]:
+        """按依赖拓扑排序返回加载顺序。
+
+        Args:
+            plugin_ids: 需要加载的插件 ID 列表，None 表示全部。
+
+        Returns:
+            排序后的插件 ID 列表（依赖在前）。
+
+        Raises:
+            ValueError: 存在循环依赖。
+            KeyError: 依赖的插件未注册。
+        """
+        targets = set(plugin_ids) if plugin_ids else set(self._manifests.keys())
+        visited: set[str] = set()
+        order: list[str] = []
+        in_stack: set[str] = set()
+
+        def visit(pid: str) -> None:
+            if pid in visited:
+                return
+            if pid in in_stack:
+                raise ValueError(f"循环依赖: {' → '.join(in_stack)} → {pid}")
+            manifest = self._manifests.get(pid)
+            if manifest is None:
+                raise KeyError(f"依赖插件 {pid!r} 未注册")
+            in_stack.add(pid)
+            for dep in manifest.depends_on:
+                visit(dep)
+            in_stack.discard(pid)
+            visited.add(pid)
+            order.append(pid)
+
+        for pid in sorted(targets):
+            visit(pid)
+        return order
 
     def register_builtin(self) -> None:
         """注册内置插件（自动扫描 builtin 包）。

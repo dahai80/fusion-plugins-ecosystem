@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from fusion_plugins_ecosystem.config import EcosystemConfig
@@ -26,6 +27,19 @@ from fusion_plugins_ecosystem.schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+_MCP_TOOL_NAMESPACE_PREFIX = "mcp__plugin__"
+
+
+def _extract_plugin_id(tool_name: str) -> str | None:
+    """从 MCP 命名空间工具名提取 plugin_id。
+
+    'mcp__plugin__caveman_compress' → 'caveman_compress'
+    无命名空间前缀时原样返回（向后兼容）。
+    """
+    if tool_name.startswith(_MCP_TOOL_NAMESPACE_PREFIX):
+        return tool_name[len(_MCP_TOOL_NAMESPACE_PREFIX) :]
+    return tool_name if tool_name else None
 
 
 def _error_response(
@@ -54,6 +68,7 @@ class MCPHandler:
         lifecycle: PluginLifecycle | None = None,
         desk: DeskRuntime | None = None,
         config: EcosystemConfig | None = None,
+        rate_limit_per_minute: int = 60,
     ) -> None:
         self.registry = registry
         self.lifecycle = lifecycle or PluginLifecycle(registry)
@@ -61,6 +76,11 @@ class MCPHandler:
         self.config = config or EcosystemConfig()
         self._initialized = False
         self._client_info: dict[str, Any] = {}
+        # C12: 会话管理
+        self._sessions: dict[str, dict[str, Any]] = {}
+        # C13: 速率限制
+        self._rate_limit = rate_limit_per_minute
+        self._call_timestamps: dict[str, list[float]] = {}
 
     async def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """分发 JSON-RPC 请求。"""
@@ -150,8 +170,25 @@ class MCPHandler:
         """MCP tools/call：调用插件。"""
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
+        session_id = params.get("_meta", {}).get("sessionId")
 
-        manifest = self.registry.get(tool_name)
+        plugin_id = _extract_plugin_id(tool_name)
+        if plugin_id is None:
+            return {
+                "content": [
+                    {"type": "text", "text": f"Invalid tool name: {tool_name}"}
+                ],
+                "isError": True,
+            }
+
+        # C13: 速率限制检查
+        if not self._check_rate_limit(plugin_id):
+            return {
+                "content": [{"type": "text", "text": f"Rate limit exceeded for {tool_name}"}],
+                "isError": True,
+            }
+
+        manifest = self.registry.get(plugin_id)
         if manifest is None:
             return {
                 "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
@@ -159,9 +196,12 @@ class MCPHandler:
             }
 
         try:
-            result = await self.lifecycle.execute(tool_name, arguments)
+            result = await self.lifecycle.execute(plugin_id, arguments)
             content = self._format_result(result)
-            self.desk.log(tool_name, "INFO", "MCP tools/call completed")
+            self.desk.log(plugin_id, "INFO", "MCP tools/call completed")
+            # C12: 记录会话
+            if session_id:
+                self._touch_session(session_id, plugin_id)
             return {"content": content, "isError": False}
         except Exception as e:
             logger.error("jsonrpc: tools/call %s error: %s", tool_name, e)
@@ -210,6 +250,46 @@ class MCPHandler:
 
     # ── 内部工具 ──
 
+    # C12: 会话管理
+    def _touch_session(self, session_id: str, plugin_id: str) -> None:
+        session = self._sessions.setdefault(session_id, {
+            "created_at": time.time(),
+            "last_active": time.time(),
+            "calls": [],
+        })
+        session["last_active"] = time.time()
+        session["calls"].append({"plugin_id": plugin_id, "ts": time.time()})
+        if len(session["calls"]) > 1000:
+            session["calls"] = session["calls"][-500:]
+
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
+        return self._sessions.get(session_id)
+
+    def list_sessions(self) -> list[dict[str, Any]]:
+        return [
+            {"session_id": sid, **s} for sid, s in self._sessions.items()
+        ]
+
+    def prune_sessions(self, max_age_seconds: float = 3600) -> int:
+        cutoff = time.time() - max_age_seconds
+        stale = [sid for sid, s in self._sessions.items() if s["last_active"] < cutoff]
+        for sid in stale:
+            del self._sessions[sid]
+        return len(stale)
+
+    # C13: 速率限制
+    def _check_rate_limit(self, plugin_id: str) -> bool:
+        now = time.time()
+        timestamps = self._call_timestamps.get(plugin_id, [])
+        cutoff = now - 60.0
+        timestamps = [t for t in timestamps if t > cutoff]
+        if len(timestamps) >= self._rate_limit:
+            logger.warning("jsonrpc: 插件 %s 速率限制触发 (%d/min)", plugin_id, self._rate_limit)
+            return False
+        timestamps.append(now)
+        self._call_timestamps[plugin_id] = timestamps
+        return True
+
     def _manifest_to_mcp_tool(self, manifest: Any) -> dict[str, Any] | None:
         """将 PluginManifest 转为 MCP Tool 描述（2026-07-28 增强）。"""
         properties: dict[str, Any] = {}
@@ -239,7 +319,7 @@ class MCPHandler:
             annotations = manifest.mcp_annotations
 
         tool: dict[str, Any] = {
-            "name": manifest.id,
+            "name": f"{_MCP_TOOL_NAMESPACE_PREFIX}{manifest.id}",
             "title": manifest.name,
             "description": manifest.description,
             "inputSchema": input_schema,

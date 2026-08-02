@@ -38,11 +38,25 @@ def test_register_adds_to_desk_registered_ids() -> None:
     assert "p1" in registry.desk.registered_plugin_ids
 
 
-def test_register_duplicate_raises() -> None:
+def test_register_duplicate_same_version_idempotent() -> None:
     registry = PluginRegistry()
     registry.register(_make_manifest("p1"))
-    with pytest.raises(ValueError, match="已注册"):
-        registry.register(_make_manifest("p1"))
+    registry.register(_make_manifest("p1"))  # 相同版本幂等
+
+
+def test_register_duplicate_different_version_raises() -> None:
+    registry = PluginRegistry()
+    registry.register(_make_manifest("p1"))
+    m2 = PluginManifest(
+        id="p1",
+        name="Test",
+        version="2.0.0",
+        category=PluginCategory.CUSTOM,
+        description="conflict",
+        entry_point=lambda d, p: None,
+    )
+    with pytest.raises(ValueError, match="版本冲突"):
+        registry.register(m2)
 
 
 def test_unregister_removes() -> None:
@@ -265,3 +279,25 @@ def test_list_as_dicts_with_category_filter() -> None:
     result = registry.list_as_dicts(category=PluginCategory.MLX_INFERENCE)
     assert len(result) == 1
     assert result[0]["category"] == "mlx_inference"
+
+
+# ── CLD-04: agent_model ──
+
+
+def test_manifest_agent_model_default_none() -> None:
+    m = _make_manifest("p1")
+    assert m.agent_model is None
+
+
+def test_manifest_agent_model_in_to_dict() -> None:
+    m = PluginManifest(
+        id="p1",
+        name="Agent",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="d",
+        entry_point=lambda d, p: None,
+        agent_model="claude-sonnet-5",
+    )
+    d = m.to_dict()
+    assert d["agent_model"] == "claude-sonnet-5"

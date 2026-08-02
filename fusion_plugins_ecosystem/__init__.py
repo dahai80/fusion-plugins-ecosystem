@@ -10,7 +10,7 @@ Lazy Import 机制（与 fusion-desk 一致）：
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __app_name__ = "Fusion-Plugins-Ecosystem"
 
 # ── Lazy Import 注册表 ──
@@ -35,6 +35,9 @@ _LAZY_IMPORTS: dict[str, str] = {
     "AgentAdapter": "fusion_plugins_ecosystem.agent_adapter",
     "PluginBundle": "fusion_plugins_ecosystem.plugin_bundle",
     "PluginBundleGenerator": "fusion_plugins_ecosystem.plugin_bundle",
+    "HookAdapter": "fusion_plugins_ecosystem.hook_adapter",
+    "HookDef": "fusion_plugins_ecosystem.hook_adapter",
+    "HookEvent": "fusion_plugins_ecosystem.hook_adapter",
     "MCPExporter": "fusion_plugins_ecosystem.mcp_exporter",
     "ClaudeGateway": "fusion_plugins_ecosystem.claude_gateway",
     "SubagentTask": "fusion_plugins_ecosystem.claude_gateway",

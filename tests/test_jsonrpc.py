@@ -147,7 +147,7 @@ async def test_tools_list_returns_mcp_tools() -> None:
     result = await handler._tools_list({})
     assert len(result["tools"]) == 1
     tool = result["tools"][0]
-    assert tool["name"] == "test_tool"
+    assert tool["name"] == "mcp__plugin__test_tool"
     assert tool["title"] == "Test Tool"
     assert "inputSchema" in tool
     assert "annotations" in tool
@@ -293,3 +293,123 @@ async def test_handle_ping_returns_result() -> None:
         }
     )
     assert resp["result"] == {}
+
+
+# ── C12: 会话管理 ──
+
+
+async def test_session_tracking_on_tools_call() -> None:
+    m = PluginManifest(
+        id="sess_tool",
+        name="Sess",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=(PluginCapability.MCP_TOOL,),
+        entry_point=lambda d, p: {"ok": True},
+    )
+    registry = _make_registry(m)
+    handler = MCPHandler(registry=registry)
+    await handler.lifecycle.enable("sess_tool")
+    result = await handler._tools_call({
+        "name": "mcp__plugin__sess_tool",
+        "arguments": {},
+        "_meta": {"sessionId": "abc-123"},
+    })
+    assert result["isError"] is False
+    session = handler.get_session("abc-123")
+    assert session is not None
+    assert len(session["calls"]) == 1
+    assert session["calls"][0]["plugin_id"] == "sess_tool"
+
+
+async def test_list_sessions() -> None:
+    registry = _make_registry()
+    handler = MCPHandler(registry=registry)
+    handler._sessions["s1"] = {"created_at": 1.0, "last_active": 2.0, "calls": []}
+    handler._sessions["s2"] = {"created_at": 3.0, "last_active": 4.0, "calls": []}
+    sessions = handler.list_sessions()
+    assert len(sessions) == 2
+
+
+async def test_prune_sessions() -> None:
+    import time
+    registry = _make_registry()
+    handler = MCPHandler(registry=registry)
+    handler._sessions["old"] = {"created_at": 1.0, "last_active": 1.0, "calls": []}
+    handler._sessions["new"] = {"created_at": time.time(), "last_active": time.time(), "calls": []}
+    pruned = handler.prune_sessions(max_age_seconds=60)
+    assert pruned == 1
+    assert "old" not in handler._sessions
+    assert "new" in handler._sessions
+
+
+# ── C13: 速率限制 ──
+
+
+async def test_rate_limit_allows_under_limit() -> None:
+    m = PluginManifest(
+        id="rl_tool",
+        name="RL",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=(PluginCapability.MCP_TOOL,),
+        entry_point=lambda d, p: {"ok": True},
+    )
+    registry = _make_registry(m)
+    handler = MCPHandler(registry=registry, rate_limit_per_minute=5)
+    await handler.lifecycle.enable("rl_tool")
+    result = await handler._tools_call({
+        "name": "mcp__plugin__rl_tool",
+        "arguments": {},
+    })
+    assert result["isError"] is False
+
+
+async def test_rate_limit_blocks_over_limit() -> None:
+    m = PluginManifest(
+        id="rl_blocked",
+        name="RLB",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=(PluginCapability.MCP_TOOL,),
+        entry_point=lambda d, p: {"ok": True},
+    )
+    registry = _make_registry(m)
+    handler = MCPHandler(registry=registry, rate_limit_per_minute=2)
+    await handler.lifecycle.enable("rl_blocked")
+    await handler._tools_call({"name": "mcp__plugin__rl_blocked", "arguments": {}})
+    await handler._tools_call({"name": "mcp__plugin__rl_blocked", "arguments": {}})
+    result = await handler._tools_call({
+        "name": "mcp__plugin__rl_blocked",
+        "arguments": {},
+    })
+    assert result["isError"] is True
+    assert "Rate limit" in result["content"][0]["text"]
+
+
+# ── C14: outputSchema ──
+
+
+async def test_tools_list_includes_output_schema() -> None:
+    from fusion_plugins_ecosystem.schema import MCPAnnotations
+    m = PluginManifest(
+        id="out_tool",
+        name="Out",
+        version="0.1.0",
+        category=PluginCategory.CUSTOM,
+        description="",
+        capabilities=(PluginCapability.MCP_TOOL,),
+        params=(),
+        output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
+        mcp_annotations=MCPAnnotations(readOnlyHint=True),
+    )
+    registry = _make_registry(m)
+    handler = MCPHandler(registry=registry)
+    result = await handler._tools_list({})
+    tool = result["tools"][0]
+    assert "outputSchema" in tool
+    assert tool["outputSchema"]["type"] == "object"
+    assert tool["annotations"]["readOnlyHint"] is True

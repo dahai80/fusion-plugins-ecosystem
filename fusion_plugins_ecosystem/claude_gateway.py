@@ -209,12 +209,14 @@ class ClaudeGateway:
         )
         try:
             await self.lifecycle.enable(task.plugin_id)
+            model_hint = manifest.agent_model or ""
             with self.token_meter.measure(
                 task.plugin_id,
                 TokenKind.PLUGIN_LOCAL,
                 metadata={
                     "subagent": task.name,
                     "metadata": task.metadata,
+                    "agent_model": model_hint,
                 },
             ):
                 result = await self.lifecycle.execute(

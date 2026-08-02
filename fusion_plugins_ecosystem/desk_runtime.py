@@ -57,11 +57,18 @@ class DeskRuntime:
     # ── 显存调度 ──
 
     def acquire_vram(self, plugin_id: str, mb: int) -> bool:
-        """向 Desk 申请显存（线程安全）。"""
+        """向 Desk 申请显存（调整大小语义，非累加）。
+
+        同一 plugin_id 再次调用会替换之前的分配量，
+        而非在旧值上累加。
+        """
         if mb <= 0:
+            self.vram_allocations.pop(plugin_id, None)
             return True
+        current = self.vram_allocations.get(plugin_id, 0)
+        delta = mb - current
         used = sum(self.vram_allocations.values())
-        if self.vram_total_mb > 0 and used + mb > self.vram_total_mb:
+        if self.vram_total_mb > 0 and used + delta > self.vram_total_mb:
             logger.warning(
                 "desk_runtime: 插件 %s 显存申请失败（%dMB 超预算 %dMB）",
                 plugin_id,
@@ -69,8 +76,10 @@ class DeskRuntime:
                 self.vram_total_mb,
             )
             return False
-        self.vram_allocations[plugin_id] = self.vram_allocations.get(plugin_id, 0) + mb
-        logger.info("desk_runtime: 插件 %s 申请 %dMB 显存成功", plugin_id, mb)
+        self.vram_allocations[plugin_id] = mb
+        logger.info(
+            "desk_runtime: 插件 %s 显存 %dMB→%dMB", plugin_id, current, mb
+        )
         return True
 
     def release_vram(self, plugin_id: str) -> None:

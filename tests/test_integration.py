@@ -123,7 +123,7 @@ async def test_flow_register_to_mcp_jsonrpc() -> None:
     assert "tools" in resp["result"]
     tools = resp["result"]["tools"]
     assert len(tools) == 1
-    assert tools[0]["name"] == "caveman_compress"
+    assert tools[0]["name"] == "mcp__plugin__caveman_compress"
 
     resp = await handler.handle(
         {

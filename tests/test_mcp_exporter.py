@@ -65,7 +65,7 @@ def test_list_tools_with_mcp_capability() -> None:
     tools = exporter.list_tools()
     assert len(tools) == 1
     tool = tools[0]
-    assert tool["name"] == "p1"
+    assert tool["name"] == "mcp__plugin__p1"
     assert tool["description"] == "测试插件"
     assert "text" in tool["inputSchema"]["properties"]
     assert "count" in tool["inputSchema"]["properties"]
@@ -141,7 +141,7 @@ def test_list_tools_multiple_plugins() -> None:
     tools = exporter.list_tools()
     assert len(tools) == 3
     tool_ids = {t["name"] for t in tools}
-    assert tool_ids == {"p1", "p2", "p3"}
+    assert tool_ids == {"mcp__plugin__p1", "mcp__plugin__p2", "mcp__plugin__p3"}
 
 
 def test_mcp_exporter_uses_registry_desk_by_default() -> None:
@@ -283,7 +283,7 @@ def test_list_tools_mixed_capabilities() -> None:
     exporter = MCPExporter(registry)
     tools = exporter.list_tools()
     tool_ids = {t["name"] for t in tools}
-    assert tool_ids == {"mcp_only", "mcp_and_skill"}
+    assert tool_ids == {"mcp__plugin__mcp_only", "mcp__plugin__mcp_and_skill"}
     assert "skill_only" not in tool_ids
 
 

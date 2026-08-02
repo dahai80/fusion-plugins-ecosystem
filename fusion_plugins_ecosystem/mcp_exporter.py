@@ -91,7 +91,7 @@ class MCPExporter:
             input_schema["required"] = required
 
         return {
-            "name": manifest.id,
+            "name": f"mcp__plugin__{manifest.id}",
             "description": manifest.description,
             "inputSchema": input_schema,
         }

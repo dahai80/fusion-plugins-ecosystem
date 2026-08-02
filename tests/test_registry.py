@@ -7,6 +7,7 @@ from fusion_plugins_ecosystem.builtin.caveman_compress import (
     CAVEMAN_MANIFEST,
     caveman_compress,
 )
+from fusion_plugins_ecosystem.registry import PluginCategory
 
 
 # ── 注册中心 ──
@@ -18,14 +19,29 @@ def test_registry_register_and_get() -> None:
     assert registry.get("caveman_compress") is CAVEMAN_MANIFEST
 
 
-def test_registry_duplicate_raises() -> None:
+def test_registry_duplicate_same_version_idempotent() -> None:
     registry = fpe.PluginRegistry()
     registry.register(CAVEMAN_MANIFEST)
+    registry.register(CAVEMAN_MANIFEST)  # 相同版本幂等
+
+
+def test_registry_duplicate_different_version_raises() -> None:
+    registry = fpe.PluginRegistry()
+    registry.register(CAVEMAN_MANIFEST)
+    different = fpe.PluginManifest(
+        id=CAVEMAN_MANIFEST.id,
+        name=CAVEMAN_MANIFEST.name,
+        version="99.99.99",
+        category=PluginCategory.CUSTOM,
+        description="version conflict test",
+        entry_point=lambda d, p: None,
+    )
     try:
-        registry.register(CAVEMAN_MANIFEST)
-    except ValueError:
+        registry.register(different)
+    except ValueError as e:
+        assert "版本冲突" in str(e)
         return
-    raise AssertionError("重复注册应抛出 ValueError")
+    raise AssertionError("不同版本重复注册应抛出 ValueError")
 
 
 def test_registry_register_builtin_loads_caveman() -> None:
@@ -75,7 +91,7 @@ def test_mcp_exporter_lists_caveman_tool() -> None:
     exporter = fpe.MCPExporter(registry)
     tools = exporter.list_tools()
     assert len(tools) == 1
-    assert tools[0]["name"] == "caveman_compress"
+    assert tools[0]["name"] == "mcp__plugin__caveman_compress"
     assert "inputSchema" in tools[0]
 
 
@@ -134,3 +150,79 @@ def test_ecosystem_config_roundtrip() -> None:
     restored, warnings = fpe.EcosystemConfig.from_dict(d)
     assert restored.to_dict() == d
     assert warnings == []
+
+
+# ── 拓扑排序 ──
+
+
+def _make_manifest(pid: str, depends_on: tuple[str, ...] = ()) -> fpe.PluginManifest:
+    return fpe.PluginManifest(
+        id=pid,
+        name=pid,
+        version="1.0.0",
+        category=PluginCategory.CUSTOM,
+        description=f"test {pid}",
+        entry_point=lambda desk, params: None,
+        depends_on=depends_on,
+    )
+
+
+def test_resolve_load_order_no_deps() -> None:
+    registry = fpe.PluginRegistry()
+    registry.register(_make_manifest("a"))
+    registry.register(_make_manifest("b"))
+    order = registry.resolve_load_order(["b", "a"])
+    assert set(order) == {"a", "b"}
+
+
+def test_resolve_load_order_linear_deps() -> None:
+    registry = fpe.PluginRegistry()
+    registry.register(_make_manifest("a"))
+    registry.register(_make_manifest("b", depends_on=("a",)))
+    registry.register(_make_manifest("c", depends_on=("b",)))
+    order = registry.resolve_load_order(["c"])
+    assert order.index("a") < order.index("b") < order.index("c")
+
+
+def test_resolve_load_order_diamond_deps() -> None:
+    registry = fpe.PluginRegistry()
+    registry.register(_make_manifest("base"))
+    registry.register(_make_manifest("left", depends_on=("base",)))
+    registry.register(_make_manifest("right", depends_on=("base",)))
+    registry.register(_make_manifest("top", depends_on=("left", "right")))
+    order = registry.resolve_load_order(["top"])
+    assert order.index("base") < order.index("left")
+    assert order.index("base") < order.index("right")
+    assert order.index("left") < order.index("top")
+    assert order.index("right") < order.index("top")
+
+
+def test_resolve_load_order_cycle_raises() -> None:
+    registry = fpe.PluginRegistry()
+    registry.register(_make_manifest("a", depends_on=("b",)))
+    registry.register(_make_manifest("b", depends_on=("a",)))
+    try:
+        registry.resolve_load_order(["a"])
+    except ValueError as e:
+        assert "循环依赖" in str(e)
+        return
+    raise AssertionError("循环依赖应抛出 ValueError")
+
+
+def test_resolve_load_order_missing_dep_raises() -> None:
+    registry = fpe.PluginRegistry()
+    registry.register(_make_manifest("a", depends_on=("missing",)))
+    try:
+        registry.resolve_load_order(["a"])
+    except KeyError as e:
+        assert "missing" in str(e)
+        return
+    raise AssertionError("缺失依赖应抛出 KeyError")
+
+
+def test_resolve_load_order_all_plugins() -> None:
+    registry = fpe.PluginRegistry()
+    registry.register(_make_manifest("a"))
+    registry.register(_make_manifest("b", depends_on=("a",)))
+    order = registry.resolve_load_order()
+    assert order.index("a") < order.index("b")

@@ -105,14 +105,23 @@ class PluginLifecycle:
             )
         inst.state = new_state
 
-    def load(self, plugin_id: str) -> PluginInstance:
-        """加载插件（实例化 entry_point）。"""
+    def load(self, plugin_id: str, _loading_chain: frozenset[str] | None = None) -> PluginInstance:
+        """加载插件（实例化 entry_point），自动先加载依赖。"""
         manifest = self.registry.get(plugin_id)
         if manifest is None:
             raise KeyError(f"插件 {plugin_id!r} 未注册")
 
         if plugin_id in self._instances:
             return self._instances[plugin_id]
+
+        # 递归加载依赖
+        chain = _loading_chain or frozenset()
+        if plugin_id in chain:
+            raise ValueError(f"循环依赖: {' → '.join(chain)} → {plugin_id}")
+        next_chain = chain | {plugin_id}
+        for dep_id in manifest.depends_on:
+            if dep_id not in self._instances:
+                self.load(dep_id, _loading_chain=next_chain)
 
         # 解析 entry_point
         entry = manifest.entry_point
@@ -254,11 +263,12 @@ class PluginLifecycle:
         return await self._sandbox.call(plugin_id, "execute", params)
 
     async def _maybe_restart(self, plugin_id: str) -> None:
-        """崩溃后自动重启（限制 MAX_RESTART 次）。"""
+        """崩溃后自动重启（限制 max_restart 次，优先使用插件级配置）。"""
         inst = self._instances.get(plugin_id)
         if inst is None:
             return
-        if inst.restart_count >= self.MAX_RESTART:
+        max_restart = inst.manifest.max_restart if inst.manifest.max_restart is not None else self.MAX_RESTART
+        if inst.restart_count >= max_restart:
             self.desk.log(plugin_id, "ERROR", "达到最大重启次数，插件保持崩溃状态")
             return
         # 保存计数，unload 会删除旧 instance
@@ -297,3 +307,16 @@ class PluginLifecycle:
     def list_states(self) -> list[dict[str, Any]]:
         """返回所有插件实例状态快照（供消费端查询）。"""
         return [inst.to_dict() for inst in self._instances.values()]
+
+    def get_state(self, plugin_id: str) -> dict[str, Any] | None:
+        """查询单个插件状态快照，未加载返回 None。"""
+        inst = self._instances.get(plugin_id)
+        return inst.to_dict() if inst else None
+
+    def list_by_state(self, state: PluginState) -> list[dict[str, Any]]:
+        """按状态过滤返回插件快照列表。"""
+        return [
+            inst.to_dict()
+            for inst in self._instances.values()
+            if inst.state == state
+        ]

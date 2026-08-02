@@ -23,11 +23,39 @@ def test_acquire_vram_success_no_budget() -> None:
     assert rt.vram_usage() == {"p1": 100}
 
 
-def test_acquire_vram_accumulates() -> None:
+def test_acquire_vram_multiple_plugins() -> None:
     rt = DeskRuntime()
     rt.acquire_vram("p1", 50)
     rt.acquire_vram("p2", 30)
     assert rt.vram_usage() == {"p1": 50, "p2": 30}
+
+
+def test_acquire_vram_resize_same_plugin() -> None:
+    rt = DeskRuntime()
+    rt.acquire_vram("p1", 50)
+    assert rt.acquire_vram("p1", 80) is True
+    assert rt.vram_usage() == {"p1": 80}
+
+
+def test_acquire_vram_resize_within_budget() -> None:
+    rt = DeskRuntime(vram_total_mb=100)
+    rt.acquire_vram("p1", 60)
+    assert rt.acquire_vram("p1", 90) is True
+    assert rt.vram_usage() == {"p1": 90}
+
+
+def test_acquire_vram_resize_exceeds_budget() -> None:
+    rt = DeskRuntime(vram_total_mb=100)
+    rt.acquire_vram("p1", 60)
+    assert rt.acquire_vram("p1", 120) is False
+    assert rt.vram_usage() == {"p1": 60}
+
+
+def test_acquire_vram_zero_releases() -> None:
+    rt = DeskRuntime()
+    rt.acquire_vram("p1", 50)
+    assert rt.acquire_vram("p1", 0) is True
+    assert rt.vram_usage() == {}
 
 
 def test_acquire_vram_exceeds_budget_returns_false() -> None:
