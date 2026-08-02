@@ -254,7 +254,7 @@ def test_gateway_info_default() -> None:
     info = rt.gateway_info()
     assert info["port"] == 8080
     assert info["transport"] == "stdio"
-    assert info["protocol_version"] == "2024-11-05"
+    assert info["protocol_version"] == "2026-07-28"
 
 
 def test_gateway_info_no_port() -> None:

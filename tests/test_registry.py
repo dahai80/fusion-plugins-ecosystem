@@ -125,5 +125,6 @@ def test_ecosystem_config_defaults_all_enabled() -> None:
 def test_ecosystem_config_roundtrip() -> None:
     config = fpe.EcosystemConfig()
     d = config.to_dict()
-    restored = fpe.EcosystemConfig.from_dict(d)
+    restored, warnings = fpe.EcosystemConfig.from_dict(d)
     assert restored.to_dict() == d
+    assert warnings == []

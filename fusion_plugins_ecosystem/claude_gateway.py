@@ -28,7 +28,7 @@ from typing import Any
 
 from fusion_plugins_ecosystem.claude_adapter import ClaudeSkillAdapter
 from fusion_plugins_ecosystem.config import EcosystemConfig
-from fusion_plugins_ecosystem.desk_context import DeskContext
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle, PluginState
 from fusion_plugins_ecosystem.mcp_exporter import MCPExporter
 from fusion_plugins_ecosystem.registry import (
@@ -79,12 +79,12 @@ class ClaudeGateway:
         self,
         registry: PluginRegistry,
         lifecycle: PluginLifecycle | None = None,
-        desk: DeskContext | None = None,
+        desk: DeskRuntime | None = None,
         config: EcosystemConfig | None = None,
         token_meter: TokenMeter | None = None,
     ) -> None:
         self.registry = registry
-        self.desk: DeskContext = desk or registry.desk
+        self.desk: DeskRuntime = desk or registry.desk
         self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(
             registry
         )
@@ -201,17 +201,13 @@ class ClaudeGateway:
             raise KeyError(
                 f"子代理任务 {task.name!r} 的插件 {task.plugin_id!r} 未注册"
             )
-        # 应用 config 默认超时
+        # 计算 timeout：task > manifest > config
         timeout = (
             task.timeout_seconds
             or manifest.timeout_seconds
             or self.config.subagent_timeout_seconds
         )
-        # 临时覆写 lifecycle 超时（仅本次任务）
-        original_timeout = manifest.timeout_seconds
-        original_state = self.lifecycle._instances.get(task.plugin_id)
         try:
-            manifest.timeout_seconds = timeout
             await self.lifecycle.enable(task.plugin_id)
             with self.token_meter.measure(
                 task.plugin_id,
@@ -222,7 +218,8 @@ class ClaudeGateway:
                 },
             ):
                 result = await self.lifecycle.execute(
-                    task.plugin_id, task.arguments
+                    task.plugin_id, task.arguments,
+                    timeout_override=timeout,
                 )
             return {
                 "task": task.name,
@@ -253,8 +250,6 @@ class ClaudeGateway:
                 "state": "failed",
                 "error": str(exc),
             }
-        finally:
-            manifest.timeout_seconds = original_timeout
 
     def list_subagent_capable_plugins(self) -> list[str]:
         """列出具备 SUBAGENT 能力的插件 ID（供 Claude Code 子代理调度面板）。"""

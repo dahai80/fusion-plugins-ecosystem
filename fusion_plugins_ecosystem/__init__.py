@@ -37,11 +37,15 @@ _LAZY_IMPORTS: dict[str, str] = {
     "CLAUDE_CODE": "fusion_plugins_ecosystem.claude_gateway",
     "CLAUDE_WEB": "fusion_plugins_ecosystem.claude_gateway",
     "CLAUDE_VOLCENGINE": "fusion_plugins_ecosystem.claude_gateway",
-    # Desk 上下文桥
-    "DeskContext": "fusion_plugins_ecosystem.desk_context",
+    # Desk runtime
     "DeskRuntime": "fusion_plugins_ecosystem.desk_runtime",
     # 配置
     "EcosystemConfig": "fusion_plugins_ecosystem.config",
+    # Schema
+    "PluginParamType": "fusion_plugins_ecosystem.schema",
+    "SandboxMode": "fusion_plugins_ecosystem.schema",
+    "MCPAnnotations": "fusion_plugins_ecosystem.schema",
+    "AsyncMeasureContext": "fusion_plugins_ecosystem.token_meter",
 }
 
 _lazy_cache: dict[str, object] = {}

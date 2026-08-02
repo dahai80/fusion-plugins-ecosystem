@@ -46,23 +46,25 @@ def test_roundtrip_preserves_all_values() -> None:
     config.subagent_timeout_seconds = 300
     config.max_auto_restart = 5
     d = config.to_dict()
-    restored = EcosystemConfig.from_dict(d)
+    restored, warnings = EcosystemConfig.from_dict(d)
     assert restored.enable_claude_mcp is False
     assert restored.subagent_timeout_seconds == 300
     assert restored.max_auto_restart == 5
+    assert warnings == []
 
 
 def test_from_dict_empty_uses_defaults() -> None:
-    restored = EcosystemConfig.from_dict({})
+    restored, warnings = EcosystemConfig.from_dict({})
     assert restored.enable_claude_mcp is True
     assert restored.subagent_timeout_seconds == 600
+    assert warnings == []
 
 
 def test_from_dict_partial_override() -> None:
-    restored = EcosystemConfig.from_dict({"enable_claude_mcp": False})
+    restored, warnings = EcosystemConfig.from_dict({"enable_claude_mcp": False})
     assert restored.enable_claude_mcp is False
-    # 其他字段保持默认
     assert restored.auto_export_claude_skill is True
+    assert warnings == []
 
 
 def test_to_dict_returns_dict_type() -> None:
@@ -72,7 +74,7 @@ def test_to_dict_returns_dict_type() -> None:
 
 
 def test_from_dict_unknown_key_ignored() -> None:
-    restored = EcosystemConfig.from_dict(
+    restored, warnings = EcosystemConfig.from_dict(
         {"unknown_key": "value", "enable_claude_mcp": False}
     )
     assert restored.enable_claude_mcp is False
@@ -88,7 +90,7 @@ def test_disabled_flags_persist() -> None:
     config.unified_log_to_desk = False
     config.enable_mixed_quantization = False
     d = config.to_dict()
-    restored = EcosystemConfig.from_dict(d)
+    restored, warnings = EcosystemConfig.from_dict(d)
     assert restored.enable_claude_mcp is False
     assert restored.auto_export_claude_skill is False
     assert restored.subagent_timeout_destroy is False
@@ -96,3 +98,4 @@ def test_disabled_flags_persist() -> None:
     assert restored.enable_volcengine_claude_plan is False
     assert restored.unified_log_to_desk is False
     assert restored.enable_mixed_quantization is False
+    assert warnings == []

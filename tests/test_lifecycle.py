@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from fusion_plugins_ecosystem.desk_context import DeskContext
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import (
     PluginInstance,
     PluginLifecycle,
@@ -114,8 +114,7 @@ async def test_enable_vram_exceeds_budget_crashes() -> None:
         return {"ok": True}
 
     m = _make_manifest(entry_point=entry, vram_mb=200)
-    rt = DeskRuntime(vram_total_mb=100)
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(vram_total_mb=100)
     registry = PluginRegistry(desk=desk)
     registry.register(m)
     lifecycle = PluginLifecycle(registry)
@@ -131,7 +130,7 @@ async def test_disable_releases_vram() -> None:
     registry = _make_registry(m)
     lifecycle = PluginLifecycle(registry)
     await lifecycle.enable("test_plugin")
-    await lifecycle.disable("test_plugin")
+    lifecycle.disable("test_plugin")
     assert lifecycle._instances["test_plugin"].state == PluginState.DISABLED
     assert lifecycle.desk.vram_usage() == {}
 
@@ -139,7 +138,7 @@ async def test_disable_releases_vram() -> None:
 async def test_disable_unknown_plugin_noop() -> None:
     registry = _make_registry()
     lifecycle = PluginLifecycle(registry)
-    await lifecycle.disable("unknown")  # 不应抛异常
+    lifecycle.disable("unknown")  # 不应抛异常
 
 
 # ── unload ──

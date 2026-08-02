@@ -20,7 +20,7 @@ from fusion_plugins_ecosystem.claude_gateway import (
     SubagentTask,
 )
 from fusion_plugins_ecosystem.config import EcosystemConfig
-from fusion_plugins_ecosystem.desk_context import DeskContext
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 from fusion_plugins_ecosystem.registry import (
@@ -71,9 +71,9 @@ def _make_manifest(
 def _make_gateway(
     manifests: list[PluginManifest] | None = None,
     config: EcosystemConfig | None = None,
-    desk: DeskContext | None = None,
+    desk: DeskRuntime | None = None,
 ) -> tuple[ClaudeGateway, PluginRegistry]:
-    registry = PluginRegistry(desk=desk or DeskContext())
+    registry = PluginRegistry(desk=desk or DeskRuntime())
     for m in manifests or []:
         registry.register(m)
     lifecycle = PluginLifecycle(registry)
@@ -396,10 +396,9 @@ class _FakeConfigCenter:
         self._store[key] = value
 
 
-def _make_desk_with_config() -> DeskContext:
-    """构造带 config_center 的 DeskContext，供鉴权测试。"""
-    rt = DeskRuntime(config_center=_FakeConfigCenter())
-    return DeskContext(runtime=rt)
+def _make_desk_with_config() -> DeskRuntime:
+    """构造带 config_center 的 DeskRuntime，供鉴权测试。"""
+    return DeskRuntime(config_center=_FakeConfigCenter())
 
 
 def test_store_credentials_writes_to_desk() -> None:
@@ -458,8 +457,7 @@ class _FakeMLXClient:
 
 
 async def test_mlx_visual_backend_success() -> None:
-    rt = DeskRuntime(mlx_client=_FakeMLXClient())
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(mlx_client=_FakeMLXClient())
     gw, _ = _make_gateway([], desk=desk)
     result = await gw.mlx_visual_backend("qwen3.5", [{"role": "user", "content": "hi"}])
     assert result["content"] == "fake"
@@ -467,8 +465,7 @@ async def test_mlx_visual_backend_success() -> None:
 
 async def test_mlx_visual_backend_disabled_raises() -> None:
     config = EcosystemConfig(enable_mixed_quantization=False)
-    rt = DeskRuntime(mlx_client=_FakeMLXClient())
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(mlx_client=_FakeMLXClient())
     gw, _ = _make_gateway([], config=config, desk=desk)
     with pytest.raises(RuntimeError, match="混合量化"):
         await gw.mlx_visual_backend("m", [])
@@ -536,7 +533,7 @@ def test_gateway_uses_registry_desk_when_not_passed() -> None:
 
 def test_gateway_explicit_desk_overrides() -> None:
     registry = PluginRegistry()
-    desk2 = DeskContext()
+    desk2 = DeskRuntime()
     gw = ClaudeGateway(registry=registry, desk=desk2)
     assert gw.desk is desk2
 
@@ -570,8 +567,7 @@ async def test_dispatch_subagent_records_plugin_local_token() -> None:
 
 
 async def test_mlx_visual_backend_records_mlx_inference_token() -> None:
-    rt = DeskRuntime(mlx_client=_FakeMLXClient())
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(mlx_client=_FakeMLXClient())
     gw, _ = _make_gateway([], desk=desk)
     await gw.mlx_visual_backend("m", [])
     records = gw.token_meter.records_for("mlx_visual_backend")

@@ -20,19 +20,9 @@ from fusion_plugins_ecosystem.registry import (
     PluginManifest,
     PluginRegistry,
 )
+from fusion_plugins_ecosystem.schema import _PARAM_TYPE_MAP
 
 logger = logging.getLogger(__name__)
-
-
-# JSON Schema 类型映射
-_PARAM_TYPE_MAP: dict[str, str] = {
-    "string": "string",
-    "int": "integer",
-    "bool": "boolean",
-    "array": "array",
-    "object": "object",
-    "float": "number",
-}
 
 
 class ClaudeSkillAdapter:

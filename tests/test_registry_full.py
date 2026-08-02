@@ -74,8 +74,10 @@ def test_list_all() -> None:
 def test_list_by_category() -> None:
     registry = PluginRegistry()
     registry.register(_make_manifest("p1"))
-    m2 = _make_manifest("p2")
-    m2.category = PluginCategory.MLX_INFERENCE
+    m2 = PluginManifest(
+        id="p2", name="Test", version="0.1.0",
+        category=PluginCategory.MLX_INFERENCE, description="d",
+    )
     registry.register(m2)
     mlx_plugins = registry.list(PluginCategory.MLX_INFERENCE)
     assert len(mlx_plugins) == 1
@@ -96,10 +98,14 @@ def test_register_builtin_loads_caveman() -> None:
 
 def test_default_mounted_returns_only_mounted() -> None:
     registry = PluginRegistry()
-    m1 = _make_manifest("p1")
-    m1.default_mounted = True
-    m2 = _make_manifest("p2")
-    m2.default_mounted = False
+    m1 = PluginManifest(
+        id="p1", name="Test", version="0.1.0",
+        category=PluginCategory.CUSTOM, description="d", default_mounted=True,
+    )
+    m2 = PluginManifest(
+        id="p2", name="Test", version="0.1.0",
+        category=PluginCategory.CUSTOM, description="d", default_mounted=False,
+    )
     registry.register(m1)
     registry.register(m2)
     mounted = registry.default_mounted()
@@ -147,8 +153,8 @@ def test_plugin_manifest_defaults() -> None:
         category=PluginCategory.CUSTOM,
         description="d",
     )
-    assert m.capabilities == []
-    assert m.params == []
+    assert m.capabilities == ()
+    assert m.params == ()
     assert m.entry_point is None
     assert m.default_mounted is False
     assert m.timeout_seconds is None

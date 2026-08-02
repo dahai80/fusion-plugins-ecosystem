@@ -158,7 +158,7 @@ def test_caveman_manifest_capabilities() -> None:
     caps = CAVEMAN_MANIFEST.capabilities
     assert PluginCapability.MCP_TOOL in caps
     assert PluginCapability.CLAUDE_SKILL in caps
-    assert PluginCapability.LONG_TASK in caps
+    # LONG_TASK removed: caveman is a fast sync operation
 
 
 def test_caveman_manifest_params() -> None:
@@ -179,7 +179,7 @@ def test_caveman_manifest_strategy_enum() -> None:
     strategy_param = next(
         p for p in CAVEMAN_MANIFEST.params if p.name == "strategy"
     )
-    assert strategy_param.enum == ["caveman"]
+    assert strategy_param.enum == ("caveman",)
 
 
 def test_caveman_manifest_timeout() -> None:

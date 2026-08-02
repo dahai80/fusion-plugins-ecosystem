@@ -122,16 +122,14 @@ async def test_call_tool_propagates_arguments_in_response() -> None:
 
 def test_gateway_info_returns_mcp_metadata() -> None:
     from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-    from fusion_plugins_ecosystem.desk_context import DeskContext
 
-    rt = DeskRuntime(mcp_gateway_port=9999)
-    desk = DeskContext(runtime=rt)
+    desk = DeskRuntime(mcp_gateway_port=9999)
     registry = PluginRegistry(desk=desk)
     exporter = MCPExporter(registry)
     info = exporter.gateway_info()
     assert info["port"] == 9999
     assert info["transport"] == "stdio"
-    assert info["protocol_version"] == "2024-11-05"
+    assert info["protocol_version"] == "2026-07-28"
     assert info["tools_count"] == 0  # 未注册插件
 
 
@@ -148,19 +146,19 @@ def test_list_tools_multiple_plugins() -> None:
 
 
 def test_mcp_exporter_uses_registry_desk_by_default() -> None:
-    from fusion_plugins_ecosystem.desk_context import DeskContext
+    from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
-    desk = DeskContext()
+    desk = DeskRuntime()
     registry = PluginRegistry(desk=desk)
     exporter = MCPExporter(registry)
     assert exporter.desk is desk
 
 
 def test_mcp_exporter_explicit_desk_overrides() -> None:
-    from fusion_plugins_ecosystem.desk_context import DeskContext
+    from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
-    desk1 = DeskContext()
-    desk2 = DeskContext()
+    desk1 = DeskRuntime()
+    desk2 = DeskRuntime()
     registry = PluginRegistry(desk=desk1)
     exporter = MCPExporter(registry, desk=desk2)
     assert exporter.desk is desk2

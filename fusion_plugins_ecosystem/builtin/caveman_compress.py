@@ -21,6 +21,7 @@ from fusion_plugins_ecosystem.registry import (
     PluginManifest,
     PluginParam,
 )
+from fusion_plugins_ecosystem.schema import PluginParamType
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 # ── 压缩策略 ──
 # 简化的 caveman 风格压缩：去除冗余空白/注释，合并重复行
 _COMMENT_RE = re.compile(r"^\s*(#|//|/\*|\*/)")
+_URL_PREFIX_RE = re.compile(r"(https?://)")
 _MULTI_BLANK_RE = re.compile(r"\n\s*\n\s*\n+")
 
 
@@ -45,9 +47,10 @@ def _compress_text(text: str, keep_comments: bool = False) -> str:
     prev_blank = False
     for line in text.splitlines():
         stripped = line.strip()
-        # 注释处理
+        # 注释处理：跳过注释行，但保留含 URL 的行
         if not keep_comments and _COMMENT_RE.match(line):
-            continue
+            if not _URL_PREFIX_RE.search(line):
+                continue
         # 多个连续空行合并为一个
         if not stripped:
             if prev_blank:
@@ -81,7 +84,8 @@ def caveman_compress(
         }
     """
     text: str = params.get("text", "")
-    keep_comments: bool = bool(params.get("keep_comments", False))
+    keep_comments_raw = params.get("keep_comments", False)
+    keep_comments: bool = keep_comments_raw is True or keep_comments_raw == "true"
     strategy: str = params.get("strategy", "caveman")
 
     if not text:
@@ -130,36 +134,35 @@ CAVEMAN_MANIFEST = PluginManifest(
         "对输入文本做 caveman 风格 token 压缩："
         "去除冗余空白/注释，合并重复空行，降低 Claude 会话 token 消耗。"
     ),
-    capabilities=[
+    capabilities=(
         PluginCapability.MCP_TOOL,
         PluginCapability.CLAUDE_SKILL,
-        PluginCapability.LONG_TASK,
-    ],
-    params=[
+    ),
+    params=(
         PluginParam(
             name="text",
-            type="string",
+            type=PluginParamType.STRING,
             description="待压缩的文本内容",
             required=True,
         ),
         PluginParam(
             name="keep_comments",
-            type="bool",
+            type=PluginParamType.BOOL,
             description="是否保留注释行（默认 False，即移除注释）",
             required=False,
             default=False,
         ),
         PluginParam(
             name="strategy",
-            type="string",
+            type=PluginParamType.STRING,
             description="压缩策略",
             required=False,
             default="caveman",
-            enum=["caveman"],
+            enum=("caveman",),
         ),
-    ],
+    ),
     entry_point=caveman_compress,
-    default_mounted=True,          # 默认挂载给 Claude 会话
+    default_mounted=True,
     timeout_seconds=120,
-    vram_mb=0,                     # 纯文本处理，不占显存
+    vram_mb=0,
 )

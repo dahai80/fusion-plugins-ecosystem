@@ -57,8 +57,13 @@ class TokenMeter:
             ...  # 插件执行
     """
 
-    def __init__(self, desk: Any | None = None) -> None:
+    def __init__(
+        self,
+        desk: Any | None = None,
+        max_records: int = 10000,
+    ) -> None:
         self.desk = desk
+        self._max_records = max_records
         self._records: list[TokenRecord] = []
         # 按插件 ID 聚合的统计
         self._by_plugin: dict[str, list[TokenRecord]] = {}
@@ -67,6 +72,7 @@ class TokenMeter:
         """记录一次 token 消耗。"""
         self._records.append(rec)
         self._by_plugin.setdefault(rec.plugin_id, []).append(rec)
+        self._prune()
         # 异常检测：PLUGIN_LOCAL 但 input/output tokens 为 0 且 wall_seconds 很长
         # 对应「子代理跑 40 分钟无 token 消耗」痛点
         if (
@@ -110,10 +116,11 @@ class TokenMeter:
             metadata or {},
         )
 
-    def summary(self) -> dict[str, dict[str, int]]:
+    def summary(self, since: float | None = None) -> dict[str, dict[str, int]]:
         """按插件聚合统计：{plugin_id: {kind: total_tokens}}。"""
+        records = self._records_since(since) if since else self._records
         summary: dict[str, dict[str, int]] = {}
-        for rec in self._records:
+        for rec in records:
             pid = rec.plugin_id
             summary.setdefault(pid, {})
             key = rec.kind.value
@@ -127,6 +134,23 @@ class TokenMeter:
     def all_records(self) -> list[TokenRecord]:
         """返回全部记录（按时间顺序）。"""
         return list(self._records)
+
+    def _prune(self) -> None:
+        """淘汰超过 max_records 的旧记录。"""
+        if len(self._records) > self._max_records:
+            excess = len(self._records) - self._max_records
+            removed = self._records[:excess]
+            self._records = self._records[excess:]
+            for rec in removed:
+                if rec.plugin_id in self._by_plugin:
+                    self._by_plugin[rec.plugin_id] = [
+                        r for r in self._by_plugin[rec.plugin_id]
+                        if r is not rec
+                    ]
+
+    def _records_since(self, since: float) -> list[TokenRecord]:
+        """返回指定时间之后的记录。"""
+        return [r for r in self._records if r.timestamp >= since]
 
 
 class _MeasureContext:
@@ -154,6 +178,45 @@ class _MeasureContext:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._start is None:
+            return
+        wall = time.time() - self._start
+        rec = TokenRecord(
+            plugin_id=self.plugin_id,
+            kind=self.kind,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            wall_seconds=wall,
+            metadata=self.metadata,
+        )
+        self.meter.record(rec)
+
+
+class AsyncMeasureContext:
+    """measure() 的异步上下文管理器实现。"""
+
+    def __init__(
+        self,
+        meter: TokenMeter,
+        plugin_id: str,
+        kind: TokenKind,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.meter = meter
+        self.plugin_id = plugin_id
+        self.kind = kind
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.metadata = metadata or {}
+        self._start: float | None = None
+
+    async def __aenter__(self) -> "AsyncMeasureContext":
+        self._start = time.time()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         if self._start is None:
             return
         wall = time.time() - self._start
