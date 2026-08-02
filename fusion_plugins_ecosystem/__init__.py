@@ -30,6 +30,11 @@ _LAZY_IMPORTS: dict[str, str] = {
     "TokenKind": "fusion_plugins_ecosystem.token_meter",
     # Claude 适配
     "ClaudeSkillAdapter": "fusion_plugins_ecosystem.claude_adapter",
+    "SkillAdapter": "fusion_plugins_ecosystem.skill_adapter",
+    "SkillBundle": "fusion_plugins_ecosystem.skill_adapter",
+    "AgentAdapter": "fusion_plugins_ecosystem.agent_adapter",
+    "PluginBundle": "fusion_plugins_ecosystem.plugin_bundle",
+    "PluginBundleGenerator": "fusion_plugins_ecosystem.plugin_bundle",
     "MCPExporter": "fusion_plugins_ecosystem.mcp_exporter",
     "ClaudeGateway": "fusion_plugins_ecosystem.claude_gateway",
     "SubagentTask": "fusion_plugins_ecosystem.claude_gateway",

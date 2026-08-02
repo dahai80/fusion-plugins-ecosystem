@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from fusion_plugins_ecosystem.claude_adapter import ClaudeSkillAdapter
+from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle, PluginState
@@ -91,7 +91,7 @@ class ClaudeGateway:
         self.config: EcosystemConfig = config or EcosystemConfig()
         self.token_meter: TokenMeter = token_meter or TokenMeter(self.desk)
         # 委托适配器
-        self._skill_adapter = ClaudeSkillAdapter(registry)
+        self._skill_adapter = SkillAdapter(registry)
         self._mcp_exporter = MCPExporter(registry, self.desk)
 
     # ── 正向：Claude 调用 fusion 能力 ──
@@ -104,7 +104,12 @@ class ClaudeGateway:
         if not self.config.auto_export_claude_skill:
             logger.info("claude_gateway: Skill 自动导出已关闭")
             return []
-        return self._skill_adapter.export_all()
+        skills: list[dict[str, Any]] = []
+        for manifest in self.registry.list():
+            skill = self._skill_adapter.export_one(manifest.id)
+            if skill is not None:
+                skills.append(skill)
+        return skills
 
     def export_default_mounted_skills(self) -> list[dict[str, Any]]:
         """导出默认挂载插件 Skill（对应 PRD「默认挂载给 Claude 会话」）。
@@ -113,7 +118,12 @@ class ClaudeGateway:
         """
         if not self.config.default_mount_compressor:
             return []
-        return self._skill_adapter.export_default_mounted()
+        skills: list[dict[str, Any]] = []
+        for manifest in self.registry.default_mounted():
+            skill = self._skill_adapter.export_one(manifest.id)
+            if skill is not None:
+                skills.append(skill)
+        return skills
 
     def list_mcp_tools(self) -> list[dict[str, Any]]:
         """列出 MCP Tools（供给 Claude Desktop / Claude Code 对接）。
