@@ -46,6 +46,13 @@ _LAZY_IMPORTS: dict[str, str] = {
     "SandboxMode": "fusion_plugins_ecosystem.schema",
     "MCPAnnotations": "fusion_plugins_ecosystem.schema",
     "AsyncMeasureContext": "fusion_plugins_ecosystem.token_meter",
+    # MCP Server
+    "MCPServer": "fusion_plugins_ecosystem.server",
+    "MCPHandler": "fusion_plugins_ecosystem.jsonrpc",
+    "StdioTransport": "fusion_plugins_ecosystem.transport",
+    "SSETransport": "fusion_plugins_ecosystem.transport",
+    "HTTPTransport": "fusion_plugins_ecosystem.transport",
+    "create_transport": "fusion_plugins_ecosystem.transport",
 }
 
 _lazy_cache: dict[str, object] = {}

@@ -11,6 +11,9 @@ dependencies = [
     "fusion-desk>=0.1.0",
 ]
 
+[project.scripts]
+fusion-plugin-server = "fusion_plugins_ecosystem.server:main"
+
 [project.optional-dependencies]
 mcp = [
     # MCP 协议 SDK，仅在对外暴露时启用
