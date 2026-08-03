@@ -184,7 +184,9 @@ class MCPHandler:
         # C13: 速率限制检查
         if not self._check_rate_limit(plugin_id):
             return {
-                "content": [{"type": "text", "text": f"Rate limit exceeded for {tool_name}"}],
+                "content": [
+                    {"type": "text", "text": f"Rate limit exceeded for {tool_name}"}
+                ],
                 "isError": True,
             }
 
@@ -252,11 +254,14 @@ class MCPHandler:
 
     # C12: 会话管理
     def _touch_session(self, session_id: str, plugin_id: str) -> None:
-        session = self._sessions.setdefault(session_id, {
-            "created_at": time.time(),
-            "last_active": time.time(),
-            "calls": [],
-        })
+        session = self._sessions.setdefault(
+            session_id,
+            {
+                "created_at": time.time(),
+                "last_active": time.time(),
+                "calls": [],
+            },
+        )
         session["last_active"] = time.time()
         session["calls"].append({"plugin_id": plugin_id, "ts": time.time()})
         if len(session["calls"]) > 1000:
@@ -266,9 +271,7 @@ class MCPHandler:
         return self._sessions.get(session_id)
 
     def list_sessions(self) -> list[dict[str, Any]]:
-        return [
-            {"session_id": sid, **s} for sid, s in self._sessions.items()
-        ]
+        return [{"session_id": sid, **s} for sid, s in self._sessions.items()]
 
     def prune_sessions(self, max_age_seconds: float = 3600) -> int:
         cutoff = time.time() - max_age_seconds
@@ -284,7 +287,9 @@ class MCPHandler:
         cutoff = now - 60.0
         timestamps = [t for t in timestamps if t > cutoff]
         if len(timestamps) >= self._rate_limit:
-            logger.warning("jsonrpc: 插件 %s 速率限制触发 (%d/min)", plugin_id, self._rate_limit)
+            logger.warning(
+                "jsonrpc: 插件 %s 速率限制触发 (%d/min)", plugin_id, self._rate_limit
+            )
             return False
         timestamps.append(now)
         self._call_timestamps[plugin_id] = timestamps

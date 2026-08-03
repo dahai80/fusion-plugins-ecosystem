@@ -120,7 +120,9 @@ class PluginManifest:
             "sandbox_mode": self.sandbox_mode.value,
             "max_restart": self.max_restart,
             "output_schema": self.output_schema,
-            "mcp_annotations": self.mcp_annotations.to_dict() if self.mcp_annotations else None,
+            "mcp_annotations": self.mcp_annotations.to_dict()
+            if self.mcp_annotations
+            else None,
             "agent_model": self.agent_model,
         }
 
@@ -143,7 +145,11 @@ class PluginRegistry:
         existing = self._manifests.get(manifest.id)
         if existing is not None:
             if existing.version == manifest.version:
-                logger.debug("registry: 插件 %s v%s 重复注册（幂等忽略）", manifest.id, manifest.version)
+                logger.debug(
+                    "registry: 插件 %s v%s 重复注册（幂等忽略）",
+                    manifest.id,
+                    manifest.version,
+                )
                 return
             raise ValueError(
                 f"插件 {manifest.id!r} 版本冲突: 已注册 v{existing.version}, 尝试注册 v{manifest.version}"
@@ -176,9 +182,7 @@ class PluginRegistry:
         """列出插件为 JSON 友好字典（供 Swift/Kotlin/TS 消费端）。"""
         return [m.to_dict() for m in self.list(category=category)]
 
-    def resolve_load_order(
-        self, plugin_ids: list[str] | None = None
-    ) -> list[str]:
+    def resolve_load_order(self, plugin_ids: list[str] | None = None) -> list[str]:
         """按依赖拓扑排序返回加载顺序。
 
         Args:

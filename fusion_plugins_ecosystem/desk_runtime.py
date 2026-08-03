@@ -20,6 +20,14 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+FUSION_DESK_AVAILABLE = False
+try:
+    import fusion_desk  # noqa: F401
+
+    FUSION_DESK_AVAILABLE = True
+except ImportError:
+    pass
+
 
 @dataclass
 class DeskRuntime:
@@ -54,6 +62,10 @@ class DeskRuntime:
     # vRAM 操作锁（线程安全）
     _vram_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
+    def __post_init__(self) -> None:
+        if not FUSION_DESK_AVAILABLE:
+            logger.info("desk_runtime: fusion-desk 未安装，DeskRuntime 以降级模式运行")
+
     # ── 显存调度 ──
 
     def acquire_vram(self, plugin_id: str, mb: int) -> bool:
@@ -77,9 +89,7 @@ class DeskRuntime:
             )
             return False
         self.vram_allocations[plugin_id] = mb
-        logger.info(
-            "desk_runtime: 插件 %s 显存 %dMB→%dMB", plugin_id, current, mb
-        )
+        logger.info("desk_runtime: 插件 %s 显存 %dMB→%dMB", plugin_id, current, mb)
         return True
 
     def release_vram(self, plugin_id: str) -> None:

@@ -311,11 +311,13 @@ async def test_session_tracking_on_tools_call() -> None:
     registry = _make_registry(m)
     handler = MCPHandler(registry=registry)
     await handler.lifecycle.enable("sess_tool")
-    result = await handler._tools_call({
-        "name": "mcp__plugin__sess_tool",
-        "arguments": {},
-        "_meta": {"sessionId": "abc-123"},
-    })
+    result = await handler._tools_call(
+        {
+            "name": "mcp__plugin__sess_tool",
+            "arguments": {},
+            "_meta": {"sessionId": "abc-123"},
+        }
+    )
     assert result["isError"] is False
     session = handler.get_session("abc-123")
     assert session is not None
@@ -334,10 +336,15 @@ async def test_list_sessions() -> None:
 
 async def test_prune_sessions() -> None:
     import time
+
     registry = _make_registry()
     handler = MCPHandler(registry=registry)
     handler._sessions["old"] = {"created_at": 1.0, "last_active": 1.0, "calls": []}
-    handler._sessions["new"] = {"created_at": time.time(), "last_active": time.time(), "calls": []}
+    handler._sessions["new"] = {
+        "created_at": time.time(),
+        "last_active": time.time(),
+        "calls": [],
+    }
     pruned = handler.prune_sessions(max_age_seconds=60)
     assert pruned == 1
     assert "old" not in handler._sessions
@@ -360,10 +367,12 @@ async def test_rate_limit_allows_under_limit() -> None:
     registry = _make_registry(m)
     handler = MCPHandler(registry=registry, rate_limit_per_minute=5)
     await handler.lifecycle.enable("rl_tool")
-    result = await handler._tools_call({
-        "name": "mcp__plugin__rl_tool",
-        "arguments": {},
-    })
+    result = await handler._tools_call(
+        {
+            "name": "mcp__plugin__rl_tool",
+            "arguments": {},
+        }
+    )
     assert result["isError"] is False
 
 
@@ -382,10 +391,12 @@ async def test_rate_limit_blocks_over_limit() -> None:
     await handler.lifecycle.enable("rl_blocked")
     await handler._tools_call({"name": "mcp__plugin__rl_blocked", "arguments": {}})
     await handler._tools_call({"name": "mcp__plugin__rl_blocked", "arguments": {}})
-    result = await handler._tools_call({
-        "name": "mcp__plugin__rl_blocked",
-        "arguments": {},
-    })
+    result = await handler._tools_call(
+        {
+            "name": "mcp__plugin__rl_blocked",
+            "arguments": {},
+        }
+    )
     assert result["isError"] is True
     assert "Rate limit" in result["content"][0]["text"]
 
@@ -395,6 +406,7 @@ async def test_rate_limit_blocks_over_limit() -> None:
 
 async def test_tools_list_includes_output_schema() -> None:
     from fusion_plugins_ecosystem.schema import MCPAnnotations
+
     m = PluginManifest(
         id="out_tool",
         name="Out",

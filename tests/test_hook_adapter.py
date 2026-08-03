@@ -44,9 +44,7 @@ def test_export_hooks_mcp_tool() -> None:
 
 
 def test_export_hooks_subagent() -> None:
-    reg = _make_registry(
-        _make_manifest("p1", (PluginCapability.SUBAGENT,))
-    )
+    reg = _make_registry(_make_manifest("p1", (PluginCapability.SUBAGENT,)))
     adapter = HookAdapter(reg)
     hooks = adapter.export_hooks("p1")
     assert len(hooks) == 1
@@ -69,9 +67,7 @@ def test_export_hooks_multiple_capabilities() -> None:
 
 
 def test_export_hooks_no_capability() -> None:
-    reg = _make_registry(
-        _make_manifest("p1", (PluginCapability.CLAUDE_SKILL,))
-    )
+    reg = _make_registry(_make_manifest("p1", (PluginCapability.CLAUDE_SKILL,)))
     adapter = HookAdapter(reg)
     hooks = adapter.export_hooks("p1")
     assert len(hooks) == 0

@@ -105,7 +105,9 @@ class PluginLifecycle:
             )
         inst.state = new_state
 
-    def load(self, plugin_id: str, _loading_chain: frozenset[str] | None = None) -> PluginInstance:
+    def load(
+        self, plugin_id: str, _loading_chain: frozenset[str] | None = None
+    ) -> PluginInstance:
         """加载插件（实例化 entry_point），自动先加载依赖。"""
         manifest = self.registry.get(plugin_id)
         if manifest is None:
@@ -267,7 +269,11 @@ class PluginLifecycle:
         inst = self._instances.get(plugin_id)
         if inst is None:
             return
-        max_restart = inst.manifest.max_restart if inst.manifest.max_restart is not None else self.MAX_RESTART
+        max_restart = (
+            inst.manifest.max_restart
+            if inst.manifest.max_restart is not None
+            else self.MAX_RESTART
+        )
         if inst.restart_count >= max_restart:
             self.desk.log(plugin_id, "ERROR", "达到最大重启次数，插件保持崩溃状态")
             return
@@ -316,7 +322,5 @@ class PluginLifecycle:
     def list_by_state(self, state: PluginState) -> list[dict[str, Any]]:
         """按状态过滤返回插件快照列表。"""
         return [
-            inst.to_dict()
-            for inst in self._instances.values()
-            if inst.state == state
+            inst.to_dict() for inst in self._instances.values() if inst.state == state
         ]
