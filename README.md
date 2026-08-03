@@ -12,8 +12,9 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-407%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.3.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-99%25-success" alt="Coverage">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
 
 ---
@@ -156,6 +157,7 @@ Register once → it auto-appears in Claude's tool catalog and MCP `tools/list`.
 ```
 fusion-plugins-ecosystem/
 ├── pyproject.toml
+├── LICENSE                       ← Apache 2.0
 ├── README.md                     ← this file (English)
 ├── README_CN.md                  ← 中文版
 ├── docs/
@@ -167,6 +169,7 @@ fusion-plugins-ecosystem/
 ├── fusion_plugins_ecosystem/
 │   ├── __init__.py               ← top-level exports + Lazy Import
 │   ├── desk_runtime.py           ← fusion-desk runtime handle wrapper
+│   ├── desk_context.py           ← thin DeskContext delegation layer
 │   ├── registry.py               ← plugin registry + frozen manifest
 │   ├── lifecycle.py              ← load/enable/execute + meltdown + restart + INLINE/PROCESS
 │   ├── sandbox.py                ← plugin sandbox (process isolation, IPC)
@@ -203,6 +206,7 @@ fusion-plugins-ecosystem/
     ├── test_jsonrpc.py
     ├── test_transport_server.py
     ├── test_sandbox.py
+    ├── test_hook_adapter.py
     ├── test_phase3_adapters.py
     ├── test_phase4_meter_config.py
     ├── test_schema.py
@@ -269,6 +273,7 @@ Latest run: **407 passed**.
 | `test_registry_full.py` | 15 | register / unregister / list / category / default_mounted / enum values |
 | `test_caveman.py` | 22 | _compress_text / caveman_compress / CAVEMAN_MANIFEST fields |
 | `test_registry.py` | 13 | (legacy) registry + adapter + exporter + caveman integration |
+| `test_hook_adapter.py` | 8 | HookAdapter event mapping / capability filtering |
 
 ## ⚠️ Technical constraints
 
@@ -279,5 +284,5 @@ Latest run: **407 passed**.
 
 ## 📄 License
 
-MIT — part of the [Fusion-MLX](https://github.com/fusion-mlx) Apple Silicon local AI ecosystem.
+Apache License 2.0 — part of the [Fusion-MLX](https://github.com/fusion-mlx) Apple Silicon local AI ecosystem.
 

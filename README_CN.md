@@ -12,8 +12,9 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-407%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.3.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-99%25-success" alt="Coverage">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
 
 ---
@@ -156,6 +157,7 @@ MY_MANIFEST = PluginManifest(
 ```
 fusion-plugins-ecosystem/
 ├── pyproject.toml
+├── LICENSE                       ← Apache 2.0
 ├── README.md                     ← 英文版
 ├── README_CN.md                  ← 中文版（本文件）
 ├── docs/
@@ -166,6 +168,7 @@ fusion-plugins-ecosystem/
 ├── fusion_plugins_ecosystem/
 │   ├── __init__.py               ← 顶层导出 + 惰性导入
 │   ├── desk_runtime.py           ← fusion-desk 运行时句柄包装
+│   ├── desk_context.py           ← DeskContext 薄包装委托层
 │   ├── registry.py               ← 插件注册中心 + 冻结清单
 │   ├── lifecycle.py              ← 加载/启用/执行 + 熔断 + 重启 + INLINE/PROCESS
 │   ├── sandbox.py                ← 插件沙箱（进程隔离、IPC）
@@ -200,6 +203,7 @@ fusion-plugins-ecosystem/
     ├── test_jsonrpc.py
     ├── test_transport_server.py
     ├── test_sandbox.py
+    ├── test_hook_adapter.py
     ├── test_phase3_adapters.py
     ├── test_phase4_meter_config.py
     ├── test_schema.py
@@ -266,6 +270,7 @@ restored = EcosystemConfig.from_dict(d)
 | `test_registry_full.py` | 15 | 注册 / 注销 / 列表 / 分类 / 默认挂载 / 枚举值 |
 | `test_caveman.py` | 22 | _compress_text / caveman_compress / CAVEMAN_MANIFEST 字段 |
 | `test_registry.py` | 13 | （旧版）注册 + 适配器 + 导出器 + caveman 集成 |
+| `test_hook_adapter.py` | 8 | HookAdapter 事件映射 / 能力过滤 |
 
 ## ⚠️ 技术约束
 
@@ -276,4 +281,4 @@ restored = EcosystemConfig.from_dict(d)
 
 ## 📄 License
 
-MIT — [Fusion-MLX](https://github.com/fusion-mlx) Apple Silicon 本地 AI 生态的一部分。
+Apache License 2.0 — [Fusion-MLX](https://github.com/fusion-mlx) Apple Silicon 本地 AI 生态的一部分。

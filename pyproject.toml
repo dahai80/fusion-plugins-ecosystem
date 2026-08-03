@@ -5,6 +5,7 @@ description = "Fusion 插件生态 — 基于 fusion-desk 的标准化插件注�
 authors = [
     { name = "Fusion-MLX Team" },
 ]
+license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0.0",
