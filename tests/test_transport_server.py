@@ -149,6 +149,100 @@ async def test_http_transport_request_response() -> None:
 # ── MCPServer ──
 
 
+async def test_sse_transport_post_round_trip() -> None:
+    """真实回环：SSETransport 处理 HTTP POST 请求并返回 JSON-RPC 响应。"""
+
+    async def handler(request: dict) -> dict:
+        return {
+            "jsonrpc": "2.0",
+            "result": {"method": request.get("method")},
+            "id": request.get("id"),
+        }
+
+    t = SSETransport(handler=handler, host="127.0.0.1", port=0)
+    await t.start()
+    port = t.port
+
+    body = json.dumps(
+        {"jsonrpc": "2.0", "id": 7, "method": "ping", "params": {}}
+    ).encode("utf-8")
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    writer.write(
+        b"POST / HTTP/1.1\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+        b"\r\n" + body
+    )
+    await writer.drain()
+
+    response_line = await reader.readline()
+    assert b"200 OK" in response_line
+
+    headers: dict[str, str] = {}
+    while True:
+        line = await reader.readline()
+        text = line.decode().strip()
+        if not text:
+            break
+        if ":" in text:
+            k, v = text.split(":", 1)
+            headers[k.strip().lower()] = v.strip()
+
+    content_length = int(headers.get("content-length", "0"))
+    resp = json.loads((await reader.read(content_length)).decode())
+    assert resp["id"] == 7
+    assert resp["result"] == {"method": "ping"}
+
+    writer.close()
+    await writer.wait_closed()
+    await t.stop()
+
+
+async def test_sse_transport_get_handshake() -> None:
+    """真实回环：SSETransport 处理 GET 请求，建立 SSE 事件流。"""
+    t = SSETransport(handler=None, host="127.0.0.1", port=0)
+    await t.start()
+    port = t.port
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    writer.write(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+    await writer.drain()
+
+    response_line = await reader.readline()
+    assert b"200 OK" in response_line
+
+    header_bytes = b""
+    while True:
+        line = await reader.readline()
+        header_bytes += line
+        if line in (b"\r\n", b"\n", b""):
+            break
+    assert b"text/event-stream" in header_bytes
+
+    writer.close()
+    await writer.wait_closed()
+    await t.stop()
+
+
+async def test_http_transport_bad_request() -> None:
+    """真实回环：HTTPTransport 对非 POST/无 body 请求返回 400。"""
+    t = HTTPTransport(handler=None, host="127.0.0.1", port=0)
+    await t.start()
+    port = t.port
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    writer.write(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+    await writer.drain()
+
+    response_line = await reader.readline()
+    assert b"400 Bad Request" in response_line
+
+    writer.close()
+    await writer.wait_closed()
+    await t.stop()
+
+
 def test_mcp_server_init() -> None:
     server = MCPServer()
     assert server.config is not None
