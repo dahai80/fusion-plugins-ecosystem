@@ -1,12 +1,12 @@
-"""fusion-desk runtime 对接层（合并原 DeskContext）。
+"""fusion-cowork runtime 对接层（合并原 DeskContext）。
 
-封装 fusion-desk 的真实 runtime 句柄：
+封装 fusion-cowork 的真实 runtime 句柄：
 - NodeRegistry：节点类型注册表
 - TaskScheduler：定时任务调度器
 - FusionMLXClient：本地 MLX 推理客户端
-- setup_logger/get_logger：统一日志
+- WorkflowEngine：工作流引擎
 
-插件生态通过 DeskRuntime 访问 Desk 的底层抽象，所有调用经此层中转，
+插件生态通过 DeskRuntime 访问 cowork 的底层抽象，所有调用经此层中转，
 便于测试时注入 fake runtime。
 """
 
@@ -20,36 +20,36 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-FUSION_DESK_AVAILABLE = False
+FUSION_COWORK_AVAILABLE = False
 try:
-    import fusion_desk  # noqa: F401
+    import fusion_cowork  # noqa: F401
 
-    FUSION_DESK_AVAILABLE = True
+    FUSION_COWORK_AVAILABLE = True
 except ImportError:
     pass
 
 
 @dataclass
 class DeskRuntime:
-    """fusion-desk runtime 句柄封装。
+    """fusion-cowork runtime 句柄封装。
 
-    由 fusion-desk 启动时注入，插件生态通过 PluginRegistry.desk 访问。
+    由 fusion-cowork 启动时注入，插件生态通过 PluginRegistry.desk 访问。
     任意字段为 None 时，对应能力降级为 no-op（用于测试或离线场景）。
     """
 
-    # fusion-desk 节点注册表（fusion_desk.engine.node.NodeRegistry）
+    # fusion-cowork 节点注册表（fusion_cowork.NodeRegistry）
     node_registry: Any | None = None
-    # fusion-desk 任务调度器（fusion_desk.engine.scheduler.TaskScheduler）
+    # fusion-cowork 任务调度器（fusion_cowork.TaskScheduler）
     task_scheduler: Any | None = None
-    # fusion-desk MLX 客户端（fusion_desk.ai.FusionMLXClient）
+    # fusion-cowork MLX 客户端（fusion_cowork.FusionMLXClient）
     mlx_client: Any | None = None
-    # fusion-desk 工作流引擎（fusion_desk.engine.workflow.WorkflowEngine）
+    # fusion-cowork 工作流引擎（fusion_cowork.WorkflowEngine）
     workflow_engine: Any | None = None
-    # fusion-desk 日志器
+    # fusion-cowork 日志器
     desk_logger: logging.Logger | None = None
     # 配置中心句柄（dict-like，支持 get/set）
     config_center: Any | None = None
-    # MCP 网关端口（由 Desk 分配）
+    # MCP 网关端口（由 cowork 分配）
     mcp_gateway_port: int | None = None
     # 已注册插件权限表 {plugin_id: {allowed_paths: [...], capabilities: [...]}}
     plugin_permissions: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -63,8 +63,10 @@ class DeskRuntime:
     _vram_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     def __post_init__(self) -> None:
-        if not FUSION_DESK_AVAILABLE:
-            logger.info("desk_runtime: fusion-desk 未安装，DeskRuntime 以降级模式运行")
+        if not FUSION_COWORK_AVAILABLE:
+            logger.info(
+                "desk_runtime: fusion-cowork 未安装，DeskRuntime 以降级模式运行"
+            )
 
     # ── 显存调度 ──
 
@@ -207,7 +209,7 @@ class DeskRuntime:
     # ── 节点注册表桥 ──
 
     def list_nodes(self) -> list[dict[str, Any]]:
-        """列出 fusion-desk 已注册的节点类型。"""
+        """列出 fusion-cowork 已注册的节点类型。"""
         if self.node_registry is None:
             return []
         return self.node_registry.list()
@@ -221,7 +223,7 @@ class DeskRuntime:
     # ── 任务调度器桥 ──
 
     def list_scheduled_tasks(self) -> list[Any]:
-        """列出 fusion-desk 的全部定时任务。"""
+        """列出 fusion-cowork 的全部定时任务。"""
         if self.task_scheduler is None:
             return []
         return self.task_scheduler.list_tasks()

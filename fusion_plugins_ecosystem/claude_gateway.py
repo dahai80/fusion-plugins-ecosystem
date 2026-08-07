@@ -3,11 +3,11 @@
 集中式兼容层，把 PRD 的三层打通集中到一处：
 - Claude Desktop：通过 MCP 协议（stdio / SSE）对接
 - Claude Code (VS Code)：子代理调度 + 长任务 + 工具调用
-- MCP 协议：fusion-desk 暴露 MCP Server，插件能力自动注册为 MCP Tools
+- MCP 协议：fusion-cowork 暴露 MCP Server，插件能力自动注册为 MCP Tools
 
 并覆盖 PRD 的双向互通：
 - 正向：Claude 调用 fusion 全部本地能力（MLX 推理、文件操作、量化工具）
-- 反向：fusion-desk 主动拉起 Claude Code 子代理，完成项目批量重构、PR 生成
+- 反向：fusion-cowork 主动拉起 Claude Code 子代理，完成项目批量重构、PR 生成
 
 以及火山方舟 Claude Coding Plan 套餐鉴权统一管理。
 
@@ -188,12 +188,12 @@ class ClaudeGateway:
         info["config"] = self.config.to_dict()
         return info
 
-    # ── 反向：fusion-desk 拉起 Claude Code 子代理 ──
+    # ── 反向：fusion-cowork 拉起 Claude Code 子代理 ──
 
     async def dispatch_subagent(self, task: SubagentTask) -> dict[str, Any]:
         """拉起 Claude Code 子代理执行任务（反向互通）。
 
-         对应 PRD「fusion-desk 可主动拉起 Claude Code 子代理，完成项目
+         对应 PRD「fusion-cowork 可主动拉起 Claude Code 子代理，完成项目
         批量重构、PR 生成、代码优化」。
 
          受 config.subagent_timeout_destroy 控制：超时后自动销毁。

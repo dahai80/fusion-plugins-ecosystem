@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 
 import pytest
 
 from fusion_plugins_ecosystem.config import EcosystemConfig
+from fusion_plugins_ecosystem import server as server_module
 from fusion_plugins_ecosystem.server import MCPServer
 from fusion_plugins_ecosystem.transport import (
     HTTPTransport,
@@ -289,3 +291,112 @@ async def test_mcp_server_handler_tools_list() -> None:
         }
     )
     assert "tools" in resp["result"]
+
+
+async def test_mcp_server_start_stop_sse() -> None:
+    """真实启动/停止生命周期：SSE transport + register_builtin + stop。"""
+    server = MCPServer(config=EcosystemConfig(mcp_transport="sse", mcp_port=0))
+    start_task = asyncio.create_task(server.start(transport="sse"))
+    await asyncio.sleep(0.3)
+    assert server._running is True
+    assert server.transport is not None
+    assert server.registry.get("caveman_compress") is not None
+
+    await server.stop()
+    assert server._running is False
+    await start_task
+
+
+async def test_mcp_server_start_already_running_noop() -> None:
+    """二次 start 应幂等返回，不重复注册/启动。"""
+    server = MCPServer(config=EcosystemConfig(mcp_transport="sse", mcp_port=0))
+    await server.start(transport="sse")
+    builtin_count_before = len(server.registry.list())
+    await server.start(transport="sse")
+    builtin_count_after = len(server.registry.list())
+    assert builtin_count_before == builtin_count_after
+    await server.stop()
+
+
+async def test_mcp_server_stop_when_not_running_noop() -> None:
+    """未启动时 stop 应安全返回。"""
+    server = MCPServer()
+    await server.stop()
+    assert server._running is False
+
+
+async def test_mcp_server_stdio_signal_stop(monkeypatch) -> None:
+    """stdio 路径：模拟信号处理器触发 stop_event，验证 start 正常退出。"""
+    server = MCPServer(config=EcosystemConfig(mcp_transport="stdio"))
+
+    class _FakeTransport:
+        async def start(self) -> None:
+            return None
+
+        async def stop(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "fusion_plugins_ecosystem.server.create_transport",
+        lambda *a, **kw: _FakeTransport(),
+    )
+
+    def fake_add_signal(self, sig, callback, *args):
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.1, callback)
+
+    monkeypatch.setattr(
+        asyncio.AbstractEventLoop, "add_signal_handler", fake_add_signal
+    )
+
+    await server.start(transport="stdio")
+    assert server._running is False
+    assert server._transport is not None
+
+
+def test_main_cli_sse_start_stop(monkeypatch, tmp_path) -> None:
+    """main() CLI：解析参数 → 构造 MCPServer → 启动 sse → 自动停止。"""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fusion-plugin-server",
+            "--transport",
+            "sse",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--log-level",
+            "ERROR",
+        ],
+    )
+
+    stopped = asyncio.Event()
+
+    async def fake_start(self, transport="stdio", **kwargs):
+        self._running = True
+        await asyncio.sleep(0.1)
+        await self.stop()
+        stopped.set()
+
+    monkeypatch.setattr(MCPServer, "start", fake_start)
+
+    server_module.main()
+    assert stopped.is_set()
+
+
+def test_main_cli_keyboard_interrupt(monkeypatch) -> None:
+    """main() CLI：KeyboardInterrupt 被吞掉，正常退出（覆盖 except 分支）。"""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["fusion-plugin-server", "--transport", "stdio"],
+    )
+
+    async def raise_kbi(*a, **kw):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(MCPServer, "start", raise_kbi)
+
+    server_module.main()

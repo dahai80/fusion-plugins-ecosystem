@@ -1,10 +1,10 @@
 """插件 → MCP Tools 暴露。
 
-对应 PRD「fusion-desk 暴露 MCP Server，plugin-ecosystem 里所有插件能力
+对应 PRD「fusion-cowork 暴露 MCP Server，plugin-ecosystem 里所有插件能力
 会自动注册为 MCP Tools 供给 Claude 调用」。
 
-本模块负责将 PluginManifest 转换为 MCP Tool 描述，并通过 fusion-desk
-的 MCP 网关对外暴露。真实 MCP 协议封装由 fusion-desk runtime 提供，
+本模块负责将 PluginManifest 转换为 MCP Tool 描述，并通过 fusion-cowork
+的 MCP 网关对外暴露。真实 MCP 协议封装由 fusion-cowork runtime 提供，
 本模块只做描述生成 + 调用转发。
 """
 
@@ -103,7 +103,7 @@ class MCPExporter:
     ) -> dict[str, Any]:
         """MCP tools/call 转发：调用插件并返回 MCP 标准响应。
 
-        本方法依赖 fusion-desk 的 PluginLifecycle 执行插件，
+        本方法依赖 fusion-cowork 的 PluginLifecycle 执行插件，
         然后将结果包装为 MCP tools/call 响应。
         """
         # 真实实现：通过 desk.runtime 获取 lifecycle 并执行

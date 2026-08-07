@@ -1,7 +1,7 @@
 [project]
 name = "fusion-plugins-ecosystem"
-version = "0.3.2"
-description = "Fusion 插件生态 — 基于 fusion-desk 的标准化插件注册中心、生命周期管理、Claude 全链路适配"
+version = "0.3.3"
+description = "Fusion 插件生态 — 基于 fusion-cowork 的标准化插件注册中心、生命周期管理、Claude 全链路适配"
 authors = [
     { name = "Fusion-MLX Team" },
 ]
@@ -15,8 +15,8 @@ dependencies = [
 fusion-plugin-server = "fusion_plugins_ecosystem.server:main"
 
 [project.optional-dependencies]
-desk = [
-    "fusion-desk>=0.1.0",
+cowork = [
+    "fusion-cowork>=0.1.0",
 ]
 test = [
     "pytest>=8.0.0",
@@ -24,7 +24,7 @@ test = [
     "pytest-mock>=3.14.0",
 ]
 dev = [
-    "fusion-plugins-ecosystem[test,desk]",
+    "fusion-plugins-ecosystem[test,cowork]",
 ]
 
 [tool.pytest.ini_options]
