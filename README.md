@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--desk-orange" alt="fusion-desk">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-407%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-411%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-99%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 407 passed
+# → 411 passed
 ```
 
 ```python
@@ -191,7 +191,7 @@ fusion-plugins-ecosystem/
 │       ├── __init__.py
 │       └
         caveman_compress.py        ← built-in token compressor
-└── tests/                        ← 407 tests
+└── tests/                        ← 411 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -258,7 +258,7 @@ restored = EcosystemConfig.from_dict(d)
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **407 passed**.
+Latest run: **411 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|

@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--desk-orange" alt="fusion-desk">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-407%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-411%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-99%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -188,7 +188,7 @@ fusion-plugins-ecosystem/
 │   └── builtin/
 │       ├── __init__.py
 │       └── caveman_compress.py   ← 内置 token 压缩器
-└── tests/                        ← 407 测试
+└── tests/                        ← 411 测试
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -255,7 +255,7 @@ restored = EcosystemConfig.from_dict(d)
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-最新结果：**407 passed**。
+最新结果：**411 passed**。
 
 | 测试文件 | 用例数 | 覆盖范围 |
 |---------|-------|---------|
