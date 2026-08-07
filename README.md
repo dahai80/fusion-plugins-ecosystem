@@ -1,19 +1,19 @@
 <div align="center">
   <h1>🔌 Fusion-Plugins-Ecosystem</h1>
-  <p><strong>Plugin registry, lifecycle manager, and native Claude full-chain adaptation layer for fusion-desk.</strong></p>
-  <p><em>Build on fusion-desk. Expose every plugin to Claude. Zero adapter code.</em></p>
+  <p><strong>Plugin registry, lifecycle manager, and native Claude full-chain adaptation layer for fusion-cowork.</strong></p>
+  <p><em>Build on fusion-cowork. Expose every plugin to Claude. Zero adapter code.</em></p>
   <p>English | <a href="README_CN.md">简体中文</a></p>
 </div>
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue" alt="Python">
-  <img src="https://img.shields.io/badge/base-fusion--desk-orange" alt="fusion-desk">
+  <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-411%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.3.2-blue" alt="Version">
-  <img src="https://img.shields.io/badge/coverage-99%25-success" alt="Coverage">
+  <img src="https://img.shields.io/badge/tests-420%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
 
@@ -21,13 +21,13 @@
 
 # Fusion-Plugins-Ecosystem
 
-> Plugin registry, lifecycle manager, and native Claude full-chain adaptation layer built on `fusion-desk`. Every plugin auto-exposes as a Claude Skill and an MCP Tool. Zero per-plugin adapter code.
+> Plugin registry, lifecycle manager, and native Claude full-chain adaptation layer built on `fusion-cowork`. Every plugin auto-exposes as a Claude Skill and an MCP Tool. Zero per-plugin adapter code.
 
 **简体中文版见 [README_CN.md](README_CN.md)。**
 
 ## 📋 Overview
 
-`fusion-plugins-ecosystem` is the **upper-layer submodule** of `fusion-desk`. It is **not** a standalone project — process hosting, permission control, log collection, and resource throttling are all provided by `fusion-desk`. This package only adds:
+`fusion-plugins-ecosystem` is the **upper-layer submodule** of `fusion-cowork`. It is **not** a standalone project — process hosting, permission control, log collection, and resource throttling are all provided by `fusion-cowork`. This package only adds:
 
 1. **Plugin registry** — declarative manifests, param schemas, capability declarations
 2. **Lifecycle manager** — load/unload/enable/disable/hot-reload, timeout meltdown, auto-restart, INLINE/PROCESS sandbox modes
@@ -35,14 +35,14 @@
 4. **Token metering** — split Claude model consumption vs plugin local compute, JSON persistence
 5. **MCP protocol stack** — stdio/SSE/HTTP transports, JSON-RPC 2.0 handler, MCP Server CLI
 6. **Plugin sandbox** — process isolation via subprocess IPC, resource limits, heartbeat monitoring
-7. **Desk context bridge** — reuse Desk's MCP gateway, hardware scheduler, session pool
+7. **Cowork context bridge** — reuse fusion-cowork's MCP gateway, hardware scheduler, session pool
 
 ### Architecture
 
 ```
 fusion-plugin-ecosystem        ← this package: registry, lifecycle, Claude adaptation, sandbox, MCP server
         ↓ depends on API
-fusion-desk runtime            ← base runtime: MCP gateway, hardware, sessions, logging
+fusion-cowork runtime          ← base runtime: MCP gateway, hardware, sessions, logging
         ↓
 fusion-mlx core                ← Mac local inference kernel (Metal/MLX)
 ```
@@ -58,7 +58,7 @@ fusion-mlx core                ← Mac local inference kernel (Metal/MLX)
 
 **Bidirectional**:
 - **Forward**: Claude calls all fusion local capabilities (image/video generation, MLX local inference, file ops, quantization tools)
-- **Reverse**: fusion-desk proactively spins up Claude Code subagents for batch refactors, PR generation, code optimization
+- **Reverse**: fusion-cowork proactively spins up Claude Code subagents for batch refactors, PR generation, code optimization
 
 See [docs/CLAUDE_COMPATIBILITY.md](docs/CLAUDE_COMPATIBILITY.md) for the full spec.
 
@@ -73,12 +73,12 @@ cd fusion-plugins-ecosystem
 
 # Create venv (avoid PEP 668)
 python3 -m venv .venv
-.venv/bin/pip install -e ../fusion-desk      # base runtime (not on PyPI)
+.venv/bin/pip install -e ../fusion-cowork    # base runtime (not on PyPI)
 .venv/bin/pip install -e ".[test]"
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 411 passed
+# → 420 passed
 ```
 
 ```python
@@ -148,7 +148,7 @@ Register once → it auto-appears in Claude's tool catalog and MCP `tools/list`.
 | Doc | Content |
 |-----|---------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layering, module map, data flow (forward/reverse), capability mapping, pain points solved |
-| [docs/API.md](docs/API.md) | Full public API reference: `PluginRegistry`, `PluginLifecycle`, `ClaudeGateway`, `TokenMeter`, `DeskContext`, `EcosystemConfig` |
+| [docs/API.md](docs/API.md) | Full public API reference: `PluginRegistry`, `PluginLifecycle`, `ClaudeGateway`, `TokenMeter`, `DeskRuntime`, `EcosystemConfig` |
 | [docs/CLAUDE_COMPATIBILITY.md](docs/CLAUDE_COMPATIBILITY.md) | Three-layer compat, forward/reverse flows, volcengine auth, MLX visual backend, token metering, config toggles |
 | [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Plugin authoring guide: manifest, capabilities, params schema, async, lazy entry, testing checklist |
 
@@ -168,8 +168,7 @@ fusion-plugins-ecosystem/
     PLUGIN_DEVELOPMENT.md
 ├── fusion_plugins_ecosystem/
 │   ├── __init__.py               ← top-level exports + Lazy Import
-│   ├── desk_runtime.py           ← fusion-desk runtime handle wrapper
-│   ├── desk_context.py           ← thin DeskContext delegation layer
+│   ├── desk_runtime.py           ← fusion-cowork runtime handle wrapper
 │   ├── registry.py               ← plugin registry + frozen manifest
 │   ├── lifecycle.py              ← load/enable/execute + meltdown + restart + INLINE/PROCESS
 │   ├── sandbox.py                ← plugin sandbox (process isolation, IPC)
@@ -196,7 +195,6 @@ fusion-plugins-ecosystem/
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
     ├── test_config.py
-    ├── test_desk_context.py
     ├── test_desk_runtime.py
     ├── test_lifecycle.py
     ├── test_mcp_exporter.py
@@ -246,9 +244,9 @@ restored = EcosystemConfig.from_dict(d)
 
 | Pain point (from PRD) | Solution |
 |-----------------------|----------|
-| Subagent runs 40 min, zero token consumption, no logs | `TokenMeter` warns on `wall>60 ∧ total=0`; all logs via `DeskContext.log` |
+| Subagent runs 40 min, zero token consumption, no logs | `TokenMeter` warns on `wall>60 ∧ total=0`; all logs via `DeskRuntime.log` |
 | vRAM contention across plugins | `DeskRuntime.acquire_vram` enforces `vram_total_mb` budget ledger |
-| MCP port conflicts | fusion-desk single MCP gateway; `MCPExporter` multiplexes |
+| MCP port conflicts | fusion-cowork single MCP gateway; `MCPExporter` multiplexes |
 | Subagent hangs, no unified restart | `PluginLifecycle` timeout meltdown + `_maybe_restart` (≤ `MAX_RESTART`) |
 | Heartbeat stall | `PluginLifecycle._watch_loop` flags `HEARTBEAT_STALE` → `TIMEOUT` |
 
@@ -258,12 +256,11 @@ restored = EcosystemConfig.from_dict(d)
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **411 passed**.
+Latest run: **420 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
 | `test_desk_runtime.py` | 30 | vRAM / logging / permissions / API keys / MLX / node bridge / scheduler bridge |
-| `test_desk_context.py` | 18 | thin wrapper delegation |
 | `test_lifecycle.py` | 24 | load/enable/disable/unload/execute/timeout/crash/restart/watcher |
 | `test_mcp_exporter.py` | 13 | list_tools / call_tool / gateway_info / manifest_to_mcp_tool |
 | `test_token_meter.py` | 16 | TokenRecord / record / measure / summary / stuck-subagent warning |
@@ -274,13 +271,14 @@ Latest run: **411 passed**.
 | `test_caveman.py` | 22 | _compress_text / caveman_compress / CAVEMAN_MANIFEST fields |
 | `test_registry.py` | 13 | (legacy) registry + adapter + exporter + caveman integration |
 | `test_hook_adapter.py` | 8 | HookAdapter event mapping / capability filtering |
+| `test_transport_server.py` | 25 | SSE/HTTP/stdio transport + MCPServer start/stop lifecycle + CLI main() |
 
 ## ⚠️ Technical constraints
 
-- **Cannot run standalone** — process hosting, permissions, logs, resources all depend on `fusion-desk`
-- **Python ≥ 3.11** — aligned with fusion-desk
+- **Cannot run standalone** — process hosting, permissions, logs, resources all depend on `fusion-cowork`
+- **Python ≥ 3.11** — aligned with fusion-cowork
 - **Mac M-series native** — depends on fusion-mlx Metal/MLX acceleration
-- **No direct `fusion_desk` internal imports** — go through `DeskContext`
+- **No direct `fusion_cowork` internal imports** — go through `DeskRuntime`
 
 ## 📄 License
 

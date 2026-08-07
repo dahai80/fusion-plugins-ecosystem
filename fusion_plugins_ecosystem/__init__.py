@@ -1,16 +1,16 @@
-"""fusion-plugins-ecosystem — 基于 fusion-desk 的插件生态上层模块。
+"""fusion-plugins-ecosystem — 基于 fusion-cowork 的插件生态上层模块。
 
-架构定位：fusion-desk runtime 的子模块，负责插件注册、生命周期、
-Claude 全链路适配。所有进程托管/权限/硬件调度仍由 fusion-desk 统一提供。
+架构定位：fusion-cowork runtime 的子模块，负责插件注册、生命周期、
+Claude 全链路适配。所有进程托管/权限/硬件调度仍由 fusion-cowork 统一提供。
 
-Lazy Import 机制（与 fusion-desk 一致）：
+Lazy Import 机制（与 fusion-cowork 一致）：
 - import fusion_plugins_ecosystem 保持快速
 - 首次访问属性时自动加载对应模块
 """
 
 from __future__ import annotations
 
-__version__ = "0.3.0"
+__version__ = "0.3.3"
 __app_name__ = "Fusion-Plugins-Ecosystem"
 
 # ── Lazy Import 注册表 ──

@@ -1,4 +1,4 @@
-"""fusion-desk runtime 对接层测试。"""
+"""fusion-cowork runtime 对接层测试。"""
 
 from __future__ import annotations
 
