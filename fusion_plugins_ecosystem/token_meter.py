@@ -54,7 +54,7 @@ class TokenMeter:
     """Token 统一计量分流器。
 
     用法：
-        meter = TokenMeter(desk_context)
+        meter = TokenMeter(desk)
         with meter.measure("caveman_compress", TokenKind.PLUGIN_LOCAL):
             ...  # 插件执行
     """

@@ -38,7 +38,7 @@ class MCPExporter:
     """插件 → MCP Tools 暴露器。
 
     用法：
-        exporter = MCPExporter(registry, desk_context)
+        exporter = MCPExporter(registry, desk)
         tools = exporter.list_tools()           # MCP tools/list 响应
         result = await exporter.call_tool(...)  # MCP tools/call 转发
     """

@@ -1,4 +1,4 @@
-"""fusion-cowork runtime 对接层（合并原 DeskContext）。
+"""fusion-cowork runtime 对接层。
 
 封装 fusion-cowork 的真实 runtime 句柄：
 - NodeRegistry：节点类型注册表

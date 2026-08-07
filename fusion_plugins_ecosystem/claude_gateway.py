@@ -16,7 +16,7 @@
   · ClaudeSkillAdapter（插件 → Skill）
   · MCPExporter（插件 → MCP Tools）
   · PluginLifecycle（子代理执行 + 超时熔断 + 自动重启）
-  · DeskContext（MLX 推理、文件权限、API 密钥）
+  · DeskRuntime（MLX 推理、文件权限、API 密钥）
 - 所有开关由 EcosystemConfig 驱动，默认全开（原生完整兼容）
 """
 
