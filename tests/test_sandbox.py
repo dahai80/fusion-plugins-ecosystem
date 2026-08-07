@@ -33,6 +33,7 @@ def _sync_worker_entry(desk, params):
 
 async def _async_worker_entry(desk, params):
     import asyncio
+
     await asyncio.sleep(0)
     return {"async_ok": params.get("y", "none")}
 
@@ -43,6 +44,7 @@ def _error_worker_entry(desk, params):
 
 def _exit_worker_entry(desk, params):
     import sys
+
     sys.exit(0)
 
 

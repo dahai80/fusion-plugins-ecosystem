@@ -114,9 +114,7 @@ class PluginSandbox:
         sandbox_proc.heartbeat_task = asyncio.create_task(
             self._heartbeat_monitor(sandbox_proc)
         )
-        sandbox_proc.stderr_task = asyncio.create_task(
-            self._drain_stderr(sandbox_proc)
-        )
+        sandbox_proc.stderr_task = asyncio.create_task(self._drain_stderr(sandbox_proc))
 
         self._processes[plugin_id] = sandbox_proc
         logger.info("sandbox: spawned %s (pid=%d)", plugin_id, proc.pid)
@@ -173,7 +171,9 @@ class PluginSandbox:
             proc.heartbeat_task.cancel()
         if proc.stderr_task and not proc.stderr_task.done():
             proc.stderr_task.cancel()
-        self._fail_pending(proc, RuntimeError(f"sandbox: plugin {plugin_id!r} was killed"))
+        self._fail_pending(
+            proc, RuntimeError(f"sandbox: plugin {plugin_id!r} was killed")
+        )
 
         try:
             proc.process.terminate()
@@ -209,7 +209,9 @@ class PluginSandbox:
                 if not line:
                     proc.health = SandboxHealth.DEAD
                     logger.warning("sandbox: %s stdout EOF", proc.plugin_id)
-                    self._fail_pending(proc, RuntimeError(f"sandbox {proc.plugin_id!r} 进程已退出"))
+                    self._fail_pending(
+                        proc, RuntimeError(f"sandbox {proc.plugin_id!r} 进程已退出")
+                    )
                     break
                 text = line.decode("utf-8").strip()
                 if not text:
