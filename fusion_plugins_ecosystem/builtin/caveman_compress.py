@@ -5,7 +5,7 @@
 - 代码上下文压缩分类
 
 设计原则：
-- 插件入口接受 (desk_context, params) 并返回 dict 结果
+- 插件入口接受 (desk, params) 并返回 dict 结果
 - 通过 PluginManifest 声明能力，由 ClaudeSkillAdapter / MCPExporter 自动转
 """
 

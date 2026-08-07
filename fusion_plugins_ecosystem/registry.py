@@ -131,7 +131,7 @@ class PluginRegistry:
     """插件注册中心。
 
     用法：
-        registry = PluginRegistry(desk_context)
+        registry = PluginRegistry(desk)
         registry.register(manifest)
         registry.register_builtin()    # 注册内置 caveman 等
     """
