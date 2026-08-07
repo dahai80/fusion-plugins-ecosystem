@@ -23,6 +23,31 @@ from fusion_plugins_ecosystem.sandbox import (
 from fusion_plugins_ecosystem.schema import SandboxMode
 
 
+# ── 模块级入口（PROCESS 沙箱通过 importlib 导入，不能用闭包/局部函数）──
+
+
+def _sync_worker_entry(desk, params):
+    desk.log("real_plugin", "INFO", "subprocess running", value=params.get("x"))
+    return {"doubled": params.get("x", 0) * 2}
+
+
+async def _async_worker_entry(desk, params):
+    import asyncio
+
+    await asyncio.sleep(0)
+    return {"async_ok": params.get("y", "none")}
+
+
+def _error_worker_entry(desk, params):
+    raise ValueError("boom from worker")
+
+
+def _exit_worker_entry(desk, params):
+    import sys
+
+    sys.exit(0)
+
+
 # ── ResourceLimits ──
 
 
@@ -330,3 +355,50 @@ async def test_lifecycle_disable_kills_sandbox() -> None:
     await lifecycle.execute("process_plugin", {})
     await lifecycle.disable("process_plugin")
     mock_sandbox.kill.assert_called_once_with("process_plugin")
+
+
+# ── 真实子进程沙箱（验证 worker IPC 端到端）──
+
+
+async def test_sandbox_real_subprocess_sync_entry() -> None:
+    """真实子进程：同步入口 entry(desk, params) 签名，验证 desk 代理与结果回传。"""
+    sandbox = PluginSandbox(default_limits=ResourceLimits(timeout_seconds=10))
+    await sandbox.spawn("real_plugin", entry_point=_sync_worker_entry, config={})
+    try:
+        result = await sandbox.call("real_plugin", "execute", {"x": 21})
+        assert result == {"doubled": 42}
+    finally:
+        await sandbox.kill("real_plugin")
+
+
+async def test_sandbox_real_subprocess_async_entry() -> None:
+    """真实子进程：异步入口 entry(desk, params) 签名，验证 asyncio.run 路径。"""
+    sandbox = PluginSandbox(default_limits=ResourceLimits(timeout_seconds=10))
+    await sandbox.spawn("async_plugin", entry_point=_async_worker_entry, config={})
+    try:
+        result = await sandbox.call("async_plugin", "execute", {"y": "yes"})
+        assert result == {"async_ok": "yes"}
+    finally:
+        await sandbox.kill("async_plugin")
+
+
+async def test_sandbox_real_subprocess_entry_error_propagates() -> None:
+    """真实子进程：入口抛错时，宿主通过 error 消息收到异常。"""
+    sandbox = PluginSandbox(default_limits=ResourceLimits(timeout_seconds=10))
+    await sandbox.spawn("err_plugin", entry_point=_error_worker_entry, config={})
+    try:
+        with pytest.raises(RuntimeError, match="boom from worker"):
+            await sandbox.call("err_plugin", "execute", {})
+    finally:
+        await sandbox.kill("err_plugin")
+
+
+async def test_sandbox_real_subprocess_dead_resolves_pending() -> None:
+    """真实子进程：进程退出后，等待中的调用应以异常结束而非永久挂起。"""
+    sandbox = PluginSandbox(default_limits=ResourceLimits(timeout_seconds=10))
+    await sandbox.spawn("exit_plugin", entry_point=_exit_worker_entry, config={})
+    try:
+        with pytest.raises((RuntimeError, TimeoutError)):
+            await sandbox.call("exit_plugin", "execute", {})
+    finally:
+        await sandbox.kill("exit_plugin")

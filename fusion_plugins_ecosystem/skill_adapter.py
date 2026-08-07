@@ -56,7 +56,7 @@ class SkillAdapter:
     def export_all(self) -> list[SkillBundle]:
         bundles: list[SkillBundle] = []
         for manifest in self._registry.list():
-            if PluginCapability.MCP_TOOL not in manifest.capabilities:
+            if PluginCapability.CLAUDE_SKILL not in manifest.capabilities:
                 continue
             bundle = self._build_bundle(manifest)
             if bundle is not None:

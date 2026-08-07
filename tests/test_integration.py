@@ -294,7 +294,8 @@ def test_flow_adapters_export_all() -> None:
     agent_adapter = AgentAdapter(registry)
 
     skill_bundles = skill_adapter.export_all()
-    assert len(skill_bundles) >= 2
+    assert len(skill_bundles) == 1
+    assert skill_bundles[0].skill_md.startswith("---\n")
 
     agent_mds = agent_adapter.export_all()
     assert len(agent_mds) == 1

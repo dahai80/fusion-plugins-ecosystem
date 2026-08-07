@@ -88,8 +88,8 @@ class TestSkillAdapter:
         assert "mode" in bundle.skill_md
         assert "## Input Schema" in bundle.skill_md
 
-    def test_export_all_filters_mcp_tool_only(self) -> None:
-        m1 = _make_manifest("p1", capabilities=(PluginCapability.MCP_TOOL,))
+    def test_export_all_filters_claude_skill_only(self) -> None:
+        m1 = _make_manifest("p1", capabilities=(PluginCapability.CLAUDE_SKILL,))
         m2 = _make_manifest("p2", capabilities=(PluginCapability.FILE_ACCESS,))
         reg = _make_registry(m1, m2)
         adapter = SkillAdapter(reg)

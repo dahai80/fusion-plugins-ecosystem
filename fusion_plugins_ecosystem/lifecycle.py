@@ -72,8 +72,12 @@ class PluginLifecycle:
 
     # 合法状态转换映射：{from_state: {to_state}}
     _VALID_TRANSITIONS: dict[PluginState, set[PluginState]] = {
-        PluginState.REGISTERED: {PluginState.LOADED},
-        PluginState.LOADED: {PluginState.ENABLED, PluginState.DISABLED},
+        PluginState.REGISTERED: {PluginState.LOADED, PluginState.CRASHED},
+        PluginState.LOADED: {
+            PluginState.ENABLED,
+            PluginState.DISABLED,
+            PluginState.CRASHED,
+        },
         PluginState.ENABLED: {
             PluginState.DISABLED,
             PluginState.CRASHED,
@@ -84,9 +88,14 @@ class PluginLifecycle:
         PluginState.TIMEOUT: {PluginState.LOADED, PluginState.DISABLED},
     }
 
-    def __init__(self, registry: PluginRegistry) -> None:
+    def __init__(
+        self,
+        registry: PluginRegistry,
+        config: Any | None = None,
+    ) -> None:
         self.registry = registry
         self.desk: DeskRuntime = registry.desk
+        self.config = config
         self._instances: dict[str, PluginInstance] = {}
         self._instances_lock = asyncio.Lock()
         self._sandbox = PluginSandbox()
@@ -94,14 +103,21 @@ class PluginLifecycle:
         self._watcher_task: asyncio.Task[None] | None = None
 
     def _transition(self, inst: PluginInstance, new_state: PluginState) -> None:
-        """执行状态转换（带合法性校验）。"""
+        """执行状态转换（带合法性校验）。
+
+        非法转换直接抛错并保持原状态，避免静默进入不一致状态。
+        """
         allowed = self._VALID_TRANSITIONS.get(inst.state, set())
         if new_state not in allowed:
-            logger.warning(
-                "lifecycle: 非法状态转换 %s → %s (plugin=%s)",
+            logger.error(
+                "lifecycle: 非法状态转换 %s → %s (plugin=%s)，拒绝转换",
                 inst.state.value,
                 new_state.value,
                 inst.manifest.id,
+            )
+            raise RuntimeError(
+                f"非法状态转换 {inst.state.value} → {new_state.value} "
+                f"(plugin={inst.manifest.id})"
             )
         inst.state = new_state
 
@@ -230,10 +246,20 @@ class PluginLifecycle:
             raise
 
     async def _invoke(self, inst: PluginInstance, params: dict[str, Any]) -> Any:
-        """实际调用插件入口。根据 sandbox_mode 选择进程内或沙箱执行。"""
+        """实际调用插件入口。根据 sandbox_mode 选择进程内或沙箱执行。
+
+        sandbox_mode 选取优先级：
+        1. manifest 显式声明 PROCESS → 沙箱执行
+        2. manifest 为默认 INLINE，但 EcosystemConfig.sandbox_default_mode=process → 沙箱执行
+        3. 其余 → 进程内执行
+        """
         from fusion_plugins_ecosystem.schema import SandboxMode
 
         if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
+            return await self._invoke_sandbox(inst, params)
+
+        config_default = getattr(self.config, "sandbox_default_mode", "inline")
+        if config_default == "process":
             return await self._invoke_sandbox(inst, params)
 
         return await self._invoke_inline(inst, params)
@@ -256,7 +282,7 @@ class PluginLifecycle:
             await self._sandbox.spawn(
                 plugin_id,
                 entry_point=inst.manifest.entry_point,
-                config=params,
+                config={},
                 limits=ResourceLimits(
                     timeout_seconds=inst.manifest.timeout_seconds
                     or self.DEFAULT_TIMEOUT,
