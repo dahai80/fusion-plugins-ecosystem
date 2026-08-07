@@ -326,7 +326,12 @@ async def test_mcp_server_stop_when_not_running_noop() -> None:
 
 
 async def test_mcp_server_stdio_signal_stop(monkeypatch) -> None:
-    """stdio 路径：模拟信号处理器触发 stop_event，验证 start 正常退出。"""
+    """stdio 路径：模拟信号处理器触发 stop_event，验证 start 正常退出。
+
+    实例级 patch loop.add_signal_handler：SelectorEventLoop 自身实现了
+    add_signal_handler 会遮蔽 AbstractEventLoop 上的类级 patch，故必须
+    patch 运行中的 loop 实例。
+    """
     server = MCPServer(config=EcosystemConfig(mcp_transport="stdio"))
 
     class _FakeTransport:
@@ -341,15 +346,14 @@ async def test_mcp_server_stdio_signal_stop(monkeypatch) -> None:
         lambda *a, **kw: _FakeTransport(),
     )
 
-    def fake_add_signal(self, sig, callback, *args):
-        loop = asyncio.get_running_loop()
-        loop.call_later(0.1, callback)
+    loop = asyncio.get_running_loop()
 
-    monkeypatch.setattr(
-        asyncio.AbstractEventLoop, "add_signal_handler", fake_add_signal
-    )
+    def fake_add_signal(sig, callback, *args):
+        loop.call_later(0.05, callback)
 
-    await server.start(transport="stdio")
+    monkeypatch.setattr(loop, "add_signal_handler", fake_add_signal)
+
+    await asyncio.wait_for(server.start(transport="stdio"), timeout=5)
     assert server._running is False
     assert server._transport is not None
 
