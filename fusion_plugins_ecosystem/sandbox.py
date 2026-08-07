@@ -59,6 +59,7 @@ class SandboxProcess:
     pending_calls: dict[str, asyncio.Future] = field(default_factory=dict)
     reader_task: asyncio.Task | None = None
     heartbeat_task: asyncio.Task | None = None
+    stderr_task: asyncio.Task | None = None
 
 
 class PluginSandbox:
@@ -113,6 +114,9 @@ class PluginSandbox:
         sandbox_proc.heartbeat_task = asyncio.create_task(
             self._heartbeat_monitor(sandbox_proc)
         )
+        sandbox_proc.stderr_task = asyncio.create_task(
+            self._drain_stderr(sandbox_proc)
+        )
 
         self._processes[plugin_id] = sandbox_proc
         logger.info("sandbox: spawned %s (pid=%d)", plugin_id, proc.pid)
@@ -145,8 +149,16 @@ class PluginSandbox:
         except Exception as e:
             proc.pending_calls.pop(call_id, None)
             future.set_exception(e)
+            return await future
 
-        return await future
+        try:
+            return await asyncio.wait_for(future, timeout=proc.limits.timeout_seconds)
+        except asyncio.TimeoutError:
+            proc.pending_calls.pop(call_id, None)
+            raise TimeoutError(
+                f"sandbox: plugin {plugin_id!r} call timed out after "
+                f"{proc.limits.timeout_seconds}s"
+            )
 
     async def kill(self, plugin_id: str) -> None:
         """终止沙箱子进程。"""
@@ -159,6 +171,9 @@ class PluginSandbox:
             proc.reader_task.cancel()
         if proc.heartbeat_task and not proc.heartbeat_task.done():
             proc.heartbeat_task.cancel()
+        if proc.stderr_task and not proc.stderr_task.done():
+            proc.stderr_task.cancel()
+        self._fail_pending(proc, RuntimeError(f"sandbox: plugin {plugin_id!r} was killed"))
 
         try:
             proc.process.terminate()
@@ -194,6 +209,7 @@ class PluginSandbox:
                 if not line:
                     proc.health = SandboxHealth.DEAD
                     logger.warning("sandbox: %s stdout EOF", proc.plugin_id)
+                    self._fail_pending(proc, RuntimeError(f"sandbox {proc.plugin_id!r} 进程已退出"))
                     break
                 text = line.decode("utf-8").strip()
                 if not text:
@@ -224,6 +240,7 @@ class PluginSandbox:
         except Exception as e:
             logger.error("sandbox: %s read error: %s", proc.plugin_id, e)
             proc.health = SandboxHealth.DEAD
+            self._fail_pending(proc, e)
 
     async def _heartbeat_monitor(self, proc: SandboxProcess) -> None:
         """监控子进程心跳。"""
@@ -262,10 +279,42 @@ class PluginSandbox:
         log_method = getattr(logger, level.lower(), logger.info)
         log_method("sandbox:%s: %s", proc.plugin_id, message)
 
+    async def _drain_stderr(self, proc: SandboxProcess) -> None:
+        """持续读取子进程 stderr，防止 PIPE 缓冲区写满导致子进程阻塞。
+
+        子进程的日志已通过 stdout IPC 回传，stderr 只捕获意外的 traceback。
+        """
+        try:
+            while proc.health == SandboxHealth.ALIVE:
+                line = await proc.process.stderr.readline()
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    logger.warning("sandbox:%s stderr: %s", proc.plugin_id, text)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug("sandbox: %s stderr drain ended: %s", proc.plugin_id, e)
+
+    def _fail_pending(self, proc: SandboxProcess, exc: BaseException) -> None:
+        """进程异常退出时，让所有等待中的调用以异常结束，避免调用方永久挂起。"""
+        for call_id, future in list(proc.pending_calls.items()):
+            if not future.done():
+                future.set_exception(exc)
+        proc.pending_calls.clear()
+
     def _build_worker_script(
         self, entry_point: Any, config: dict, limits: ResourceLimits
     ) -> str:
-        """构建子进程 worker 脚本。"""
+        """构建子进程 worker 脚本。
+
+        修复要点：
+        - 入口调用签名对齐 inline 契约 entry(desk, params)，desk 为 _DeskProxy
+        - stdout 输出加锁，心跳线程与主循环不再竞争交错
+        - 日志经 _DeskProxy.log 通过 stdout IPC 回传宿主，不再写 stderr 避免管道阻塞
+        - 支持异步入口（iscoroutinefunction 检测 + asyncio.run）
+        """
         entry_str = ""
         if callable(entry_point):
             mod = getattr(entry_point, "__module__", "")
@@ -276,18 +325,37 @@ class PluginSandbox:
             entry_str = entry_point
 
         return (
-            "import sys,json,time,importlib,resource,logging\n"
-            "logging.basicConfig(level=logging.INFO,stream=sys.stderr,"
-            "format='%(name)s %(levelname)s: %(message)s')\n"
+            "import sys,json,time,importlib,resource,threading,asyncio,inspect\n"
             f"_ENTRY={entry_str!r}\n"
             f"_CONFIG={json.dumps(config)}\n"
             f"_MEM_LIMIT_MB={limits.memory_limit_mb}\n"
-            "logger=logging.getLogger('sandbox.worker')\n"
+            "_OUT_LOCK=threading.Lock()\n"
+            "def _send(msg):\n"
+            "    line=json.dumps(msg)+'\\n'\n"
+            "    with _OUT_LOCK:\n"
+            "        sys.stdout.write(line)\n"
+            "        sys.stdout.flush()\n"
+            "def _log(level,message,**extra):\n"
+            "    _send({'type':'log','level':level,'message':message,'extra':extra})\n"
+            "class _DeskProxy:\n"
+            "    def log(self,plugin_id,level,message,**kw):\n"
+            "        _log(level,message,**kw)\n"
+            "    def acquire_vram(self,plugin_id,mb):\n"
+            "        raise NotImplementedError('PROCESS 沙箱不支持 vRAM 申请，请用 INLINE 模式')\n"
+            "    def release_vram(self,plugin_id):\n"
+            "        pass\n"
+            "    def mlx_chat(self,*a,**kw):\n"
+            "        raise NotImplementedError('PROCESS 沙箱不支持 mlx_chat，请用 INLINE 模式')\n"
+            "    def get_api_key(self,provider):\n"
+            "        return None\n"
+            "    def check_file_permission(self,plugin_id,path):\n"
+            "        return False\n"
+            "desk=_DeskProxy()\n"
             "try:\n"
             "    soft,hard=resource.getrlimit(resource.RLIMIT_AS)\n"
             "    resource.setrlimit(resource.RLIMIT_AS,(_MEM_LIMIT_MB*1024*1024,hard))\n"
             "except Exception as e:\n"
-            "    logger.warning('setrlimit failed: %s',e)\n"
+            "    _log('WARNING','setrlimit failed: %s'%e)\n"
             "def _load_entry():\n"
             "    if not _ENTRY: return None\n"
             "    if ':' in _ENTRY:\n"
@@ -296,11 +364,9 @@ class PluginSandbox:
             "        return getattr(mod,attr) if attr else mod\n"
             "    return importlib.import_module(_ENTRY)\n"
             "_entry_obj=_load_entry()\n"
-            "def _send(msg):\n"
-            "    sys.stdout.write(json.dumps(msg)+'\\n')\n"
-            "    sys.stdout.flush()\n"
+            "if _entry_obj is None:\n"
+            "    _log('ERROR','插件入口未配置，无法执行')\n"
             "def _heartbeat_loop():\n"
-            "    import threading\n"
             "    def _tick():\n"
             "        while True:\n"
             "            time.sleep(30)\n"
@@ -308,6 +374,20 @@ class PluginSandbox:
             "    t=threading.Thread(target=_tick,daemon=True)\n"
             "    t.start()\n"
             "_heartbeat_loop()\n"
+            "def _execute(call_id,args):\n"
+            "    if not _entry_obj:\n"
+            "        _send({'type':'error','id':call_id,'error':'插件入口未配置'})\n"
+            "        return\n"
+            "    try:\n"
+            "        if inspect.iscoroutinefunction(_entry_obj):\n"
+            "            result=asyncio.run(_entry_obj(desk,args))\n"
+            "        elif callable(_entry_obj):\n"
+            "            result=_entry_obj(desk,args)\n"
+            "        else:\n"
+            "            result=str(_entry_obj)\n"
+            "        _send({'type':'result','id':call_id,'result':result})\n"
+            "    except Exception as e:\n"
+            "        _send({'type':'error','id':call_id,'error':str(e)})\n"
             "for line in sys.stdin:\n"
             "    line=line.strip()\n"
             "    if not line: continue\n"
@@ -319,14 +399,8 @@ class PluginSandbox:
             "    call_id=req.get('id','')\n"
             "    method=req.get('method','')\n"
             "    args=req.get('args',{})\n"
-            "    try:\n"
-            "        if method=='execute' and _entry_obj:\n"
-            "            if hasattr(_entry_obj,'__self__'): result=_entry_obj(args)\n"
-            "            elif callable(_entry_obj): result=_entry_obj(_CONFIG,args)\n"
-            "            else: result=str(_entry_obj)\n"
-            "            _send({'type':'result','id':call_id,'result':result})\n"
-            "        else:\n"
-            "            _send({'type':'error','id':call_id,'error':f'Unknown method {method}'})\n"
-            "    except Exception as e:\n"
-            "        _send({'type':'error','id':call_id,'error':str(e)})\n"
+            "    if method=='execute':\n"
+            "        _execute(call_id,args)\n"
+            "    else:\n"
+            "        _send({'type':'error','id':call_id,'error':f'Unknown method {method}'})\n"
         )
