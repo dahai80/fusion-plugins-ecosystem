@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import logging
 import re
+
+from fusion_plugins_ecosystem import __version__ as _PKG_VERSION
 from typing import Any
 
 from fusion_plugins_ecosystem.registry import (
@@ -124,7 +126,7 @@ def caveman_compress(desk: Any, params: dict[str, Any]) -> dict[str, Any]:
 CAVEMAN_MANIFEST = PluginManifest(
     id="caveman_compress",
     name="Caveman Token Compressor",
-    version="0.1.0",
+    version=_PKG_VERSION,
     category=PluginCategory.CONTEXT_COMPRESS,
     description=(
         "对输入文本做 caveman 风格 token 压缩："

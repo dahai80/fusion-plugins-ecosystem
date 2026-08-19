@@ -53,6 +53,8 @@ class MCPServer:
         )
         self._transport: Any = None
         self._running = False
+        # 停止信号：start() 等待、stop() 触发，跨协程保活/停机
+        self._stop_event: asyncio.Event | None = None
 
     async def start(
         self,
@@ -87,22 +89,34 @@ class MCPServer:
 
         await self._transport.start()
 
-        if transport_type == "stdio":
-            stop_event = asyncio.Event()
-            loop = asyncio.get_running_loop()
-            for sig in (signal.SIGINT, signal.SIGTERM):
-                loop.add_signal_handler(sig, stop_event.set)
-            await stop_event.wait()
-            await self.stop()
+        # 所有传输类型都需阻塞至停止信号，否则 start() 立即返回会导致
+        # asyncio.run 结束、进程退出（sse/http 此前无 keep-alive → CLI 闪退）
+        self._stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, self._stop_event.set)
+            except NotImplementedError:
+                # 部分平台不支持 add_signal_handler，退化轮询
+                pass
+        await self._stop_event.wait()
+        # 唤醒后停传输；若 stop() 已先行停掉则 _transport_stop 幂等返回
+        await self._transport_stop()
 
-    async def stop(self) -> None:
-        """停止 MCP Server。"""
+    async def _transport_stop(self) -> None:
+        """幂等停止传输：_running 守卫防止 start()/stop() 双重 stop。"""
         if not self._running:
             return
         self._running = False
         if self._transport:
             await self._transport.stop()
         logger.info("MCPServer stopped")
+
+    async def stop(self) -> None:
+        """停止 MCP Server：触发 stop_event 解除 start() 阻塞，并停传输。"""
+        if self._stop_event is not None:
+            self._stop_event.set()
+        await self._transport_stop()
 
     @property
     def transport(self) -> Any:
