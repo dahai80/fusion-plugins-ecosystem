@@ -157,9 +157,32 @@ class TokenMeter:
         """返回指定时间之后的记录。"""
         return [r for r in self._records if r.timestamp >= since]
 
-    def prune(self) -> None:
-        """手动淘汰超过 max_records 的旧记录。"""
+    def prune(self, max_age_seconds: float | None = None) -> None:
+        """手动淘汰旧记录。
+
+        - max_age_seconds 给定时：淘汰超过该秒数的旧记录（按时间淘汰）
+        - 不论是否给定：再淘汰超过 max_records 的旧记录（按条数淘汰）
+        """
+        if max_age_seconds is not None:
+            self._prune_by_age(max_age_seconds)
         self._prune()
+
+    def _prune_by_age(self, max_age_seconds: float) -> None:
+        """淘汰超过 max_age_seconds 秒的旧记录。"""
+        cutoff = time.time() - max_age_seconds
+        kept = [r for r in self._records if r.timestamp >= cutoff]
+        if len(kept) == len(self._records):
+            return
+        removed = [r for r in self._records if r.timestamp < cutoff]
+        self._records = kept
+        for rec in removed:
+            if rec.plugin_id in self._by_plugin:
+                self._by_plugin[rec.plugin_id] = [
+                    r for r in self._by_plugin[rec.plugin_id] if r is not rec
+                ]
+        logger.info(
+            "token_meter: 按时间淘汰 %d 条记录（>%ss）", len(removed), max_age_seconds
+        )
 
     def _save(self) -> None:
         """持久化记录到 persist_path。"""

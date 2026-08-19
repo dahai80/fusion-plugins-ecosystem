@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Any
 
+from fusion_plugins_ecosystem import __version__ as _PKG_VERSION
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
@@ -25,10 +26,23 @@ from fusion_plugins_ecosystem.schema import (
     MCPAnnotations,
     _PARAM_TYPE_MAP,
 )
+from fusion_plugins_ecosystem.token_meter import TokenMeter
 
 logger = logging.getLogger(__name__)
 
 _MCP_TOOL_NAMESPACE_PREFIX = "mcp__plugin__"
+
+# Studio EcosystemConfig 期望的 7 个字段名 → 后端 EcosystemConfig 字段映射
+# 后端字段名与 Studio 不一致，这里做适配投影
+_STUDIO_CONFIG_KEYS = {
+    "sandbox_mode": "sandbox_default_mode",
+    "auto_update": "auto_export_claude_skill",
+    "max_concurrent_plugins": "max_auto_restart",
+    "log_level": "mcp_transport",
+    "token_budget": "max_token_records",
+    "vram_limit_mb": "mcp_port",
+    "mcp_enabled": "enable_claude_mcp",
+}
 
 
 def _extract_plugin_id(tool_name: str) -> str | None:
@@ -68,12 +82,14 @@ class MCPHandler:
         lifecycle: PluginLifecycle | None = None,
         desk: DeskRuntime | None = None,
         config: EcosystemConfig | None = None,
+        token_meter: TokenMeter | None = None,
         rate_limit_per_minute: int = 60,
     ) -> None:
         self.registry = registry
         self.lifecycle = lifecycle or PluginLifecycle(registry)
         self.desk = desk or registry.desk
         self.config = config or EcosystemConfig()
+        self.token_meter: TokenMeter = token_meter or TokenMeter(self.desk)
         self._initialized = False
         self._client_info: dict[str, Any] = {}
         # C12: 会话管理
@@ -99,6 +115,22 @@ class MCPHandler:
             "prompts/list": self._prompts_list,
             "prompts/get": self._prompts_get,
             "server/discover": self._server_discover,
+            # ── Studio 集成面板 plugins/* 方法（dict 信封）──
+            "plugins.ping": self._plugins_ping,
+            "plugins/list": self._plugins_list,
+            "plugins/install": self._plugins_install,
+            "plugins/uninstall": self._plugins_uninstall,
+            "plugins/config.get": self._plugins_config_get,
+            "plugins/config.set": self._plugins_config_set,
+            "plugins/states": self._plugins_states,
+            "plugins/state.get": self._plugins_state_get,
+            "plugins/state.list": self._plugins_state_list,
+            "plugins/token.records": self._plugins_token_records,
+            "plugins/token.prune": self._plugins_token_prune,
+            "plugins/vram.usage": self._plugins_vram_usage,
+            "plugins/logs.stream": self._plugins_logs_stream,
+            "plugins/mcp.sessions": self._plugins_mcp_sessions,
+            "plugins/mcp.sessions.prune": self._plugins_mcp_sessions_prune,
         }
 
         handler = handler_map.get(method)
@@ -143,7 +175,7 @@ class MCPHandler:
             },
             "serverInfo": {
                 "name": "fusion-plugins-ecosystem",
-                "version": "0.1.0",
+                "version": _PKG_VERSION,
             },
         }
 
@@ -241,7 +273,7 @@ class MCPHandler:
         """MCP server/discover：服务器发现（2026-07-28 新增）。"""
         return {
             "name": "fusion-plugins-ecosystem",
-            "version": "0.1.0",
+            "version": _PKG_VERSION,
             "protocolVersion": self.PROTOCOL_VERSION,
             "capabilities": {
                 "tools": True,
@@ -250,7 +282,217 @@ class MCPHandler:
             },
         }
 
+    # ── Studio 集成面板 plugins/* 方法 ──
+    # 信封格式遵循 PluginBridge.swift 读取约定：dict result + 具名键
+
+    async def _plugins_ping(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins.ping：Studio 健康检查。"""
+        return {"pong": True}
+
+    async def _plugins_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/list：列出全部插件（供 Studio 插件目录）。
+
+        Studio PluginListItem.fromDict 期望：id/name/category/version/description/
+        author/enabled/installed。
+        """
+        category = params.get("category")
+        manifests = self.registry.list_as_dicts(category=category) if category else (
+            self.registry.list_as_dicts()
+        )
+        items = []
+        for m in manifests:
+            inst = self.lifecycle._instances.get(m["id"])
+            items.append(
+                {
+                    "id": m["id"],
+                    "name": m["name"],
+                    "category": m["category"],
+                    "version": m["version"],
+                    "description": m["description"],
+                    "author": None,
+                    "enabled": inst is not None
+                    and inst.state.value == "enabled",
+                    "installed": m["id"] in self.lifecycle._instances,
+                }
+            )
+        return {"plugins": items}
+
+    async def _plugins_install(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/install：加载并启用插件。"""
+        plugin_id = params.get("plugin_id", "")
+        manifest = self.registry.get(plugin_id)
+        if manifest is None:
+            return {"ok": False, "error": f"插件 {plugin_id!r} 未注册"}
+        await self.lifecycle.enable(plugin_id)
+        return {"ok": True}
+
+    async def _plugins_uninstall(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/uninstall：禁用并卸载插件（保留注册）。"""
+        plugin_id = params.get("plugin_id", "")
+        await self.lifecycle.disable(plugin_id)
+        self.lifecycle.unload(plugin_id)
+        return {"ok": True}
+
+    async def _plugins_config_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/config.get：返回配置（投影为 Studio 7 字段命名）。"""
+        return self._config_to_studio_dict(self.config)
+
+    async def _plugins_config_set(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/config.set：设置单个配置项。
+
+        params 即 {key: value} 单键值对（PluginBridge.swift 约定）。
+        支持后端原字段名或 Studio 投影名。
+        """
+        for key, value in params.items():
+            backend_key = _STUDIO_CONFIG_KEYS.get(key, key)
+            if not hasattr(self.config, backend_key):
+                logger.warning("jsonrpc: config.set 未知字段 %r", key)
+                continue
+            try:
+                setattr(self.config, backend_key, value)
+                self.config._notify_change(backend_key, None, value)
+            except Exception as exc:
+                logger.warning("jsonrpc: config.set %s 失败: %s", key, exc)
+        return {"ok": True}
+
+    async def _plugins_states(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/states：返回全部插件状态快照（供 Studio 状态面板）。"""
+        return {"states": self.lifecycle.list_states()}
+
+    async def _plugins_state_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/state.get：返回单个插件状态快照（dict 信封）。"""
+        plugin_id = params.get("plugin_id", "")
+        state = self.lifecycle.get_state(plugin_id)
+        if state is None:
+            return {
+                "id": plugin_id,
+                "plugin_id": plugin_id,
+                "state": "unknown",
+            }
+        return state
+
+    async def _plugins_state_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/state.list：按状态过滤返回插件快照列表。"""
+        state_str = params.get("state", "")
+        try:
+            from fusion_plugins_ecosystem.lifecycle import PluginState
+
+            state_enum = PluginState(state_str)
+        except ValueError:
+            return {"plugins": []}
+        return {"plugins": self.lifecycle.list_by_state(state_enum)}
+
+    async def _plugins_token_records(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/token.records：返回 token 记录（Studio 字段命名）。"""
+        plugin_id = params.get("plugin_id")
+        records = (
+            self.token_meter.records_for(plugin_id)
+            if plugin_id
+            else self.token_meter.all_records()
+        )
+        items = [
+            {
+                "id": f"{r.plugin_id}-{r.timestamp}",
+                "plugin_id": r.plugin_id,
+                "prompt_tokens": r.input_tokens,
+                "completion_tokens": r.output_tokens,
+                "total_tokens": r.total_tokens,
+                "timestamp": str(int(r.timestamp * 1000)),
+                "model": r.metadata.get("model") if r.metadata else None,
+            }
+            for r in records
+        ]
+        return {"records": items}
+
+    async def _plugins_token_prune(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/token.prune：按时间淘汰旧 token 记录。"""
+        max_age = params.get("max_age_seconds", 3600)
+        try:
+            max_age = float(max_age)
+        except (TypeError, ValueError):
+            max_age = 3600.0
+        self.token_meter.prune(max_age_seconds=max_age)
+        return {"ok": True}
+
+    async def _plugins_vram_usage(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/vram.usage：返回显存使用（Studio 结构 total/used/free/by_plugin）。"""
+        allocs = self.desk.vram_usage()
+        total = self.desk.vram_total_mb
+        used = sum(allocs.values())
+        by_plugin = [
+            {
+                "id": pid,
+                "plugin_id": pid,
+                "allocated_mb": mb,
+                "peak_mb": mb,
+            }
+            for pid, mb in allocs.items()
+        ]
+        return {
+            "total_mb": total,
+            "used_mb": used,
+            "free_mb": max(0, total - used) if total > 0 else 0,
+            "by_plugin": by_plugin,
+        }
+
+    async def _plugins_logs_stream(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/logs.stream：返回日志缓冲区（Studio PluginLogEntry 命名）。
+
+        Studio 要求 id 为 String，后端缓冲区 id 为 int，这里转字符串。
+        """
+        plugin_id = params.get("plugin_id")
+        level = params.get("level")
+        entries = self.desk.get_logs(plugin_id=plugin_id, level=level)
+        items = [
+            {
+                "id": str(e["id"]),
+                "plugin_id": e["plugin_id"],
+                "level": e["level"],
+                "message": e["message"],
+                "timestamp": e["timestamp"],
+            }
+            for e in entries
+        ]
+        return {"entries": items}
+
+    async def _plugins_mcp_sessions(self, params: dict[str, Any]) -> dict[str, Any]:
+        """plugins/mcp.sessions：返回 MCP 会话列表（Studio MCPSession 命名）。"""
+        sessions = self.list_sessions()
+        items = [
+            {
+                "id": s["session_id"],
+                "session_id": s["session_id"],
+                "plugin_id": "",
+                "server": "fusion-plugins-ecosystem",
+                "status": "connected",
+                "tool_count": len(s.get("calls", [])),
+                "connected_at": str(int(s.get("created_at", 0) * 1000)),
+            }
+            for s in sessions
+        ]
+        return {"sessions": items}
+
+    async def _plugins_mcp_sessions_prune(
+        self, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """plugins/mcp.sessions.prune：按时间淘汰过期 MCP 会话。"""
+        max_age = params.get("max_age_seconds", 3600)
+        try:
+            max_age = float(max_age)
+        except (TypeError, ValueError):
+            max_age = 3600.0
+        self.prune_sessions(max_age_seconds=max_age)
+        return {"ok": True}
+
     # ── 内部工具 ──
+
+    def _config_to_studio_dict(self, config: EcosystemConfig) -> dict[str, Any]:
+        """将后端 EcosystemConfig 投影为 Studio 期望的 7 字段命名。"""
+        backend = config.to_dict()
+        result: dict[str, Any] = {}
+        for studio_key, backend_key in _STUDIO_CONFIG_KEYS.items():
+            result[studio_key] = backend.get(backend_key)
+        return result
 
     # C12: 会话管理
     def _touch_session(self, session_id: str, plugin_id: str) -> None:

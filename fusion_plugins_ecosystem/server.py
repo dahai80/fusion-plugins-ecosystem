@@ -18,6 +18,7 @@ from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.jsonrpc import MCPHandler
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 from fusion_plugins_ecosystem.registry import PluginRegistry
+from fusion_plugins_ecosystem.token_meter import TokenMeter
 from fusion_plugins_ecosystem.transport import create_transport
 
 logger = logging.getLogger(__name__)
@@ -42,11 +43,13 @@ class MCPServer:
         )
         self.registry = PluginRegistry(desk=self.desk)
         self.lifecycle = PluginLifecycle(self.registry)
+        self.token_meter = TokenMeter(self.desk)
         self.handler = MCPHandler(
             registry=self.registry,
             lifecycle=self.lifecycle,
             desk=self.desk,
             config=self.config,
+            token_meter=self.token_meter,
         )
         self._transport: Any = None
         self._running = False

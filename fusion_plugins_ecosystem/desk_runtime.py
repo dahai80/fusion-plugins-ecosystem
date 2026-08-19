@@ -15,10 +15,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# 日志环形缓冲区上限（避免无限增长）
+_LOG_BUFFER_MAX = 2000
 
 FUSION_COWORK_AVAILABLE = False
 try:
@@ -59,6 +64,10 @@ class DeskRuntime:
     vram_total_mb: int = 0
     # 已注册的插件 ID 集合
     registered_plugin_ids: set[str] = field(default_factory=set)
+    # 日志环形缓冲区（供消费端查询历史日志）
+    log_entries: deque = field(default_factory=lambda: deque(maxlen=_LOG_BUFFER_MAX))
+    # 日志自增计数（生成日志条目 id）
+    _log_counter: int = field(default=0)
     # vRAM 操作锁（线程安全）
     _vram_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -115,7 +124,8 @@ class DeskRuntime:
     ) -> None:
         """统一日志采集入口（解决「子代理无日志」痛点）。
 
-        所有插件日志经此汇集到 Desk 全链路日志面板。
+        所有插件日志经此汇集到 Desk 全链路日志面板，
+        同时写入环形缓冲区供消费端查询历史日志。
         """
         log_level = getattr(logging, level.upper(), logging.INFO)
         extra = f" {kwargs}" if kwargs else ""
@@ -135,6 +145,37 @@ class DeskRuntime:
                 message,
                 extra,
             )
+        # 写入环形缓冲区（供 plugins/logs.stream 查询）
+        self._log_counter += 1
+        self.log_entries.append(
+            {
+                "id": self._log_counter,
+                "plugin_id": plugin_id,
+                "level": level.upper(),
+                "message": message,
+                "timestamp": str(int(time.time() * 1000)),
+            }
+        )
+
+    def get_logs(
+        self,
+        plugin_id: str | None = None,
+        level: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """查询日志缓冲区（支持按插件/级别过滤，返回最近 limit 条）。
+
+        供 plugins/logs.stream JSON-RPC 方法消费。
+        """
+        entries = list(self.log_entries)
+        if plugin_id is not None:
+            entries = [e for e in entries if e["plugin_id"] == plugin_id]
+        if level is not None:
+            lvl = level.upper()
+            entries = [e for e in entries if e["level"] == lvl]
+        if limit > 0:
+            entries = entries[-limit:]
+        return entries
 
     # ── 文件权限 ──
 

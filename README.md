@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 420 passed
+# → 443 passed
 ```
 
 ```python
@@ -190,7 +190,7 @@ fusion-plugins-ecosystem/
 │       ├── __init__.py
 │       └
         caveman_compress.py        ← built-in token compressor
-└── tests/                        ← 411 tests
+└── tests/                        ← 443 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -202,6 +202,7 @@ fusion-plugins-ecosystem/
     ├── test_registry_full.py
     ├── test_token_meter.py
     ├── test_jsonrpc.py
+    ├── test_jsonrpc_plugins.py
     ├── test_transport_server.py
     ├── test_sandbox.py
     ├── test_hook_adapter.py
@@ -250,13 +251,48 @@ restored = EcosystemConfig.from_dict(d)
 | Subagent hangs, no unified restart | `PluginLifecycle` timeout meltdown + `_maybe_restart` (≤ `MAX_RESTART`) |
 | Heartbeat stall | `PluginLifecycle._watch_loop` flags `HEARTBEAT_STALE` → `TIMEOUT` |
 
+## 🖥️ fusion-studio integration
+
+`fusion-studio` consumes this package over HTTP JSON-RPC. The SwiftUI client
+(`PluginBridge.swift`) POSTs `{"jsonrpc":"2.0",...}` to `http://<host>:<port>/rpc`
+and reads `json["result"]` as a **dict with named keys** (not an array). The
+`MCPHandler.handle` dispatcher exposes 15 `plugins/*` methods whose result
+envelopes are shaped to match each `PluginEcosystemModels.swift` `fromDict`
+contract exactly:
+
+| Method | Result envelope | Studio model |
+|--------|-----------------|--------------|
+| `plugins.ping` | `{pong}` | health check |
+| `plugins/list` | `{plugins[]}` | `PluginListItem` (id/name/category/version/description/author/enabled/installed) |
+| `plugins/install` | `{ok}` | enable plugin |
+| `plugins/uninstall` | `{ok}` | disable + unload |
+| `plugins/config.get` | 7 Studio-named keys | `EcosystemConfig` (sandbox_mode/auto_update/max_concurrent_plugins/log_level/token_budget/vram_limit_mb/mcp_enabled) |
+| `plugins/config.set` | `{ok}` | single key-value pair (params IS the pair) |
+| `plugins/states` | `{states[]}` | `PluginStateInfo` (id/plugin_id/state/pid/start_time:str/uptime:int/error_count/last_error) |
+| `plugins/state.get` | state dict | `PluginStateInfo` |
+| `plugins/state.list` | `{plugins[]}` | filtered by state |
+| `plugins/token.records` | `{records[]}` | `TokenRecord` (id/plugin_id/prompt_tokens/completion_tokens/total_tokens/timestamp:str/model) |
+| `plugins/token.prune` | `{ok}` | prune by `max_age_seconds` |
+| `plugins/vram.usage` | `{total_mb,used_mb,free_mb,by_plugin[]}` | `VRAMUsage` + `VRAMPluginEntry` (allocated_mb/peak_mb) |
+| `plugins/logs.stream` | `{entries[]}` | `PluginLogEntry` (id:str/plugin_id/level/message/timestamp:str) |
+| `plugins/mcp.sessions` | `{sessions[]}` | `MCPSession` (id/session_id/plugin_id/server/status/tool_count/connected_at:str) |
+| `plugins/mcp.sessions.prune` | `{ok}` | prune by `max_age_seconds` |
+
+The backend `EcosystemConfig` uses different field names than Studio; the
+`plugins/config.*` handlers project between the two namespaces. `MCPServer`
+auto-registers built-ins (`caveman_compress`) on `start()`, so
+`plugins/list` is discoverable without manual registration. Node discovery
+(`desk.list_nodes()`) returns `[]` when `fusion-cowork` is not installed —
+the integration path requires `fusion-cowork` to host the `/rpc` endpoint
+(upstream gap, tracked separately).
+
 ## 🧪 Testing
 
 ```bash
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **420 passed**.
+Latest run: **443 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -272,6 +308,7 @@ Latest run: **420 passed**.
 | `test_registry.py` | 13 | (legacy) registry + adapter + exporter + caveman integration |
 | `test_hook_adapter.py` | 8 | HookAdapter event mapping / capability filtering |
 | `test_transport_server.py` | 25 | SSE/HTTP/stdio transport + MCPServer start/stop lifecycle + CLI main() |
+| `test_jsonrpc_plugins.py` | 23 | Studio `plugins/*` 15-method dict envelopes + exact-key matching |
 
 ## ⚠️ Technical constraints
 

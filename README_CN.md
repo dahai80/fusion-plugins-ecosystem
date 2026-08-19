@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-420%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-443%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -76,7 +76,7 @@ python3 -m venv .venv
 
 # 运行测试
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 420 passed
+# → 443 passed
 ```
 
 ### 最小用法
@@ -187,7 +187,7 @@ fusion-plugins-ecosystem/
 │   └── builtin/
 │       ├── __init__.py
 │       └── caveman_compress.py   ← 内置 token 压缩器
-└── tests/                        ← 420 测试
+└── tests/                        ← 443 测试
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -199,6 +199,7 @@ fusion-plugins-ecosystem/
     ├── test_registry_full.py
     ├── test_token_meter.py
     ├── test_jsonrpc.py
+    ├── test_jsonrpc_plugins.py
     ├── test_transport_server.py
     ├── test_sandbox.py
     ├── test_hook_adapter.py
@@ -247,13 +248,44 @@ restored = EcosystemConfig.from_dict(d)
 | 子代理卡死无统一重启 | `PluginLifecycle` 超时熔断 + `_maybe_restart`（≤ `MAX_RESTART`） |
 | 心跳卡死检测 | `PluginLifecycle._watch_loop` 标记 `HEARTBEAT_STALE` → `TIMEOUT` |
 
+## 🖥️ fusion-studio 集成
+
+`fusion-studio` 通过 HTTP JSON-RPC 消费本包。SwiftUI 客户端
+（`PluginBridge.swift`）向 `http://<host>:<port>/rpc` POST
+`{"jsonrpc":"2.0",...}`，读取 `json["result"]` 为**具名键 dict**（非数组）。
+`MCPHandler.handle` 分发器暴露 15 个 `plugins/*` 方法，其结果信封严格匹配
+`PluginEcosystemModels.swift` 各模型的 `fromDict` 约定：
+
+| 方法 | 结果信封 | Studio 模型 |
+|------|---------|------------|
+| `plugins.ping` | `{pong}` | 健康检查 |
+| `plugins/list` | `{plugins[]}` | `PluginListItem`（id/name/category/version/description/author/enabled/installed） |
+| `plugins/install` | `{ok}` | 启用插件 |
+| `plugins/uninstall` | `{ok}` | 禁用 + 卸载 |
+| `plugins/config.get` | 7 个 Studio 命名键 | `EcosystemConfig`（sandbox_mode/auto_update/max_concurrent_plugins/log_level/token_budget/vram_limit_mb/mcp_enabled） |
+| `plugins/config.set` | `{ok}` | 单键值对（params 即键值对） |
+| `plugins/states` | `{states[]}` | `PluginStateInfo`（id/plugin_id/state/pid/start_time:str/uptime:int/error_count/last_error） |
+| `plugins/state.get` | 状态 dict | `PluginStateInfo` |
+| `plugins/state.list` | `{plugins[]}` | 按状态过滤 |
+| `plugins/token.records` | `{records[]}` | `TokenRecord`（id/plugin_id/prompt_tokens/completion_tokens/total_tokens/timestamp:str/model） |
+| `plugins/token.prune` | `{ok}` | 按 `max_age_seconds` 淘汰 |
+| `plugins/vram.usage` | `{total_mb,used_mb,free_mb,by_plugin[]}` | `VRAMUsage` + `VRAMPluginEntry`（allocated_mb/peak_mb） |
+| `plugins/logs.stream` | `{entries[]}` | `PluginLogEntry`（id:str/plugin_id/level/message/timestamp:str） |
+| `plugins/mcp.sessions` | `{sessions[]}` | `MCPSession`（id/session_id/plugin_id/server/status/tool_count/connected_at:str） |
+| `plugins/mcp.sessions.prune` | `{ok}` | 按 `max_age_seconds` 淘汰 |
+
+后端 `EcosystemConfig` 字段名与 Studio 不一致，`plugins/config.*` 处理器在两个命名空间间投影。
+`MCPServer` 在 `start()` 时自动注册内置插件（`caveman_compress`），故 `plugins/list` 无需手动注册即可发现。
+节点发现（`desk.list_nodes()`）在 `fusion-cowork` 未安装时返回 `[]`——集成链路需 `fusion-cowork` 托管 `/rpc` 端点
+（上游缺口，单独跟踪）。
+
 ## 🧪 测试
 
 ```bash
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-最新结果：**420 passed**。
+最新结果：**443 passed**。
 
 | 测试文件 | 用例数 | 覆盖范围 |
 |---------|-------|---------|
@@ -269,6 +301,7 @@ restored = EcosystemConfig.from_dict(d)
 | `test_registry.py` | 13 | （旧版）注册 + 适配器 + 导出器 + caveman 集成 |
 | `test_hook_adapter.py` | 8 | HookAdapter 事件映射 / 能力过滤 |
 | `test_transport_server.py` | 25 | SSE/HTTP/stdio 传输 + MCPServer 启停生命周期 + CLI main() |
+| `test_jsonrpc_plugins.py` | 23 | Studio `plugins/*` 15 方法 dict 信封 + 精确键匹配 |
 
 ## ⚠️ 技术约束
 

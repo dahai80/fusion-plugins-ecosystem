@@ -45,13 +45,29 @@ class PluginInstance:
     restart_count: int = 0
     # 最近一次执行的 token 记录（由 token_meter 写入）
     last_token_record: Any | None = None
+    # 沙箱进程 pid（PROCESS 模式）
+    pid: int | None = None
+    # 进入当前状态的起始时间戳
+    start_time: float = field(default_factory=time.time)
+    # 累计错误次数
+    error_count: int = 0
+    # 最近一次错误信息
+    last_error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        now = time.time()
+        uptime = max(0, int(now - self.start_time))
         return {
+            "id": self.manifest.id,
             "plugin_id": self.manifest.id,
             "state": self.state.value,
             "restart_count": self.restart_count,
             "last_heartbeat": self.last_heartbeat,
+            "pid": self.pid,
+            "start_time": str(int(self.start_time)),
+            "uptime": uptime,
+            "error_count": self.error_count,
+            "last_error": self.last_error,
         }
 
 
@@ -120,6 +136,7 @@ class PluginLifecycle:
                 f"(plugin={inst.manifest.id})"
             )
         inst.state = new_state
+        inst.start_time = time.time()
 
     def load(
         self, plugin_id: str, _loading_chain: frozenset[str] | None = None
@@ -236,11 +253,15 @@ class PluginLifecycle:
             return result
         except asyncio.TimeoutError:
             self._transition(inst, PluginState.TIMEOUT)
+            inst.error_count += 1
+            inst.last_error = f"执行超时 ({timeout}s)"
             self.desk.log(plugin_id, "ERROR", "插件执行超时，已熔断", timeout=timeout)
             await self._maybe_restart(plugin_id)
             raise
         except Exception as exc:
             self._transition(inst, PluginState.CRASHED)
+            inst.error_count += 1
+            inst.last_error = str(exc)
             self.desk.log(plugin_id, "ERROR", "插件执行崩溃", error=str(exc))
             await self._maybe_restart(plugin_id)
             raise
