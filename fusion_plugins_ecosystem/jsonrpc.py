@@ -31,6 +31,8 @@ from fusion_plugins_ecosystem.token_meter import TokenMeter
 logger = logging.getLogger(__name__)
 
 _MCP_TOOL_NAMESPACE_PREFIX = "mcp__plugin__"
+# RPC 触发的淘汰操作最小保留时长（秒），防止全量清空审计/会话记录
+_PRUNE_MIN_AGE = 60.0
 
 # Studio EcosystemConfig 期望的 7 个字段名 → 后端 EcosystemConfig 字段映射
 # 后端字段名与 Studio 不一致，这里做适配投影
@@ -342,17 +344,21 @@ class MCPHandler:
 
         params 即 {key: value} 单键值对（PluginBridge.swift 约定）。
         支持后端原字段名或 Studio 投影名。
+        经 EcosystemConfig.from_dict 校验类型/范围/枚举，非法值拒绝并报错。
         """
-        for key, value in params.items():
-            backend_key = _STUDIO_CONFIG_KEYS.get(key, key)
-            if not hasattr(self.config, backend_key):
-                logger.warning("jsonrpc: config.set 未知字段 %r", key)
-                continue
-            try:
-                setattr(self.config, backend_key, value)
-                self.config._notify_change(backend_key, None, value)
-            except Exception as exc:
-                logger.warning("jsonrpc: config.set %s 失败: %s", key, exc)
+        if not params:
+            return {"ok": False, "error": "空参数"}
+        key, value = next(iter(params.items()))
+        backend_key = _STUDIO_CONFIG_KEYS.get(key, key)
+        if backend_key not in self.config.to_dict():
+            logger.warning("jsonrpc: config.set 拒绝未知字段 %r", key)
+            return {"ok": False, "error": f"未知字段 {key!r}"}
+        probe, warnings = EcosystemConfig.from_dict({backend_key: value})
+        if warnings:
+            logger.warning("jsonrpc: config.set %s 校验失败: %s", key, "; ".join(warnings))
+            return {"ok": False, "error": "; ".join(warnings)}
+        setattr(self.config, backend_key, getattr(probe, backend_key))
+        self.config._notify_change(backend_key, None, getattr(probe, backend_key))
         return {"ok": True}
 
     async def _plugins_states(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -405,12 +411,16 @@ class MCPHandler:
         return {"records": items}
 
     async def _plugins_token_prune(self, params: dict[str, Any]) -> dict[str, Any]:
-        """plugins/token.prune：按时间淘汰旧 token 记录。"""
+        """plugins/token.prune：按时间淘汰旧 token 记录。
+
+        max_age_seconds 下限 _PRUNE_MIN_AGE 秒，防止 RPC 全量清空审计记录。
+        """
         max_age = params.get("max_age_seconds", 3600)
         try:
             max_age = float(max_age)
         except (TypeError, ValueError):
             max_age = 3600.0
+        max_age = max(max_age, _PRUNE_MIN_AGE)
         self.token_meter.prune(max_age_seconds=max_age)
         return {"ok": True}
 
@@ -475,12 +485,16 @@ class MCPHandler:
     async def _plugins_mcp_sessions_prune(
         self, params: dict[str, Any]
     ) -> dict[str, Any]:
-        """plugins/mcp.sessions.prune：按时间淘汰过期 MCP 会话。"""
+        """plugins/mcp.sessions.prune：按时间淘汰过期 MCP 会话。
+
+        max_age_seconds 下限 _PRUNE_MIN_AGE 秒，防止 RPC 全量清空。
+        """
         max_age = params.get("max_age_seconds", 3600)
         try:
             max_age = float(max_age)
         except (TypeError, ValueError):
             max_age = 3600.0
+        max_age = max(max_age, _PRUNE_MIN_AGE)
         self.prune_sessions(max_age_seconds=max_age)
         return {"ok": True}
 

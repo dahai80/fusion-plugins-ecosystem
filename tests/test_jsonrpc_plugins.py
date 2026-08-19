@@ -261,9 +261,20 @@ async def test_plugins_token_prune() -> None:
     )
     result = await _call(handler, "plugins/token.prune", {"max_age_seconds": 0})
     assert result == {"ok": True}
-    # max_age=0 淘汰全部（时间戳均 >= cutoff 时保留，但旧记录 timestamp 在过去）
-    # 由于 cutoff=now-0，刚写入的记录 timestamp 略小于 now，可能被淘汰也可能保留，
-    # 故只断言 ok 不报错
+    # max_age 被 floor 到 60s，刚写入记录 timestamp > now-60 → 保留，防止审计全清
+    recs = await _call(handler, "plugins/token.records")
+    assert len(recs["records"]) == 1
+
+
+async def test_plugins_token_prune_floor_prevents_wipe() -> None:
+    handler, registry = _make_handler()
+    handler.token_meter.record(
+        TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL)
+    )
+    # 负数 / 0 都应被 floor，记录不被清空
+    await _call(handler, "plugins/token.prune", {"max_age_seconds": -1})
+    recs = await _call(handler, "plugins/token.records")
+    assert len(recs["records"]) == 1
 
 
 # ── plugins/vram.usage ──
@@ -354,12 +365,15 @@ async def test_plugins_mcp_sessions_keys() -> None:
 
 
 async def test_plugins_mcp_sessions_prune() -> None:
+    import time as _time
+
     handler, registry = _make_handler()
     handler._touch_session("sess-old", "caveman_compress")
+    # 手动使会话 last_active 老于 floor（60s），确保被淘汰
+    handler._sessions["sess-old"]["last_active"] = _time.time() - 120
     result = await _call(handler, "plugins/mcp.sessions.prune",
-                         {"max_age_seconds": 0})
+                         {"max_age_seconds": 60})
     assert result == {"ok": True}
-    # max_age=0 应淘汰全部过期会话
     sessions = await _call(handler, "plugins/mcp.sessions")
     assert sessions["sessions"] == []
 
@@ -375,3 +389,53 @@ async def test_unknown_plugins_method_returns_error() -> None:
     assert resp is not None
     assert resp["error"]["code"] == -32601
     assert resp["id"] == 9
+
+
+# ── 安全加固：config.set 校验 / prune floor / last_error 截断 ──
+
+
+async def test_plugins_config_set_rejects_bad_value() -> None:
+    handler, _ = _make_handler()
+    # mcp_port 越界（>65535）→ 校验器拒绝，返回 ok:False
+    result = await _call(handler, "plugins/config.set", {"mcp_port": 99999})
+    assert result["ok"] is False
+    assert "error" in result
+    # 配置未被污染
+    config = await _call(handler, "plugins/config.get")
+    assert config["vram_limit_mb"] == 0  # mcp_port 投影名
+
+
+async def test_plugins_config_set_rejects_unknown_key() -> None:
+    handler, _ = _make_handler()
+    result = await _call(handler, "plugins/config.set", {"nope_field": 1})
+    assert result["ok"] is False
+    assert "error" in result
+
+
+async def test_plugins_config_set_rejects_empty() -> None:
+    handler, _ = _make_handler()
+    result = await _call(handler, "plugins/config.set", {})
+    assert result["ok"] is False
+
+
+async def test_plugins_mcp_sessions_prune_floor() -> None:
+    handler, registry = _make_handler()
+    handler._touch_session("sess-x", "caveman_compress")
+    # 0 被 floor，刚 touch 的会话 last_active > now-60 → 保留
+    result = await _call(handler, "plugins/mcp.sessions.prune", {"max_age_seconds": 0})
+    assert result == {"ok": True}
+    sessions = await _call(handler, "plugins/mcp.sessions")
+    assert len(sessions["sessions"]) == 1
+
+
+async def test_plugins_state_last_error_truncated() -> None:
+    handler, registry = _make_handler()
+    await _call(handler, "plugins/install", {"plugin_id": "caveman_compress"})
+    # 直接注入超长 last_error 模拟泄露路径
+    inst = handler.lifecycle._instances["caveman_compress"]
+    inst.last_error = "x" * 5000
+    state = await _call(handler, "plugins/state.get", {"plugin_id": "caveman_compress"})
+    err = state["last_error"]
+    assert err is not None
+    assert len(err) <= 303  # 300 + 省略号
+    assert err.endswith("…")

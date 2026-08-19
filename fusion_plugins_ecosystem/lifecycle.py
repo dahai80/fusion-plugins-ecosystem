@@ -22,6 +22,9 @@ from fusion_plugins_ecosystem.sandbox import PluginSandbox, ResourceLimits
 
 logger = logging.getLogger(__name__)
 
+# last_error 经 RPC 暴露的最大长度，超出截断（原始异常在 desk.log 保留）
+_LAST_ERROR_MAX = 300
+
 
 class PluginState(str, Enum):
     """插件运行状态。"""
@@ -57,6 +60,11 @@ class PluginInstance:
     def to_dict(self) -> dict[str, Any]:
         now = time.time()
         uptime = max(0, int(now - self.start_time))
+        # last_error 经 RPC 暴露给 Studio，截断防止泄露路径/堆栈/敏感信息；
+        # 原始异常已完整记录在 desk.log（服务端，不经 RPC）
+        err = self.last_error
+        if err and len(err) > _LAST_ERROR_MAX:
+            err = err[: _LAST_ERROR_MAX] + "…"
         return {
             "id": self.manifest.id,
             "plugin_id": self.manifest.id,
@@ -67,7 +75,7 @@ class PluginInstance:
             "start_time": str(int(self.start_time)),
             "uptime": uptime,
             "error_count": self.error_count,
-            "last_error": self.last_error,
+            "last_error": err,
         }
 
 
