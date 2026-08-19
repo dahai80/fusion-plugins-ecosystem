@@ -68,6 +68,19 @@ class MCPServer:
 
         self.registry.register_builtin()
 
+        # 默认挂载：default_mount_compressor 开启时，自动 load+enable
+        # 所有 default_mounted 插件，使 tools/call 可直接调用（无需额外 install）。
+        # 否则 tools/list 暴露的工具 tools/call 会报「未启用」——MCP 语义要求
+        # 暴露即可调用。
+        if self.config.default_mount_compressor:
+            for manifest in self.registry.default_mounted():
+                if manifest.id not in self.lifecycle._instances:
+                    try:
+                        await self.lifecycle.enable(manifest.id)
+                        logger.info("auto-mount: %s 已启用", manifest.id)
+                    except Exception as exc:
+                        logger.warning("auto-mount: %s 启用失败: %s", manifest.id, exc)
+
         transport_type = transport or self.config.mcp_transport
         host = kwargs.get("host", self.config.mcp_host)
         port = kwargs.get("port", self.config.mcp_port)
