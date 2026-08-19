@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-420%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-449%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 443 passed
+# → 449 passed
 ```
 
 ```python
@@ -190,7 +190,7 @@ fusion-plugins-ecosystem/
 │       ├── __init__.py
 │       └
         caveman_compress.py        ← built-in token compressor
-└── tests/                        ← 443 tests
+└── tests/                        ← 449 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -286,13 +286,20 @@ auto-registers built-ins (`caveman_compress`) on `start()`, so
 the integration path requires `fusion-cowork` to host the `/rpc` endpoint
 (upstream gap, tracked separately).
 
+`MCPServer.start()` blocks on an instance-level `stop_event` for **all**
+transports (stdio/sse/http), so the standalone CLI (`fusion-plugin-server`)
+stays alive until `stop()` or SIGTERM — previously sse/http returned
+immediately and the process exited. Verified: `fusion-plugin-server
+--transport http` stays alive and `/rpc` returns `caveman_compress` v0.3.3
+and `{pong: true}`.
+
 ## 🧪 Testing
 
 ```bash
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **443 passed**.
+Latest run: **449 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|

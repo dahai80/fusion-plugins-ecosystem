@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-443%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-449%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -76,7 +76,7 @@ python3 -m venv .venv
 
 # 运行测试
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 443 passed
+# → 449 passed
 ```
 
 ### 最小用法
@@ -187,7 +187,7 @@ fusion-plugins-ecosystem/
 │   └── builtin/
 │       ├── __init__.py
 │       └── caveman_compress.py   ← 内置 token 压缩器
-└── tests/                        ← 443 测试
+└── tests/                        ← 449 测试
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -279,13 +279,19 @@ restored = EcosystemConfig.from_dict(d)
 节点发现（`desk.list_nodes()`）在 `fusion-cowork` 未安装时返回 `[]`——集成链路需 `fusion-cowork` 托管 `/rpc` 端点
 （上游缺口，单独跟踪）。
 
+`MCPServer.start()` 对**所有**传输类型（stdio/sse/http）阻塞于实例级
+`stop_event`，故独立 CLI（`fusion-plugin-server`）会持续存活至 `stop()` 或
+SIGTERM——此前 sse/http 会立即返回、进程随之退出。已验证：
+`fusion-plugin-server --transport http` 启动后保活，`/rpc` 回环返回
+`caveman_compress` v0.3.3 与 `{pong: true}`。
+
 ## 🧪 测试
 
 ```bash
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-最新结果：**443 passed**。
+最新结果：**449 passed**。
 
 | 测试文件 | 用例数 | 覆盖范围 |
 |---------|-------|---------|
