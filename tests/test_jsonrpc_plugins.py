@@ -87,8 +87,16 @@ async def test_plugins_list_keys() -> None:
     assert len(items) == 1
     item = items[0]
     # Studio PluginListItem.fromDict 必需键
-    for key in ("id", "name", "category", "version", "description", "author",
-                "enabled", "installed"):
+    for key in (
+        "id",
+        "name",
+        "category",
+        "version",
+        "description",
+        "author",
+        "enabled",
+        "installed",
+    ):
         assert key in item, f"missing key {key}"
     assert item["id"] == "caveman_compress"
     assert item["name"] == "Caveman 压缩"
@@ -120,7 +128,9 @@ async def test_plugins_install_uninstall() -> None:
     assert state["state"] == "enabled"
     assert state["error_count"] == 0
     # uninstall
-    result = await _call(handler, "plugins/uninstall", {"plugin_id": "caveman_compress"})
+    result = await _call(
+        handler, "plugins/uninstall", {"plugin_id": "caveman_compress"}
+    )
     assert result == {"ok": True}
     state = await _call(handler, "plugins/state.get", {"plugin_id": "caveman_compress"})
     assert state["state"] in ("disabled", "unknown")
@@ -140,8 +150,15 @@ async def test_plugins_config_get_studio_keys() -> None:
     handler, _ = _make_handler()
     result = await _call(handler, "plugins/config.get")
     # Studio EcosystemConfig.fromDict 期望 7 键
-    for key in ("sandbox_mode", "auto_update", "max_concurrent_plugins",
-                "log_level", "token_budget", "vram_limit_mb", "mcp_enabled"):
+    for key in (
+        "sandbox_mode",
+        "auto_update",
+        "max_concurrent_plugins",
+        "log_level",
+        "token_budget",
+        "vram_limit_mb",
+        "mcp_enabled",
+    ):
         assert key in result, f"missing config key {key}"
     assert result["mcp_enabled"] is True  # enable_claude_mcp 默认 True
     assert result["sandbox_mode"] == "inline"
@@ -179,8 +196,16 @@ async def test_plugins_states_after_install() -> None:
     states = result["states"]
     assert len(states) == 1
     # Studio PluginStateInfo.fromDict 必需键
-    for key in ("id", "plugin_id", "state", "pid", "start_time", "uptime",
-                "error_count", "last_error"):
+    for key in (
+        "id",
+        "plugin_id",
+        "state",
+        "pid",
+        "start_time",
+        "uptime",
+        "error_count",
+        "last_error",
+    ):
         assert key in states[0], f"missing state key {key}"
     assert states[0]["state"] == "enabled"
     assert isinstance(states[0]["start_time"], str)
@@ -229,8 +254,15 @@ async def test_plugins_token_records_keys() -> None:
     recs = result["records"]
     assert len(recs) == 1
     # Studio TokenRecord.fromDict 必需键
-    for key in ("id", "plugin_id", "prompt_tokens", "completion_tokens",
-                "total_tokens", "timestamp", "model"):
+    for key in (
+        "id",
+        "plugin_id",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "timestamp",
+        "model",
+    ):
         assert key in recs[0], f"missing token key {key}"
     assert recs[0]["prompt_tokens"] == 100
     assert recs[0]["completion_tokens"] == 50
@@ -247,8 +279,9 @@ async def test_plugins_token_records_by_plugin() -> None:
     handler.token_meter.record(
         TokenRecord(plugin_id="other", kind=TokenKind.PLUGIN_LOCAL)
     )
-    result = await _call(handler, "plugins/token.records",
-                         {"plugin_id": "caveman_compress"})
+    result = await _call(
+        handler, "plugins/token.records", {"plugin_id": "caveman_compress"}
+    )
     recs = result["records"]
     assert len(recs) == 1
     assert recs[0]["plugin_id"] == "caveman_compress"
@@ -333,8 +366,9 @@ async def test_plugins_logs_stream_filter() -> None:
     handler, registry = _make_handler()
     registry.desk.log("caveman_compress", "INFO", "ok")
     registry.desk.log("other", "ERROR", "bad")
-    result = await _call(handler, "plugins/logs.stream",
-                         {"plugin_id": "caveman_compress"})
+    result = await _call(
+        handler, "plugins/logs.stream", {"plugin_id": "caveman_compress"}
+    )
     entries = result["entries"]
     assert len(entries) == 1
     assert entries[0]["plugin_id"] == "caveman_compress"
@@ -355,8 +389,15 @@ async def test_plugins_mcp_sessions_keys() -> None:
     sessions = result["sessions"]
     assert len(sessions) == 1
     # Studio MCPSession.fromDict 必需键
-    for key in ("id", "session_id", "plugin_id", "server", "status",
-                "tool_count", "connected_at"):
+    for key in (
+        "id",
+        "session_id",
+        "plugin_id",
+        "server",
+        "status",
+        "tool_count",
+        "connected_at",
+    ):
         assert key in sessions[0], f"missing session key {key}"
     assert sessions[0]["id"] == "sess-1"
     assert sessions[0]["session_id"] == "sess-1"
@@ -371,8 +412,7 @@ async def test_plugins_mcp_sessions_prune() -> None:
     handler._touch_session("sess-old", "caveman_compress")
     # 手动使会话 last_active 老于 floor（60s），确保被淘汰
     handler._sessions["sess-old"]["last_active"] = _time.time() - 120
-    result = await _call(handler, "plugins/mcp.sessions.prune",
-                         {"max_age_seconds": 60})
+    result = await _call(handler, "plugins/mcp.sessions.prune", {"max_age_seconds": 60})
     assert result == {"ok": True}
     sessions = await _call(handler, "plugins/mcp.sessions")
     assert sessions["sessions"] == []

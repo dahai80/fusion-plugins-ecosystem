@@ -64,7 +64,7 @@ class PluginInstance:
         # 原始异常已完整记录在 desk.log（服务端，不经 RPC）
         err = self.last_error
         if err and len(err) > _LAST_ERROR_MAX:
-            err = err[: _LAST_ERROR_MAX] + "…"
+            err = err[:_LAST_ERROR_MAX] + "…"
         return {
             "id": self.manifest.id,
             "plugin_id": self.manifest.id,
