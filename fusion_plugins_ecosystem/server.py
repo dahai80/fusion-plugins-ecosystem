@@ -53,6 +53,8 @@ class MCPServer:
         )
         self._transport: Any = None
         self._running = False
+        # 停止信号：start() 等待、stop() 触发，跨协程保活/停机
+        self._stop_event: asyncio.Event | None = None
 
     async def start(
         self,
@@ -65,6 +67,19 @@ class MCPServer:
             return
 
         self.registry.register_builtin()
+
+        # 默认挂载：default_mount_compressor 开启时，自动 load+enable
+        # 所有 default_mounted 插件，使 tools/call 可直接调用（无需额外 install）。
+        # 否则 tools/list 暴露的工具 tools/call 会报「未启用」——MCP 语义要求
+        # 暴露即可调用。
+        if self.config.default_mount_compressor:
+            for manifest in self.registry.default_mounted():
+                if manifest.id not in self.lifecycle._instances:
+                    try:
+                        await self.lifecycle.enable(manifest.id)
+                        logger.info("auto-mount: %s 已启用", manifest.id)
+                    except Exception as exc:
+                        logger.warning("auto-mount: %s 启用失败: %s", manifest.id, exc)
 
         transport_type = transport or self.config.mcp_transport
         host = kwargs.get("host", self.config.mcp_host)
@@ -87,22 +102,34 @@ class MCPServer:
 
         await self._transport.start()
 
-        if transport_type == "stdio":
-            stop_event = asyncio.Event()
-            loop = asyncio.get_running_loop()
-            for sig in (signal.SIGINT, signal.SIGTERM):
-                loop.add_signal_handler(sig, stop_event.set)
-            await stop_event.wait()
-            await self.stop()
+        # 所有传输类型都需阻塞至停止信号，否则 start() 立即返回会导致
+        # asyncio.run 结束、进程退出（sse/http 此前无 keep-alive → CLI 闪退）
+        self._stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, self._stop_event.set)
+            except NotImplementedError:
+                # 部分平台不支持 add_signal_handler，退化轮询
+                pass
+        await self._stop_event.wait()
+        # 唤醒后停传输；若 stop() 已先行停掉则 _transport_stop 幂等返回
+        await self._transport_stop()
 
-    async def stop(self) -> None:
-        """停止 MCP Server。"""
+    async def _transport_stop(self) -> None:
+        """幂等停止传输：_running 守卫防止 start()/stop() 双重 stop。"""
         if not self._running:
             return
         self._running = False
         if self._transport:
             await self._transport.stop()
         logger.info("MCPServer stopped")
+
+    async def stop(self) -> None:
+        """停止 MCP Server：触发 stop_event 解除 start() 阻塞，并停传输。"""
+        if self._stop_event is not None:
+            self._stop_event.set()
+        await self._transport_stop()
 
     @property
     def transport(self) -> Any:

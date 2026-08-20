@@ -298,8 +298,10 @@ class MCPHandler:
         author/enabled/installed。
         """
         category = params.get("category")
-        manifests = self.registry.list_as_dicts(category=category) if category else (
-            self.registry.list_as_dicts()
+        manifests = (
+            self.registry.list_as_dicts(category=category)
+            if category
+            else (self.registry.list_as_dicts())
         )
         items = []
         for m in manifests:
@@ -312,8 +314,7 @@ class MCPHandler:
                     "version": m["version"],
                     "description": m["description"],
                     "author": None,
-                    "enabled": inst is not None
-                    and inst.state.value == "enabled",
+                    "enabled": inst is not None and inst.state.value == "enabled",
                     "installed": m["id"] in self.lifecycle._instances,
                 }
             )
@@ -355,7 +356,9 @@ class MCPHandler:
             return {"ok": False, "error": f"未知字段 {key!r}"}
         probe, warnings = EcosystemConfig.from_dict({backend_key: value})
         if warnings:
-            logger.warning("jsonrpc: config.set %s 校验失败: %s", key, "; ".join(warnings))
+            logger.warning(
+                "jsonrpc: config.set %s 校验失败: %s", key, "; ".join(warnings)
+            )
             return {"ok": False, "error": "; ".join(warnings)}
         setattr(self.config, backend_key, getattr(probe, backend_key))
         self.config._notify_change(backend_key, None, getattr(probe, backend_key))

@@ -10,6 +10,7 @@ import pytest
 
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem import server as server_module
+from fusion_plugins_ecosystem import __version__
 from fusion_plugins_ecosystem.server import MCPServer
 from fusion_plugins_ecosystem.transport import (
     HTTPTransport,
@@ -294,13 +295,20 @@ async def test_mcp_server_handler_tools_list() -> None:
 
 
 async def test_mcp_server_start_stop_sse() -> None:
-    """真实启动/停止生命周期：SSE transport + register_builtin + stop。"""
+    """真实启动/停止生命周期：SSE transport + register_builtin + keep-alive + stop。
+
+    关键断言：start() 必须阻塞不返回（否则 asyncio.run 结束、CLI 闪退）。
+    通过检查 start_task 仍 pending 确保服务真正存活。
+    """
     server = MCPServer(config=EcosystemConfig(mcp_transport="sse", mcp_port=0))
     start_task = asyncio.create_task(server.start(transport="sse"))
     await asyncio.sleep(0.3)
     assert server._running is True
     assert server.transport is not None
     assert server.registry.get("caveman_compress") is not None
+    # keep-alive：start() 未返回，任务仍 pending（非 done）
+    assert not start_task.done(), "start() 提前返回，服务未保活"
+    assert server.registry.get("caveman_compress").version == __version__
 
     await server.stop()
     assert server._running is False
@@ -308,14 +316,22 @@ async def test_mcp_server_start_stop_sse() -> None:
 
 
 async def test_mcp_server_start_already_running_noop() -> None:
-    """二次 start 应幂等返回，不重复注册/启动。"""
+    """二次 start 应幂等返回，不重复注册/启动。
+
+    start() 现已阻塞保活（keep-alive），故首次 start 须作为后台任务，
+    否则 await 直接死等 stop_event。
+    """
     server = MCPServer(config=EcosystemConfig(mcp_transport="sse", mcp_port=0))
-    await server.start(transport="sse")
+    start_task = asyncio.create_task(server.start(transport="sse"))
+    await asyncio.sleep(0.3)
+    assert server._running is True
     builtin_count_before = len(server.registry.list())
-    await server.start(transport="sse")
+    # 二次 start：_running 已 True → 幂等返回，不阻塞
+    await asyncio.wait_for(server.start(transport="sse"), timeout=2)
     builtin_count_after = len(server.registry.list())
     assert builtin_count_before == builtin_count_after
     await server.stop()
+    await asyncio.wait_for(start_task, timeout=5)
 
 
 async def test_mcp_server_stop_when_not_running_noop() -> None:
