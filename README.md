@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-449%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -151,6 +151,7 @@ Register once → it auto-appears in Claude's tool catalog and MCP `tools/list`.
 | [docs/API.md](docs/API.md) | Full public API reference: `PluginRegistry`, `PluginLifecycle`, `ClaudeGateway`, `TokenMeter`, `DeskRuntime`, `EcosystemConfig` |
 | [docs/CLAUDE_COMPATIBILITY.md](docs/CLAUDE_COMPATIBILITY.md) | Three-layer compat, forward/reverse flows, volcengine auth, MLX visual backend, token metering, config toggles |
 | [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Plugin authoring guide: manifest, capabilities, params schema, async, lazy entry, testing checklist |
+| [examples/](examples/) | 9 runnable plugin samples (echo → file_access): each a manifest + test + README. `pytest examples/` |
 
 ## 🗂️ Project structure
 
@@ -190,6 +191,17 @@ fusion-plugins-ecosystem/
 │       ├── __init__.py
 │       └
         caveman_compress.py        ← built-in token compressor
+├── examples/                      ← 9 runnable plugin samples (ex01_echo … ex09_file_access)
+│   ├── README.md                  ← scenario index + run instructions
+│   ├── ex01_echo/                 ← minimal sync plugin
+│   ├── ex02_async/                ← async entry point
+│   ├── ex03_skill_export/         ← Skill bundle export
+│   ├── ex04_subagent/             ← reverse subagent dispatch
+│   ├── ex05_mlx_chat/             ← local MLX inference
+│   ├── ex06_vram/                 ← VRAM consumer (INLINE)
+│   ├── ex07_long_task/            ← timeout meltdown + restart
+│   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
+│   └── ex09_file_access/          ← file permission gating
 └── tests/                        ← 449 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
@@ -290,7 +302,7 @@ the integration path requires `fusion-cowork` to host the `/rpc` endpoint
 transports (stdio/sse/http), so the standalone CLI (`fusion-plugin-server`)
 stays alive until `stop()` or SIGTERM — previously sse/http returned
 immediately and the process exited. Verified: `fusion-plugin-server
---transport http` stays alive and `/rpc` returns `caveman_compress` v0.3.3
+--transport http` stays alive and `/rpc` returns `caveman_compress` v0.3.4
 and `{pong: true}`.
 
 ## 🧪 Testing

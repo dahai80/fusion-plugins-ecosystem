@@ -10,7 +10,7 @@ Lazy Import 机制（与 fusion-cowork 一致）：
 
 from __future__ import annotations
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 __app_name__ = "Fusion-Plugins-Ecosystem"
 
 # ── Lazy Import 注册表 ──

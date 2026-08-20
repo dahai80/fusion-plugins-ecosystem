@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-449%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.3.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.3.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -151,6 +151,7 @@ MY_MANIFEST = PluginManifest(
 | [docs/API.md](docs/API.md) | 完整公开 API 参考：`PluginRegistry`、`PluginLifecycle`、`ClaudeGateway`、`TokenMeter`、`DeskRuntime`、`EcosystemConfig` |
 | [docs/CLAUDE_COMPATIBILITY.md](docs/CLAUDE_COMPATIBILITY.md) | 三层兼容、正向/反向流、火山方舟鉴权、MLX 视觉后端、token 计量、配置开关 |
 | [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | 插件开发指南：清单、能力、参数 schema、异步、惰性入口、测试清单 |
+| [examples/](examples/) | 9 个可运行插件样例（echo → file_access），各含清单 + 测试 + README。`pytest examples/` |
 
 ## 🗂️ 项目结构
 
@@ -187,6 +188,17 @@ fusion-plugins-ecosystem/
 │   └── builtin/
 │       ├── __init__.py
 │       └── caveman_compress.py   ← 内置 token 压缩器
+├── examples/                     ← 9 个可运行插件样例（ex01_echo … ex09_file_access）
+│   ├── README.md                 ← 场景索引 + 运行说明
+│   ├── ex01_echo/                ← 最小同步插件
+│   ├── ex02_async/               ← 异步入口
+│   ├── ex03_skill_export/        ← Skill 导出
+│   ├── ex04_subagent/            ← 反向子代理
+│   ├── ex05_mlx_chat/            ← 本地 MLX 推理
+│   ├── ex06_vram/                ← 显存占用（INLINE）
+│   ├── ex07_long_task/           ← 超时熔断 + 重启
+│   ├── ex08_process_sandbox/     ← 进程沙箱隔离
+│   └── ex09_file_access/         ← 文件权限校验
 └── tests/                        ← 449 测试
     ├── test_caveman.py
     ├── test_claude_adapter.py
@@ -283,7 +295,7 @@ restored = EcosystemConfig.from_dict(d)
 `stop_event`，故独立 CLI（`fusion-plugin-server`）会持续存活至 `stop()` 或
 SIGTERM——此前 sse/http 会立即返回、进程随之退出。已验证：
 `fusion-plugin-server --transport http` 启动后保活，`/rpc` 回环返回
-`caveman_compress` v0.3.3 与 `{pong: true}`。
+`caveman_compress` v0.3.4 与 `{pong: true}`。
 
 ## 🧪 测试
 
