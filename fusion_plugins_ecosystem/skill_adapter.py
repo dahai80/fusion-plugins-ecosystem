@@ -34,9 +34,7 @@ def build_skill_dict(manifest: PluginManifest) -> dict[str, Any]:
     required: list[str] = []
     for param in manifest.params:
         prop: dict[str, Any] = {
-            "type": PARAM_TYPE_TO_JSON_SCHEMA.get(
-                param.type, PluginParamType.STRING
-            ),
+            "type": PARAM_TYPE_TO_JSON_SCHEMA.get(param.type, PluginParamType.STRING),
             "description": param.description,
         }
         if param.enum is not None:

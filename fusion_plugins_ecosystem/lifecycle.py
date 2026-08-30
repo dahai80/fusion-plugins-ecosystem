@@ -119,8 +119,16 @@ class PluginLifecycle:
             PluginState.TIMEOUT,
         },
         PluginState.DISABLED: {PluginState.LOADED, PluginState.ENABLED},
-        PluginState.CRASHED: {PluginState.LOADED, PluginState.DISABLED, PluginState.CRASHED},
-        PluginState.TIMEOUT: {PluginState.LOADED, PluginState.DISABLED, PluginState.TIMEOUT},
+        PluginState.CRASHED: {
+            PluginState.LOADED,
+            PluginState.DISABLED,
+            PluginState.CRASHED,
+        },
+        PluginState.TIMEOUT: {
+            PluginState.LOADED,
+            PluginState.DISABLED,
+            PluginState.TIMEOUT,
+        },
     }
 
     def __init__(
@@ -318,9 +326,7 @@ class PluginLifecycle:
             if inst is None or inst.state != PluginState.ENABLED:
                 raise RuntimeError(f"插件 {plugin_id!r} 未启用，无法执行")
             timeout = (
-                timeout_override
-                or inst.manifest.timeout_seconds
-                or self._cfg_timeout()
+                timeout_override or inst.manifest.timeout_seconds or self._cfg_timeout()
             )
             inst.last_heartbeat = time.time()
 
@@ -503,7 +509,9 @@ class PluginLifecycle:
                         and inst.manifest.sandbox_mode == SandboxMode.PROCESS
                     ]
                 for plugin_id, inst in candidates:
-                    threshold = inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
+                    threshold = (
+                        inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
+                    )
                     if now - inst.last_heartbeat > threshold:
                         with self._instances_lock:
                             if inst.state != PluginState.ENABLED:

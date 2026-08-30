@@ -286,7 +286,10 @@ class MCPHandler:
             )
             return {
                 "content": [
-                    {"type": "text", "text": f"Plugin execution failed: {type(e).__name__}"}
+                    {
+                        "type": "text",
+                        "text": f"Plugin execution failed: {type(e).__name__}",
+                    }
                 ],
                 "isError": True,
             }
@@ -692,7 +695,10 @@ class MCPHandler:
         # R5：共享状态加锁，多 handler 并发 touch 不丢失/错乱会话
         with self._state_lock:
             # 会话数上限 + LRU 淘汰，防止内存耗尽（P0-5）
-            if len(self._sessions) >= _MAX_SESSIONS and session_id not in self._sessions:
+            if (
+                len(self._sessions) >= _MAX_SESSIONS
+                and session_id not in self._sessions
+            ):
                 self._evict_oldest_session()
             session = self._sessions.setdefault(
                 session_id,
@@ -725,9 +731,7 @@ class MCPHandler:
         with self._state_lock:
             cutoff = time.time() - max_age_seconds
             stale = [
-                sid
-                for sid, s in self._sessions.items()
-                if s["last_active"] < cutoff
+                sid for sid, s in self._sessions.items() if s["last_active"] < cutoff
             ]
             for sid in stale:
                 del self._sessions[sid]

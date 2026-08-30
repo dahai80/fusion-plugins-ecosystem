@@ -198,7 +198,9 @@ class SSETransport(Transport):
     async def send(self, message: dict[str, Any]) -> None:
         # 广播已禁用：JSON-RPC 响应是 per-request 的，POST 分支已同步回写。
         # 跨客户端广播会造成数据泄露（P0-2）。服务端主动通知用 send_to_session。
-        logger.warning("SSETransport: send() 广播已禁用，使用 send_to_session 按会话路由")
+        logger.warning(
+            "SSETransport: send() 广播已禁用，使用 send_to_session 按会话路由"
+        )
 
     async def send_to_session(self, session_id: str, message: dict[str, Any]) -> None:
         queue = self._sessions.get(session_id)
@@ -407,7 +409,8 @@ class HTTPTransport(Transport):
                 return
             if content_length <= 0 or content_length > _MAX_BODY:
                 await _write_simple_response(
-                    writer, 413 if content_length > _MAX_BODY else 400,
+                    writer,
+                    413 if content_length > _MAX_BODY else 400,
                     b"Bad Request" if content_length <= 0 else b"Payload Too Large",
                 )
                 writer.close()
@@ -465,9 +468,7 @@ async def _read_http_head(
     返回 (request_text, headers)；请求行 EOF 返回 (None, {})。
     """
     try:
-        request_line = await asyncio.wait_for(
-            reader.readline(), timeout=_READ_TIMEOUT
-        )
+        request_line = await asyncio.wait_for(reader.readline(), timeout=_READ_TIMEOUT)
     except asyncio.TimeoutError:
         raise
     if not request_line:

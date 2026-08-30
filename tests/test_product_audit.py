@@ -205,7 +205,9 @@ async def test_apply_config_to_deps_syncs_lifecycle_and_meter() -> None:
 async def test_install_rejects_invalid_plugin_id() -> None:
     handler = _make_handler()
     # 含换行的 plugin_id 应被拒（防日志注入）
-    result = await _call(handler, "plugins/install", {"plugin_id": "evil\n[CRITICAL] fake"})
+    result = await _call(
+        handler, "plugins/install", {"plugin_id": "evil\n[CRITICAL] fake"}
+    )
     assert result["ok"] is False
 
 

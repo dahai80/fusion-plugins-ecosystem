@@ -31,9 +31,7 @@ logger = logging.getLogger(__name__)
 _KILL_REAP_TIMEOUT = 5
 
 # P1-8/E6：日志级别白名单，防 worker 发非法 level 字符串经 getattr 解析到非日志方法。
-_VALID_LOG_LEVELS = frozenset(
-    {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-)
+_VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 
 @dataclass(frozen=True)
@@ -223,14 +221,18 @@ class PluginSandbox:
             proc.pending_calls.pop(call_id, None)
             # 超时后必须 kill worker：否则孤儿进程残留，下次 call 复用卡死进程（P0-4）。
             # _invoke_sandbox 在 health!=alive 时会 respawn。
-            self.desk_log(proc, "ERROR", f"call {call_id} 超时，kill worker 并等待 respawn")
+            self.desk_log(
+                proc, "ERROR", f"call {call_id} 超时，kill worker 并等待 respawn"
+            )
             await self.kill(plugin_id)
             raise TimeoutError(
                 f"sandbox: plugin {plugin_id!r} call timed out after "
                 f"{proc.limits.timeout_seconds}s"
             )
 
-    def desk_log(self, proc: SandboxProcess, level: str, message: str, **kw: Any) -> None:
+    def desk_log(
+        self, proc: SandboxProcess, level: str, message: str, **kw: Any
+    ) -> None:
         """沙箱侧日志经宿主 logger 输出（worker 自身日志已通过 IPC 回传）。"""
         log_method = getattr(logger, level.lower(), logger.info)
         log_method("sandbox:%s: %s %s", proc.plugin_id, message, kw or "")
