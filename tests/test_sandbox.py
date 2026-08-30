@@ -235,7 +235,8 @@ def test_build_worker_script_string_entry() -> None:
     sandbox = PluginSandbox()
     script = sandbox._build_worker_script("mymod:myfunc", {"k": "v"}, ResourceLimits())
     assert "_ENTRY='mymod:myfunc'" in script
-    assert '"k": "v"' in script
+    # P0-3：config 经 repr 序列化为 Python 字面量（'k': 'v'），非 json 'k': 'v'
+    assert "'k': 'v'" in script
     assert "_MEM_LIMIT_MB=512" in script
 
 

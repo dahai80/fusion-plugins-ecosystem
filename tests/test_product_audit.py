@@ -247,3 +247,56 @@ def test_read_loop_non_dict_guard_exists() -> None:
 
     src = inspect.getsource(sandbox_mod.PluginSandbox._read_loop)
     assert "isinstance(msg, dict)" in src
+
+
+# ── P1-2：stop_watcher 须 await（同步调用泄漏 watcher task） ──
+
+
+def test_full_shutdown_awaits_stop_watcher() -> None:
+    # server._full_shutdown 必须以 await 调用 stop_watcher，否则
+    # coroutine never awaited + watcher task 泄漏
+    import inspect
+
+    from fusion_plugins_ecosystem import server as server_mod
+
+    src = inspect.getsource(server_mod.MCPServer._full_shutdown)
+    assert "await self.lifecycle.stop_watcher()" in src
+    assert "self.lifecycle.stop_watcher()" not in src.replace(
+        "await self.lifecycle.stop_watcher()", ""
+    )
+
+
+# ── P0-3：PROCESS worker config 序列化为 Python 字面量（非 JSON） ──
+
+
+def test_worker_config_uses_python_literal() -> None:
+    # json.dumps 的 true/false/null 不是合法 Python 标识符，嵌入 worker 脚本
+    # 会 NameError → 所有携带 bool/None 配置的 PROCESS 插件 spawn 即崩。
+    # 修复后用 repr() 输出 True/False/None。
+    import inspect
+
+    from fusion_plugins_ecosystem import sandbox as sandbox_mod
+
+    src = inspect.getsource(sandbox_mod.PluginSandbox._build_worker_script)
+    assert "_CONFIG={config!r}" in src
+    assert "json.dumps(config)" not in src
+
+
+def test_worker_config_expr_is_valid_python() -> None:
+    # 端到端：携带 bool/None 配置生成的 worker 脚本 _CONFIG 表达式
+    # 必须是合法 Python（True/False/None），不能出现 true/false/null。
+    import re
+
+    from fusion_plugins_ecosystem import sandbox as sandbox_mod
+
+    sandbox = sandbox_mod.PluginSandbox(desk=DeskRuntime())
+    script = sandbox._build_worker_script(
+        "mod:attr",
+        dict(EcosystemConfig().to_dict()),
+        sandbox_mod.ResourceLimits(timeout_seconds=30),
+    )
+    m = re.search(r"^_CONFIG=(.+)$", script, re.MULTILINE)
+    assert m, "worker 脚本缺 _CONFIG 赋值"
+    expr = m.group(1)
+    assert " true" not in expr and "\ttrue" not in expr
+    assert "True" in expr or "False" in expr or "None" in expr

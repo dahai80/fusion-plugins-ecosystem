@@ -204,9 +204,9 @@ class MCPServer:
 
         P1-2/P1-3/P1-4：补齐生产运维闭环，避免子进程孤儿与 token 丢失。
         """
-        # P1-2：停看门狗
+        # P1-2：停看门狗（stop_watcher 为协程，须 await；同步调用会泄漏 watcher task）
         try:
-            self.lifecycle.stop_watcher()
+            await self.lifecycle.stop_watcher()
         except Exception as exc:
             logger.warning("stop_watcher 失败: %s", exc)
         # P1-3：显式 kill 全部 PROCESS 沙箱子进程，防孤儿
