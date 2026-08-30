@@ -218,6 +218,13 @@ class SSETransport(Transport):
                 await writer.wait_closed()
                 return
 
+            # P2-8：未鉴权健康探针短路
+            if _is_health_request(request_text):
+                await _write_health_response(writer)
+                writer.close()
+                await writer.wait_closed()
+                return
+
             content_length = _safe_content_length(headers)
 
             # R6：SSE/HTTP 远程传输鉴权，Bearer token 匹配才放行
@@ -372,6 +379,13 @@ class HTTPTransport(Transport):
                 await writer.wait_closed()
                 return
 
+            # P2-8：未鉴权健康探针短路
+            if _is_health_request(request_text):
+                await _write_health_response(writer)
+                writer.close()
+                await writer.wait_closed()
+                return
+
             content_length = _safe_content_length(headers)
 
             # R6：SSE/HTTP 远程传输鉴权，Bearer token 匹配才放行
@@ -519,6 +533,26 @@ async def _write_simple_response(
         b"Connection: close\r\n\r\n" + message
     )
     writer.write(resp)
+    await writer.drain()
+
+
+def _is_health_request(request_text: str) -> bool:
+    """P2-8：判断是否为未鉴权 GET /health 健康探针请求。"""
+    parts = request_text.split()
+    if len(parts) < 2 or parts[0] != "GET":
+        return False
+    return parts[1].rstrip("/") == "/health"
+
+
+async def _write_health_response(writer: asyncio.StreamWriter) -> None:
+    """写未鉴权健康探针响应（供编排器/K8s liveness 检测）。"""
+    body = b'{"status":"ok"}'
+    writer.write(
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+        b"Connection: close\r\n\r\n" + body
+    )
     await writer.drain()
 
 

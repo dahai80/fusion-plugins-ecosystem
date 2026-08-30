@@ -39,6 +39,14 @@ class PluginState(str, Enum):
     TIMEOUT = "timeout"  # 超时熔断
 
 
+class PluginLoadError(RuntimeError):
+    """插件加载期不可调用/配置错误。
+
+    P3-3：与运行时崩溃区分，此类错误不应触发 max_restart 重启风暴
+    （入口不可调用重启多少次都不可调用）。
+    """
+
+
 @dataclass
 class PluginInstance:
     """插件运行实例。"""
@@ -321,6 +329,11 @@ class PluginLifecycle:
                 self._invoke(inst, params),
                 timeout=timeout,
             )
+            # P1-1：执行成功即重置崩溃预算，避免长生命周期插件偶发崩溃累积触顶永久 CRASHED。
+            # 仅"连续失败"才应累加 restart_count，成功一次即清零。
+            with self._instances_lock:
+                if inst.restart_count:
+                    inst.restart_count = 0
             return result
         except asyncio.TimeoutError:
             # PROCESS 模式：超时必须 kill worker，否则孤儿进程残留、重启复用卡死进程（P1-6）
@@ -339,7 +352,9 @@ class PluginLifecycle:
                 inst.error_count += 1
                 inst.last_error = str(exc)
             self.desk.log(plugin_id, "ERROR", "插件执行崩溃", error=str(exc))
-            await self._maybe_restart(plugin_id)
+            # P3-3：加载期不可调用属配置错误，重启无意义且浪费预算，跳过自动重启
+            if not isinstance(exc, PluginLoadError):
+                await self._maybe_restart(plugin_id)
             raise
 
     async def _invoke(self, inst: PluginInstance, params: dict[str, Any]) -> Any:
@@ -382,7 +397,7 @@ class PluginLifecycle:
         if callable(instance):
             async with self._concurrency_semaphore():
                 return await asyncio.to_thread(instance, self.desk, params)
-        raise RuntimeError(f"插件 {inst.manifest.id!r} 入口不可调用")
+        raise PluginLoadError(f"插件 {inst.manifest.id!r} 入口不可调用")
 
     async def _invoke_sandbox(
         self, inst: PluginInstance, params: dict[str, Any]
@@ -439,7 +454,14 @@ class PluginLifecycle:
         self.unload(plugin_id)
         new_inst = self.load(plugin_id)
         with self._instances_lock:
-            new_inst.restart_count = new_count
+            # P2-7：在写锁内再次确认仍是当前实例，避免并发双 restart 互相覆盖计数。
+            # new_inst 由本次 load 产生；若已被另一路 unload/load 替换则跳过写。
+            current = self._instances.get(plugin_id)
+            if current is new_inst:
+                new_inst.restart_count = new_count
+            elif current is not None:
+                # 已被并发 restart 替换，沿用其计数 +1 以保留崩溃预算累加语义
+                current.restart_count = max(current.restart_count, new_count)
         try:
             await self.enable(plugin_id)
             self.desk.log(plugin_id, "INFO", "插件已自动重启", count=new_count)
@@ -471,25 +493,33 @@ class PluginLifecycle:
         判死阈值取 manifest.timeout_seconds，与 LONG_TASK 能力语义对齐。
         """
         while True:
-            now = time.time()
-            with self._instances_lock:
-                candidates = [
-                    (pid, inst)
-                    for pid, inst in self._instances.items()
-                    if inst.state == PluginState.ENABLED
-                    and inst.manifest.sandbox_mode == SandboxMode.PROCESS
-                ]
-            for plugin_id, inst in candidates:
-                threshold = inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
-                if now - inst.last_heartbeat > threshold:
-                    with self._instances_lock:
-                        if inst.state != PluginState.ENABLED:
-                            continue
-                        self._transition(inst, PluginState.TIMEOUT)
-                    self.desk.log(plugin_id, "ERROR", "心跳超时，判定卡死，熔断")
-                    await self._sandbox.kill(plugin_id)
-                    await self._maybe_restart(plugin_id)
-            await asyncio.sleep(self._cfg_heartbeat_stale() // 2)
+            try:
+                now = time.time()
+                with self._instances_lock:
+                    candidates = [
+                        (pid, inst)
+                        for pid, inst in self._instances.items()
+                        if inst.state == PluginState.ENABLED
+                        and inst.manifest.sandbox_mode == SandboxMode.PROCESS
+                    ]
+                for plugin_id, inst in candidates:
+                    threshold = inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
+                    if now - inst.last_heartbeat > threshold:
+                        with self._instances_lock:
+                            if inst.state != PluginState.ENABLED:
+                                continue
+                            self._transition(inst, PluginState.TIMEOUT)
+                        self.desk.log(plugin_id, "ERROR", "心跳超时，判定卡死，熔断")
+                        await self._sandbox.kill(plugin_id)
+                        await self._maybe_restart(plugin_id)
+                # P3-2：整数除法下限 max(1, ...)，避免 heartbeat_stale=1 时 sleep(0) 空转
+                await asyncio.sleep(max(1, self._cfg_heartbeat_stale() // 2))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # P0-3：单次扫描/kill 异常不终止整个看门狗，记日志后继续
+                logger.error("lifecycle: _watch_loop 迭代异常: %s", exc, exc_info=True)
+                await asyncio.sleep(max(1, self._cfg_heartbeat_stale() // 2))
 
     def list_states(self) -> list[dict[str, Any]]:
         """返回所有插件实例状态快照（供消费端查询）。"""

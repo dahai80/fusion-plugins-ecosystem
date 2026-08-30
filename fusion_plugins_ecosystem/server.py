@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
+import ipaddress
 import logging
 import os
 import signal
+import socket
 import sys
 from typing import Any
 
@@ -23,6 +26,24 @@ from fusion_plugins_ecosystem.token_meter import TokenMeter
 from fusion_plugins_ecosystem.transport import create_transport
 
 logger = logging.getLogger(__name__)
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    """判断 host 是否为 loopback（127.0.0.0/8、::1、localhost）。
+
+    P0-1：远程传输（sse/http）在非 loopback 绑定时强制鉴权，
+    loopback 默认放行（本地单机/测试场景）。
+    """
+    if not host:
+        return True
+    if host in ("localhost", "::1"):
+        return True
+    try:
+        addr = ipaddress.ip_address(host)
+        return addr.is_loopback
+    except ValueError:
+        # 非 IP 字面量（如主机名）默认视为非 loopback，保守拒绝
+        return False
 
 
 class MCPServer:
@@ -72,6 +93,8 @@ class MCPServer:
         self._running = False
         # 停止信号：start() 等待、stop() 触发，跨协程保活/停机
         self._stop_event: asyncio.Event | None = None
+        # P1-4：atexit 注册幂等守卫
+        self._atexit_registered = False
 
     async def start(
         self,
@@ -119,6 +142,19 @@ class MCPServer:
             "auth_token", os.environ.get("FUSION_PLUGIN_AUTH_TOKEN")
         )
 
+        # P0-1：远程传输非 loopback 绑定必须鉴权，防止对外裸奔全部 RPC
+        if transport_type in ("sse", "http") and not _is_loopback_host(host):
+            if not auth_token:
+                msg = (
+                    f"远程传输 {transport_type} 绑定非 loopback 地址 {host} 但未设置鉴权 token；"
+                    "拒绝启动。请设置环境变量 FUSION_PLUGIN_AUTH_TOKEN 或仅绑 loopback。"
+                )
+                logger.error(msg)
+                raise RuntimeError(msg)
+            logger.warning(
+                "远程传输 %s 绑定 %s 已启用 Bearer 鉴权", transport_type, host
+            )
+
         self._transport = create_transport(
             transport_type,
             handler=self.handler.handle,
@@ -135,6 +171,16 @@ class MCPServer:
             port,
         )
 
+        # P1-2：启用 PROCESS 沙箱时启动看门狗，心跳判死生产生效
+        if self.config.sandbox_default_mode == "process":
+            self.lifecycle.start_watcher()
+            logger.info("lifecycle watcher 已启动（process 沙箱心跳判死）")
+
+        # P1-4：注册 atexit 兜底（SIGKILL 无法捕获，但优雅退出/异常时回收资源）
+        if not self._atexit_registered:
+            atexit.register(self._sync_cleanup)
+            self._atexit_registered = True
+
         await self._transport.start()
 
         # 所有传输类型都需阻塞至停止信号，否则 start() 立即返回会导致
@@ -147,8 +193,35 @@ class MCPServer:
             except NotImplementedError:
                 # 部分平台不支持 add_signal_handler，退化轮询
                 pass
-        await self._stop_event.wait()
-        # 唤醒后停传输；若 stop() 已先行停掉则 _transport_stop 幂等返回
+        try:
+            await self._stop_event.wait()
+        finally:
+            # E5：无论正常唤醒、异常还是 KeyboardInterrupt，均执行完整清理
+            await self._full_shutdown()
+
+    async def _full_shutdown(self) -> None:
+        """完整停机：停看门狗 → 杀全部沙箱子进程 → flush token → 停传输。
+
+        P1-2/P1-3/P1-4：补齐生产运维闭环，避免子进程孤儿与 token 丢失。
+        """
+        # P1-2：停看门狗
+        try:
+            self.lifecycle.stop_watcher()
+        except Exception as exc:
+            logger.warning("stop_watcher 失败: %s", exc)
+        # P1-3：显式 kill 全部 PROCESS 沙箱子进程，防孤儿
+        try:
+            sandbox = getattr(self.lifecycle, "_sandbox", None)
+            if sandbox is not None and hasattr(sandbox, "shutdown_all"):
+                await sandbox.shutdown_all()
+        except Exception as exc:
+            logger.warning("sandbox shutdown_all 失败: %s", exc)
+        # P1-4：flush 未落盘 token 记录
+        try:
+            self.token_meter.flush()
+        except Exception as exc:
+            logger.warning("token_meter flush 失败: %s", exc)
+        # 停传输
         await self._transport_stop()
 
     async def _transport_stop(self) -> None:
@@ -161,10 +234,24 @@ class MCPServer:
         logger.info("MCPServer stopped")
 
     async def stop(self) -> None:
-        """停止 MCP Server：触发 stop_event 解除 start() 阻塞，并停传输。"""
+        """停止 MCP Server：触发 stop_event 解除 start() 阻塞，并执行完整清理。
+
+        _full_shutdown 幂等（_transport_stop 有 _running 守卫），
+        故 stop() 与 start() 的 finally 调用不会双重回收。
+        """
         if self._stop_event is not None:
             self._stop_event.set()
-        await self._transport_stop()
+        await self._full_shutdown()
+
+    def _sync_cleanup(self) -> None:
+        """atexit 兜底：同步清理残留资源（事件循环已关闭时尽力而为）。
+
+        SIGKILL 无法捕获；此处仅覆盖异常退出 / 未显式 await stop 的场景。
+        """
+        try:
+            self.token_meter.flush()
+        except Exception:
+            pass
 
     @property
     def transport(self) -> Any:

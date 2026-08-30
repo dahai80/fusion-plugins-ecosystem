@@ -39,16 +39,42 @@ def _derive_key() -> bytes:
     单机本机威胁模型下防止配置文件明文泄露密钥；跨机/跨用户不可解密。
     """
     salt = os.environ.get("FUSION_PLUGIN_KEY_SALT", "fusion-plugins-default-salt")
+    if salt == "fusion-plugins-default-salt":
+        # P2-3：默认盐下任何本机同 uid 进程可派生密钥解密 config_center 密钥。
+        # 生产应设置 FUSION_PLUGIN_KEY_SALT；严格模式下默认盐视为弱派生并告警。
+        logger.warning(
+            "desk_runtime: 使用默认 API 密钥盐，生产环境应设置 FUSION_PLUGIN_KEY_SALT"
+        )
     material = f"{salt}|{socket.gethostname()}|{os.getuid()}"
     digest = hashlib.sha256(material.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest)
 
 
+def _safe_realpath(path: str) -> str:
+    """安全解析真实路径，realpath 失败时回退 normpath（不抛异常）。"""
+    try:
+        return os.path.realpath(path)
+    except (OSError, ValueError):
+        return os.path.normpath(path)
+
+
+def _strict_encryption() -> bool:
+    """生产严格模式：FUSION_PLUGIN_STRICT_ENCRYPTION=1 时密钥加密失败视为硬错误，
+    不回退明文落盘（违背 R6 设计意图）。测试/离线默认宽松回退。"""
+    return os.environ.get("FUSION_PLUGIN_STRICT_ENCRYPTION", "") == "1"
+
+
 def _encrypt_key(plaintext: str) -> str:
-    """加密 API 密钥，返回 enc: 前缀密文。失败时回退明文并告警。"""
+    """加密 API 密钥，返回 enc: 前缀密文。
+
+    P2-4：严格模式下 cryptography 缺失或加密失败抛错而非回退明文；
+    宽松模式（默认，兼容测试/离线）回退明文并告警。
+    """
     try:
         from cryptography.fernet import Fernet
     except ImportError:
+        if _strict_encryption():
+            raise RuntimeError("desk_runtime: 严格模式下 cryptography 未安装，拒绝明文存储 API 密钥")
         logger.warning("desk_runtime: cryptography 未安装，API 密钥以明文存储")
         return plaintext
     try:
@@ -56,6 +82,8 @@ def _encrypt_key(plaintext: str) -> str:
             plaintext.encode("utf-8")
         ).decode("ascii")
     except Exception as exc:
+        if _strict_encryption():
+            raise RuntimeError(f"desk_runtime: 严格模式下 API 密钥加密失败，拒绝回退明文: {exc}")
         logger.warning("desk_runtime: API 密钥加密失败，回退明文: %s", exc)
         return plaintext
 
@@ -259,15 +287,19 @@ class DeskRuntime:
     # ── 文件权限 ──
 
     def check_file_permission(self, plugin_id: str, path: str) -> bool:
-        """检查插件是否具备对指定路径的访问权限（路径标准化）。"""
+        """检查插件是否具备对指定路径的访问权限（路径标准化）。
+
+        P1-6：用 realpath 解析符号链接后再前缀匹配，防止插件以合法前缀路径
+        申请权限后经符号链接指向白名单外目标越权访问。
+        """
         perms = self.plugin_permissions.get(plugin_id, {})
         allowed = perms.get("allowed_paths", [])
         # 空白名单 = 允许全部（测试便利）
         if not allowed:
             return True
-        normalized = os.path.normpath(path)
+        normalized = _safe_realpath(path)
         for allowed_path in allowed:
-            norm_allowed = os.path.normpath(allowed_path)
+            norm_allowed = _safe_realpath(allowed_path)
             # 精确匹配或前缀匹配（带分隔符）
             if normalized == norm_allowed:
                 return True

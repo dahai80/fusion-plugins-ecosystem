@@ -26,6 +26,15 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# P0-2：SIGKILL 后回收等待上限。超出即放弃等待（进程可能处不可中断 D-state），
+# 避免无超时 await 永久挂起调用链。
+_KILL_REAP_TIMEOUT = 5
+
+# P1-8/E6：日志级别白名单，防 worker 发非法 level 字符串经 getattr 解析到非日志方法。
+_VALID_LOG_LEVELS = frozenset(
+    {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+)
+
 
 @dataclass(frozen=True)
 class ResourceLimits:
@@ -251,10 +260,22 @@ class PluginSandbox:
                 )
             except asyncio.TimeoutError:
                 proc.process.kill()
-                await proc.process.wait()
+                # P0-2：SIGKILL 后等待回收加超时，避免 worker 进入不可中断 D-state
+                # 时此 await 永久挂起、连带拖垮 execute/_watch_loop。
+                try:
+                    await asyncio.wait_for(
+                        proc.process.wait(), timeout=_KILL_REAP_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "sandbox: %s SIGKILL 后 %ss 未回收，放弃等待（可能 D-state）",
+                        plugin_id,
+                        _KILL_REAP_TIMEOUT,
+                    )
         except ProcessLookupError:
             pass
 
+        proc.health = SandboxHealth.DEAD
         logger.info("sandbox: killed %s", plugin_id)
 
     def health(self, plugin_id: str) -> SandboxHealth:
@@ -289,6 +310,15 @@ class PluginSandbox:
                 except json.JSONDecodeError:
                     logger.warning(
                         "sandbox: %s invalid JSON: %s", proc.plugin_id, text[:100]
+                    )
+                    continue
+
+                # P1-8：非 dict 消息（如 worker 误 print(5)）不击杀整个沙箱，跳过即可
+                if not isinstance(msg, dict):
+                    logger.warning(
+                        "sandbox: %s 非 dict 消息已丢弃: %s",
+                        proc.plugin_id,
+                        text[:100],
                     )
                     continue
 
@@ -347,8 +377,11 @@ class PluginSandbox:
             future.set_exception(RuntimeError(str(error_msg)))
 
     def _handle_log(self, proc: SandboxProcess, msg: dict) -> None:
-        level = msg.get("level", "INFO")
+        level = str(msg.get("level", "INFO")).upper()
         message = msg.get("message", "")
+        # E6：level 白名单，防 worker 发非法字符串经 getattr 解析到非日志方法崩循环
+        if level not in _VALID_LOG_LEVELS:
+            level = "INFO"
         log_method = getattr(logger, level.lower(), logger.info)
         log_method("sandbox:%s: %s", proc.plugin_id, message)
 

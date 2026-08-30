@@ -53,6 +53,19 @@ _STUDIO_CONFIG_KEYS = {
     "mcp_enabled": "enable_claude_mcp",
 }
 
+# P1-5：安全敏感字段经 RPC 只读。变更沙箱隔离强度、监听地址、凭据存储开关
+# 等属部署期决策，不应经运行时 RPC 被未授权客户端翻转。
+_RPC_READONLY_CONFIG_KEYS = frozenset(
+    {
+        "sandbox_default_mode",
+        "mcp_host",
+        "mcp_port",
+        "mcp_transport",
+        "enable_volcengine_claude_plan",
+        "token_persist_path",
+    }
+)
+
 
 def _extract_plugin_id(tool_name: str) -> str | None:
     """从 MCP 命名空间工具名提取 plugin_id。
@@ -63,6 +76,15 @@ def _extract_plugin_id(tool_name: str) -> str | None:
     if tool_name.startswith(_MCP_TOOL_NAMESPACE_PREFIX):
         return tool_name[len(_MCP_TOOL_NAMESPACE_PREFIX) :]
     return tool_name if tool_name else None
+
+
+# P2-2：plugin_id 字符集白名单，防换行/控制字符伪造日志行（日志注入）
+_PLUGIN_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
+
+
+def _valid_plugin_id(plugin_id: str | None) -> bool:
+    """校验 plugin_id 格式：仅字母数字/下划线/点/连字符，长度 1-128。"""
+    return bool(plugin_id) and bool(_PLUGIN_ID_RE.match(plugin_id))
 
 
 def _error_response(
@@ -162,8 +184,10 @@ class MCPHandler:
                 return None
             return _result_response(request_id, result)
         except Exception as e:
-            logger.error("jsonrpc: handler %s error: %s", method, e)
-            return _error_response(request_id, -32603, f"Internal error: {e}")
+            # P1-7：对外仅返回通用错误码，详情写日志，避免异常文本泄露
+            # 内部模块路径/文件系统结构/变量值等敏感信息。
+            logger.error("jsonrpc: handler %s error: %s", method, e, exc_info=True)
+            return _error_response(request_id, -32603, "Internal error")
 
     # ── 协议方法 ──
 
@@ -256,9 +280,14 @@ class MCPHandler:
                 self._touch_session(session_id, plugin_id)
             return {"content": content, "isError": False}
         except Exception as e:
-            logger.error("jsonrpc: tools/call %s error: %s", tool_name, e)
+            # P1-7：对外返回通用错误消息，原始异常详情写日志，防信息泄露
+            logger.error(
+                "jsonrpc: tools/call %s error: %s", tool_name, e, exc_info=True
+            )
             return {
-                "content": [{"type": "text", "text": f"Error: {e}"}],
+                "content": [
+                    {"type": "text", "text": f"Plugin execution failed: {type(e).__name__}"}
+                ],
                 "isError": True,
             }
 
@@ -342,6 +371,9 @@ class MCPHandler:
         A4：安装结果持久化到 config_center，进程重启后可由 server.start() 恢复。
         """
         plugin_id = params.get("plugin_id", "")
+        # P2-2：plugin_id 格式校验，防日志注入
+        if not _valid_plugin_id(plugin_id):
+            return {"ok": False, "error": "非法 plugin_id"}
         manifest = self.registry.get(plugin_id)
         if manifest is None:
             return {"ok": False, "error": f"插件 {plugin_id!r} 未注册"}
@@ -359,6 +391,9 @@ class MCPHandler:
         A4：卸载同步从持久化已安装集合移除。
         """
         plugin_id = params.get("plugin_id", "")
+        # P2-2：plugin_id 格式校验
+        if not _valid_plugin_id(plugin_id):
+            return {"ok": False, "error": "非法 plugin_id"}
         await self.lifecycle.disable(plugin_id)
         self.lifecycle.unload(plugin_id)
         self._persist_installed(plugin_id, False)
@@ -382,6 +417,16 @@ class MCPHandler:
         if backend_key not in self.config.to_dict():
             logger.warning("jsonrpc: config.set 拒绝未知字段 %r", key)
             return {"ok": False, "error": f"未知字段 {key!r}"}
+        # P1-5：安全敏感字段经 RPC 只读，防止未授权翻转沙箱模式/监听地址等。
+        # 变更需在部署期（环境变量/配置文件）完成，不经运行时 RPC。
+        if backend_key in _RPC_READONLY_CONFIG_KEYS:
+            logger.warning(
+                "jsonrpc: config.set 拒绝敏感字段 %r（RPC 只读）", backend_key
+            )
+            return {
+                "ok": False,
+                "error": f"字段 {key!r} 为安全敏感项，不可经 RPC 修改",
+            }
         probe, warnings = EcosystemConfig.from_dict({backend_key: value})
         if warnings:
             logger.warning(
@@ -401,6 +446,9 @@ class MCPHandler:
     async def _plugins_state_get(self, params: dict[str, Any]) -> dict[str, Any]:
         """plugins/state.get：返回单个插件状态快照（dict 信封）。"""
         plugin_id = params.get("plugin_id", "")
+        # P2-2：plugin_id 格式校验
+        if not _valid_plugin_id(plugin_id):
+            return {"id": plugin_id, "plugin_id": plugin_id, "state": "unknown"}
         state = self.lifecycle.get_state(plugin_id)
         if state is None:
             return {
@@ -612,7 +660,28 @@ class MCPHandler:
             self.config = merged
             if warnings:
                 logger.warning("jsonrpc: 恢复配置校验告警: %s", "; ".join(warnings))
+            # P2-1：恢复的配置须同步应用到 lifecycle 与 token_meter，
+            # 否则 server 启动时二者仍绑旧 config，超时/心跳/token 持久化阈值静默失效。
+            self._apply_config_to_deps()
         return restored
+
+    def _apply_config_to_deps(self) -> None:
+        """把 self.config 同步到 lifecycle 与 token_meter（配置恢复后调用）。
+
+        lifecycle 通过 getter 实时读 config，仅需替换其 config 引用；
+        token_meter 的 max_records/persist_path 为构造期快照，需显式刷新。
+        """
+        try:
+            if self.lifecycle is not None:
+                self.lifecycle.config = self.config
+        except Exception as exc:
+            logger.warning("jsonrpc: 同步 config 到 lifecycle 失败: %s", exc)
+        try:
+            if self.token_meter is not None:
+                self.token_meter._max_records = self.config.max_token_records
+                self.token_meter._persist_path = self.config.token_persist_path
+        except Exception as exc:
+            logger.warning("jsonrpc: 同步 config 到 token_meter 失败: %s", exc)
 
     # C12: 会话管理
     def _touch_session(self, session_id: str, plugin_id: str) -> None:
