@@ -170,9 +170,7 @@ class EcosystemConfig:
             sandbox_default_mode=_safe_str(
                 "sandbox_default_mode", ("inline", "process")
             ),
-            log_level=_safe_str(
-                "log_level", ("DEBUG", "INFO", "WARNING", "ERROR")
-            ),
+            log_level=_safe_str("log_level", ("DEBUG", "INFO", "WARNING", "ERROR")),
             vram_limit_mb=_safe_int("vram_limit_mb", 0, 65535),
             max_concurrent_plugins=_safe_int("max_concurrent_plugins", 1, 1024),
             max_token_records=_safe_int("max_token_records", 100),

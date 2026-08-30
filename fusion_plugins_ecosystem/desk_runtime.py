@@ -74,7 +74,9 @@ def _encrypt_key(plaintext: str) -> str:
         from cryptography.fernet import Fernet
     except ImportError:
         if _strict_encryption():
-            raise RuntimeError("desk_runtime: 严格模式下 cryptography 未安装，拒绝明文存储 API 密钥")
+            raise RuntimeError(
+                "desk_runtime: 严格模式下 cryptography 未安装，拒绝明文存储 API 密钥"
+            )
         logger.warning("desk_runtime: cryptography 未安装，API 密钥以明文存储")
         return plaintext
     try:
@@ -83,7 +85,9 @@ def _encrypt_key(plaintext: str) -> str:
         ).decode("ascii")
     except Exception as exc:
         if _strict_encryption():
-            raise RuntimeError(f"desk_runtime: 严格模式下 API 密钥加密失败，拒绝回退明文: {exc}")
+            raise RuntimeError(
+                f"desk_runtime: 严格模式下 API 密钥加密失败，拒绝回退明文: {exc}"
+            )
         logger.warning("desk_runtime: API 密钥加密失败，回退明文: %s", exc)
         return plaintext
 
@@ -100,12 +104,15 @@ def _decrypt_key(stored: str | None) -> str | None:
         logger.warning("desk_runtime: cryptography 未安装，无法解密 API 密钥")
         return None
     try:
-        return Fernet(_derive_key()).decrypt(
-            stored[len(_KEY_ENC_PREFIX) :].encode("ascii")
-        ).decode("utf-8")
+        return (
+            Fernet(_derive_key())
+            .decrypt(stored[len(_KEY_ENC_PREFIX) :].encode("ascii"))
+            .decode("utf-8")
+        )
     except Exception as exc:
         logger.warning("desk_runtime: API 密钥解密失败: %s", exc)
         return None
+
 
 FUSION_COWORK_AVAILABLE = False
 try:
@@ -335,9 +342,7 @@ class DeskRuntime:
         if self.config_center is None:
             return
         try:
-            self.config_center.set(
-                f"api_keys.{provider}", _encrypt_key(key)
-            )
+            self.config_center.set(f"api_keys.{provider}", _encrypt_key(key))
         except Exception as exc:
             logger.warning("desk_runtime: 写入 API 密钥失败: %s", exc)
 

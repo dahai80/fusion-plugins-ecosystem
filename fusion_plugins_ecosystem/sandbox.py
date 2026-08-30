@@ -31,9 +31,7 @@ logger = logging.getLogger(__name__)
 _KILL_REAP_TIMEOUT = 5
 
 # P1-8/E6：日志级别白名单，防 worker 发非法 level 字符串经 getattr 解析到非日志方法。
-_VALID_LOG_LEVELS = frozenset(
-    {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-)
+_VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 
 @dataclass(frozen=True)
@@ -223,14 +221,18 @@ class PluginSandbox:
             proc.pending_calls.pop(call_id, None)
             # 超时后必须 kill worker：否则孤儿进程残留，下次 call 复用卡死进程（P0-4）。
             # _invoke_sandbox 在 health!=alive 时会 respawn。
-            self.desk_log(proc, "ERROR", f"call {call_id} 超时，kill worker 并等待 respawn")
+            self.desk_log(
+                proc, "ERROR", f"call {call_id} 超时，kill worker 并等待 respawn"
+            )
             await self.kill(plugin_id)
             raise TimeoutError(
                 f"sandbox: plugin {plugin_id!r} call timed out after "
                 f"{proc.limits.timeout_seconds}s"
             )
 
-    def desk_log(self, proc: SandboxProcess, level: str, message: str, **kw: Any) -> None:
+    def desk_log(
+        self, proc: SandboxProcess, level: str, message: str, **kw: Any
+    ) -> None:
         """沙箱侧日志经宿主 logger 输出（worker 自身日志已通过 IPC 回传）。"""
         log_method = getattr(logger, level.lower(), logger.info)
         log_method("sandbox:%s: %s %s", proc.plugin_id, message, kw or "")
@@ -434,7 +436,11 @@ class PluginSandbox:
         return (
             "import sys,json,time,importlib,resource,threading,asyncio,inspect\n"
             f"_ENTRY={entry_str!r}\n"
-            f"_CONFIG={json.dumps(config)}\n"
+            # P0-3：config 经 repr 序列化为 Python 字面量而非 json.dumps。
+            # json 的 true/false/null 不是合法 Python 标识符，嵌入 worker 脚本会
+            # NameError: name 'true' is not defined → 所有携带 bool/None 配置的
+            # PROCESS 插件 spawn 即崩。repr() 输出 True/False/None 合法 Python。
+            f"_CONFIG={config!r}\n"
             f"_MEM_LIMIT_MB={limits.memory_limit_mb}\n"
             # E2：CPU 限时（秒，向上取整），0 表示不限。RLIMIT_CPU 触发 SIGXCPU
             f"_CPU_LIMIT_SEC={int(limits.cpu_limit) if limits.cpu_limit > 0 else 0}\n"
