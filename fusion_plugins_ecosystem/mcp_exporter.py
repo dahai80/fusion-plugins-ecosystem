@@ -21,6 +21,7 @@ from fusion_plugins_ecosystem.registry import (
 )
 from fusion_plugins_ecosystem.schema import (
     MCP_PROTOCOL_VERSION,
+    MCPAnnotations,
     _PARAM_TYPE_MAP,
 )
 
@@ -32,6 +33,55 @@ _MCP_TOOL_TEMPLATE = {
     "jsonrpc": "2.0",
     "protocolVersion": MCP_PROTOCOL_VERSION,
 }
+
+_MCP_TOOL_NAMESPACE_PREFIX = "mcp__plugin__"
+
+
+def manifest_to_mcp_tool(manifest: PluginManifest) -> dict[str, Any] | None:
+    """将 PluginManifest 转为 MCP Tool 描述（SSOT，所有 adapter 复用）。
+
+    统一输出：enum 始终转 list（JSON 合法数组）、含 title/annotations/outputSchema
+    （MCP 2026-07-28）。避免 jsonrpc / mcp_exporter 各自生成导致 schema 分叉。
+    """
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for param in manifest.params:
+        prop: dict[str, Any] = {
+            "type": _PARAM_TYPE_MAP.get(param.type, "string"),
+            "description": param.description,
+        }
+        if param.enum is not None:
+            # enum 始终输出 list，tuple 在 JSON 中不合法
+            prop["enum"] = list(param.enum)
+        if param.default is not None:
+            prop["default"] = param.default
+        properties[param.name] = prop
+        if param.required:
+            required.append(param.name)
+
+    input_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+    }
+    if required:
+        input_schema["required"] = required
+
+    annotations = MCPAnnotations()
+    if hasattr(manifest, "mcp_annotations") and manifest.mcp_annotations:
+        annotations = manifest.mcp_annotations
+
+    tool: dict[str, Any] = {
+        "name": f"{_MCP_TOOL_NAMESPACE_PREFIX}{manifest.id}",
+        "title": manifest.name,
+        "description": manifest.description,
+        "inputSchema": input_schema,
+        "annotations": annotations.to_dict(),
+    }
+
+    if hasattr(manifest, "output_schema") and manifest.output_schema:
+        tool["outputSchema"] = manifest.output_schema
+
+    return tool
 
 
 class MCPExporter:
@@ -66,35 +116,8 @@ class MCPExporter:
         return tools
 
     def _manifest_to_mcp_tool(self, manifest: PluginManifest) -> dict[str, Any]:
-        """将 PluginManifest 转换为 MCP Tool 描述。"""
-        # 构建 inputSchema（MCP 复用 JSON Schema）
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-        for param in manifest.params:
-            prop: dict[str, Any] = {
-                "type": _PARAM_TYPE_MAP.get(param.type, "string"),
-                "description": param.description,
-            }
-            if param.enum is not None:
-                prop["enum"] = param.enum
-            if param.default is not None:
-                prop["default"] = param.default
-            properties[param.name] = prop
-            if param.required:
-                required.append(param.name)
-
-        input_schema: dict[str, Any] = {
-            "type": "object",
-            "properties": properties,
-        }
-        if required:
-            input_schema["required"] = required
-
-        return {
-            "name": f"mcp__plugin__{manifest.id}",
-            "description": manifest.description,
-            "inputSchema": input_schema,
-        }
+        """将 PluginManifest 转换为 MCP Tool 描述（委托 SSOT manifest_to_mcp_tool）。"""
+        return manifest_to_mcp_tool(manifest)
 
     async def call_tool(
         self,

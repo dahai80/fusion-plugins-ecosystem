@@ -12,19 +12,20 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
+from collections import deque
 from typing import Any
 
 from fusion_plugins_ecosystem import __version__ as _PKG_VERSION
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
+from fusion_plugins_ecosystem.lifecycle import PluginLifecycle, PluginState
+from fusion_plugins_ecosystem.mcp_exporter import manifest_to_mcp_tool
 from fusion_plugins_ecosystem.registry import PluginCapability, PluginRegistry
 from fusion_plugins_ecosystem.schema import (
     MCP_PROTOCOL_VERSION,
     MCP_PROTOCOL_VERSIONS_SUPPORTED,
-    MCPAnnotations,
-    _PARAM_TYPE_MAP,
 )
 from fusion_plugins_ecosystem.token_meter import TokenMeter
 
@@ -33,6 +34,10 @@ logger = logging.getLogger(__name__)
 _MCP_TOOL_NAMESPACE_PREFIX = "mcp__plugin__"
 # RPC 触发的淘汰操作最小保留时长（秒），防止全量清空审计/会话记录
 _PRUNE_MIN_AGE = 60.0
+# 最大并发会话数，超出 LRU 淘汰（P0-5）
+_MAX_SESSIONS = 256
+# sessionId 合法格式（防止伪造无界 ID 撑爆内存）
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_\-:.]{1,128}$")
 
 # Studio EcosystemConfig 期望的 7 个字段名 → 后端 EcosystemConfig 字段映射
 # 后端字段名与 Studio 不一致，这里做适配投影
@@ -98,7 +103,7 @@ class MCPHandler:
         self._sessions: dict[str, dict[str, Any]] = {}
         # C13: 速率限制
         self._rate_limit = rate_limit_per_minute
-        self._call_timestamps: dict[str, list[float]] = {}
+        self._call_timestamps: dict[str, deque] = {}
 
     async def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """分发 JSON-RPC 请求。"""
@@ -326,7 +331,11 @@ class MCPHandler:
         manifest = self.registry.get(plugin_id)
         if manifest is None:
             return {"ok": False, "error": f"插件 {plugin_id!r} 未注册"}
-        await self.lifecycle.enable(plugin_id)
+        try:
+            await self.lifecycle.enable(plugin_id)
+        except Exception as exc:
+            logger.error("jsonrpc: install %s 失败: %s", plugin_id, exc)
+            return {"ok": False, "error": str(exc)}
         return {"ok": True}
 
     async def _plugins_uninstall(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -384,8 +393,6 @@ class MCPHandler:
         """plugins/state.list：按状态过滤返回插件快照列表。"""
         state_str = params.get("state", "")
         try:
-            from fusion_plugins_ecosystem.lifecycle import PluginState
-
             state_enum = PluginState(state_str)
         except ValueError:
             return {"plugins": []}
@@ -513,6 +520,13 @@ class MCPHandler:
 
     # C12: 会话管理
     def _touch_session(self, session_id: str, plugin_id: str) -> None:
+        # sessionId 格式校验，拒绝伪造无界 ID（P0-5）
+        if not _SESSION_ID_RE.match(session_id):
+            logger.warning("jsonrpc: 拒绝非法 sessionId %r", session_id)
+            return
+        # 会话数上限 + LRU 淘汰，防止内存耗尽（P0-5）
+        if len(self._sessions) >= _MAX_SESSIONS and session_id not in self._sessions:
+            self._evict_oldest_session()
         session = self._sessions.setdefault(
             session_id,
             {
@@ -525,6 +539,14 @@ class MCPHandler:
         session["calls"].append({"plugin_id": plugin_id, "ts": time.time()})
         if len(session["calls"]) > 1000:
             session["calls"] = session["calls"][-500:]
+
+    def _evict_oldest_session(self) -> None:
+        """淘汰最久未活跃的会话（LRU）。"""
+        if not self._sessions:
+            return
+        oldest_id = min(self._sessions, key=lambda s: self._sessions[s]["last_active"])
+        del self._sessions[oldest_id]
+        logger.info("jsonrpc: 会话数达上限，LRU 淘汰 %s", oldest_id)
 
     def get_session(self, session_id: str) -> dict[str, Any] | None:
         return self._sessions.get(session_id)
@@ -542,58 +564,25 @@ class MCPHandler:
     # C13: 速率限制
     def _check_rate_limit(self, plugin_id: str) -> bool:
         now = time.time()
-        timestamps = self._call_timestamps.get(plugin_id, [])
         cutoff = now - 60.0
-        timestamps = [t for t in timestamps if t > cutoff]
+        timestamps = self._call_timestamps.get(plugin_id)
+        if timestamps is None:
+            timestamps = deque()
+            self._call_timestamps[plugin_id] = timestamps
+        # 从左侧淘汰过期时间戳（已按时间顺序入队，左侧最旧）
+        while timestamps and timestamps[0] <= cutoff:
+            timestamps.popleft()
         if len(timestamps) >= self._rate_limit:
             logger.warning(
                 "jsonrpc: 插件 %s 速率限制触发 (%d/min)", plugin_id, self._rate_limit
             )
             return False
         timestamps.append(now)
-        self._call_timestamps[plugin_id] = timestamps
         return True
 
     def _manifest_to_mcp_tool(self, manifest: Any) -> dict[str, Any] | None:
-        """将 PluginManifest 转为 MCP Tool 描述（2026-07-28 增强）。"""
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-        for param in manifest.params:
-            prop: dict[str, Any] = {
-                "type": _PARAM_TYPE_MAP.get(param.type, "string"),
-                "description": param.description,
-            }
-            if param.enum is not None:
-                prop["enum"] = list(param.enum)
-            if param.default is not None:
-                prop["default"] = param.default
-            properties[param.name] = prop
-            if param.required:
-                required.append(param.name)
-
-        input_schema: dict[str, Any] = {
-            "type": "object",
-            "properties": properties,
-        }
-        if required:
-            input_schema["required"] = required
-
-        annotations = MCPAnnotations()
-        if hasattr(manifest, "mcp_annotations") and manifest.mcp_annotations:
-            annotations = manifest.mcp_annotations
-
-        tool: dict[str, Any] = {
-            "name": f"{_MCP_TOOL_NAMESPACE_PREFIX}{manifest.id}",
-            "title": manifest.name,
-            "description": manifest.description,
-            "inputSchema": input_schema,
-            "annotations": annotations.to_dict(),
-        }
-
-        if hasattr(manifest, "output_schema") and manifest.output_schema:
-            tool["outputSchema"] = manifest.output_schema
-
-        return tool
+        """将 PluginManifest 转为 MCP Tool 描述（委托 SSOT，避免双份分叉）。"""
+        return manifest_to_mcp_tool(manifest)
 
     def _format_result(self, result: Any) -> list[dict[str, Any]]:
         """将插件返回值格式化为 MCP content 数组。"""

@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -70,6 +73,8 @@ class TokenMeter:
         self._persist_path = persist_path
         self._records: list[TokenRecord] = []
         self._by_plugin: dict[str, list[TokenRecord]] = {}
+        # 持久化锁：record 可被多协程并发调用，写文件必须串行（P1-7）
+        self._save_lock = threading.Lock()
         if persist_path:
             self._load(persist_path)
 
@@ -142,20 +147,30 @@ class TokenMeter:
         return list(self._records)
 
     def _prune(self) -> None:
-        """淘汰超过 max_records 的旧记录。"""
-        if len(self._records) > self._max_records:
-            excess = len(self._records) - self._max_records
-            removed = self._records[:excess]
-            self._records = self._records[excess:]
-            for rec in removed:
-                if rec.plugin_id in self._by_plugin:
-                    self._by_plugin[rec.plugin_id] = [
-                        r for r in self._by_plugin[rec.plugin_id] if r is not rec
-                    ]
+        """淘汰超过 max_records 的旧记录。
+
+        每个受影响 plugin 的 _by_plugin 列表一次性重建，不再对每条 removed 记录
+        全量扫描做 is 过滤（P3-3，旧实现 O(N×M)）。
+        """
+        if len(self._records) <= self._max_records:
+            return
+        excess = len(self._records) - self._max_records
+        removed = self._records[:excess]
+        self._records = self._records[excess:]
+        self._rebuild_by_plugin(removed)
 
     def _records_since(self, since: float) -> list[TokenRecord]:
-        """返回指定时间之后的记录。"""
-        return [r for r in self._records if r.timestamp >= since]
+        """返回指定时间之后的记录。
+
+        逆序扫描 + 提前终止：记录按时间追加，逆序遍历遇到早于 since 即停（P3-2）。
+        """
+        out: list[TokenRecord] = []
+        for rec in reversed(self._records):
+            if rec.timestamp < since:
+                break
+            out.append(rec)
+        out.reverse()
+        return out
 
     def prune(self, max_age_seconds: float | None = None) -> None:
         """手动淘汰旧记录。
@@ -175,17 +190,35 @@ class TokenMeter:
             return
         removed = [r for r in self._records if r.timestamp < cutoff]
         self._records = kept
-        for rec in removed:
-            if rec.plugin_id in self._by_plugin:
-                self._by_plugin[rec.plugin_id] = [
-                    r for r in self._by_plugin[rec.plugin_id] if r is not rec
-                ]
+        self._rebuild_by_plugin(removed)
         logger.info(
             "token_meter: 按时间淘汰 %d 条记录（>%ss）", len(removed), max_age_seconds
         )
 
+    def _rebuild_by_plugin(self, removed: list[TokenRecord]) -> None:
+        """根据 removed 集合，一次性重建受影响 plugin 的 _by_plugin 列表。
+
+        避免逐条 is 过滤全表（P3-3）。removed 多属同一 plugin 时收益最大。
+        """
+        if not removed:
+            return
+        removed_ids = {id(r) for r in removed}
+        affected = {r.plugin_id for r in removed}
+        for pid in affected:
+            bucket = self._by_plugin.get(pid)
+            if not bucket:
+                continue
+            self._by_plugin[pid] = [r for r in bucket if id(r) not in removed_ids]
+            if not self._by_plugin[pid]:
+                del self._by_plugin[pid]
+
     def _save(self) -> None:
-        """持久化记录到 persist_path。"""
+        """持久化记录到 persist_path。
+
+        写文件加锁 + 原子替换（temp + os.replace），避免并发 record 交错写损坏
+        JSON（P1-7）。全量重写仍在，但串行化保证一致性；高频场景应由调用方
+        批量记录后单次 flush，或上层降频（本计量器不自行节流以免丢记录）。
+        """
         if not self._persist_path:
             return
         try:
@@ -204,7 +237,22 @@ class TokenMeter:
                 }
                 for r in self._records
             ]
-            path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+            payload = json.dumps(data, ensure_ascii=False, indent=2)
+            with self._save_lock:
+                # 写临时文件再原子 rename，中途崩溃不会留半截损坏文件
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=str(path.parent), prefix=".token_meter_", suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        f.write(payload)
+                    os.replace(tmp_path, str(path))
+                except Exception:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    raise
         except Exception as e:
             logger.warning("token_meter: persist failed: %s", e)
 

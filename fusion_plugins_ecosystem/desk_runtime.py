@@ -12,9 +12,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -68,8 +68,11 @@ class DeskRuntime:
     log_entries: deque = field(default_factory=lambda: deque(maxlen=_LOG_BUFFER_MAX))
     # 日志自增计数（生成日志条目 id）
     _log_counter: int = field(default=0)
-    # vRAM 操作锁（线程安全）
-    _vram_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    # vRAM 操作锁（线程安全）：acquire_vram/release_vram 是同步方法，
+    # load/unload 同步路径会调用，asyncio.Lock 无法在同步代码里 await（P2-2）
+    _vram_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    # 日志缓冲写锁：_log_counter 自增 + append 需原子，避免并发 id 重复/丢条目
+    _log_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def __post_init__(self) -> None:
         if not FUSION_COWORK_AVAILABLE:
@@ -84,28 +87,32 @@ class DeskRuntime:
 
         同一 plugin_id 再次调用会替换之前的分配量，
         而非在旧值上累加。
+
+        check-then-set 在锁内原子完成，消除并发申请越过预算的 TOCTOU（P2-2）。
         """
-        if mb <= 0:
-            self.vram_allocations.pop(plugin_id, None)
+        with self._vram_lock:
+            if mb <= 0:
+                self.vram_allocations.pop(plugin_id, None)
+                return True
+            current = self.vram_allocations.get(plugin_id, 0)
+            delta = mb - current
+            used = sum(self.vram_allocations.values())
+            if self.vram_total_mb > 0 and used + delta > self.vram_total_mb:
+                logger.warning(
+                    "desk_runtime: 插件 %s 显存申请失败（%dMB 超预算 %dMB）",
+                    plugin_id,
+                    mb,
+                    self.vram_total_mb,
+                )
+                return False
+            self.vram_allocations[plugin_id] = mb
+            logger.info("desk_runtime: 插件 %s 显存 %dMB→%dMB", plugin_id, current, mb)
             return True
-        current = self.vram_allocations.get(plugin_id, 0)
-        delta = mb - current
-        used = sum(self.vram_allocations.values())
-        if self.vram_total_mb > 0 and used + delta > self.vram_total_mb:
-            logger.warning(
-                "desk_runtime: 插件 %s 显存申请失败（%dMB 超预算 %dMB）",
-                plugin_id,
-                mb,
-                self.vram_total_mb,
-            )
-            return False
-        self.vram_allocations[plugin_id] = mb
-        logger.info("desk_runtime: 插件 %s 显存 %dMB→%dMB", plugin_id, current, mb)
-        return True
 
     def release_vram(self, plugin_id: str) -> None:
         """释放插件占用的显存。"""
-        freed = self.vram_allocations.pop(plugin_id, 0)
+        with self._vram_lock:
+            freed = self.vram_allocations.pop(plugin_id, 0)
         if freed:
             logger.info("desk_runtime: 插件 %s 释放 %dMB 显存", plugin_id, freed)
 
@@ -146,16 +153,18 @@ class DeskRuntime:
                 extra,
             )
         # 写入环形缓冲区（供 plugins/logs.stream 查询）
-        self._log_counter += 1
-        self.log_entries.append(
-            {
-                "id": self._log_counter,
-                "plugin_id": plugin_id,
-                "level": level.upper(),
-                "message": message,
-                "timestamp": str(int(time.time() * 1000)),
-            }
-        )
+        # counter 自增 + append 在锁内，避免并发 id 重复或 deque 调度丢条目
+        with self._log_lock:
+            self._log_counter += 1
+            self.log_entries.append(
+                {
+                    "id": self._log_counter,
+                    "plugin_id": plugin_id,
+                    "level": level.upper(),
+                    "message": message,
+                    "timestamp": str(int(time.time() * 1000)),
+                }
+            )
 
     def get_logs(
         self,
@@ -166,16 +175,23 @@ class DeskRuntime:
         """查询日志缓冲区（支持按插件/级别过滤，返回最近 limit 条）。
 
         供 plugins/logs.stream JSON-RPC 方法消费。
+
+        逆序遍历 + 提前终止：只需最近 limit 条，不必全量 list() 拷贝再切片（P3-2）。
         """
-        entries = list(self.log_entries)
-        if plugin_id is not None:
-            entries = [e for e in entries if e["plugin_id"] == plugin_id]
-        if level is not None:
-            lvl = level.upper()
-            entries = [e for e in entries if e["level"] == lvl]
-        if limit > 0:
-            entries = entries[-limit:]
-        return entries
+        need_pid = plugin_id
+        need_lvl = level.upper() if level is not None else None
+        collected: list[dict[str, Any]] = []
+        with self._log_lock:
+            for entry in reversed(self.log_entries):
+                if need_pid is not None and entry["plugin_id"] != need_pid:
+                    continue
+                if need_lvl is not None and entry["level"] != need_lvl:
+                    continue
+                collected.append(entry)
+                if limit > 0 and len(collected) >= limit:
+                    break
+        collected.reverse()
+        return collected
 
     # ── 文件权限 ──
 
