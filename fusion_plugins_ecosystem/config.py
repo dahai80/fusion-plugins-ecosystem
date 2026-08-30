@@ -61,6 +61,15 @@ class EcosystemConfig:
     # 默认沙箱模式
     sandbox_default_mode: str = "inline"
 
+    # ── Studio 语义对齐字段（A3 修复：原先被错误映射到 mcp_transport/mcp_port
+    # 等无关字段，现补齐真实后端字段，Studio 键 1:1 对齐）──
+    # 日志级别（DEBUG/INFO/WARNING/ERROR），启动时应用到 logging
+    log_level: str = "INFO"
+    # 显存全局上限（MB），启动时同步到 DeskRuntime.vram_total_mb
+    vram_limit_mb: int = 0
+    # 最大并发执行插件数（inline 线程池并发闸）
+    max_concurrent_plugins: int = 16
+
     # ── 计量 ──
     # Token 记录最大条数
     max_token_records: int = 10000
@@ -89,6 +98,9 @@ class EcosystemConfig:
             "mcp_host": self.mcp_host,
             "mcp_port": self.mcp_port,
             "sandbox_default_mode": self.sandbox_default_mode,
+            "log_level": self.log_level,
+            "vram_limit_mb": self.vram_limit_mb,
+            "max_concurrent_plugins": self.max_concurrent_plugins,
             "max_token_records": self.max_token_records,
             "token_persist_path": self.token_persist_path,
         }
@@ -158,6 +170,11 @@ class EcosystemConfig:
             sandbox_default_mode=_safe_str(
                 "sandbox_default_mode", ("inline", "process")
             ),
+            log_level=_safe_str(
+                "log_level", ("DEBUG", "INFO", "WARNING", "ERROR")
+            ),
+            vram_limit_mb=_safe_int("vram_limit_mb", 0, 65535),
+            max_concurrent_plugins=_safe_int("max_concurrent_plugins", 1, 1024),
             max_token_records=_safe_int("max_token_records", 100),
             token_persist_path=merged.get("token_persist_path"),
         )

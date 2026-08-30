@@ -235,6 +235,8 @@ def test_flow_token_meter_persist_roundtrip() -> None:
                 output_tokens=100,
             )
         )
+        # R4：节流落盘，flush 后才落盘供 meter2 读取
+        meter.flush()
 
         meter2 = TokenMeter(persist_path=path)
         records = meter2.records_for("caveman_compress")

@@ -20,7 +20,6 @@ from fusion_plugins_ecosystem.registry import (
     PluginManifest,
     PluginRegistry,
 )
-from fusion_plugins_ecosystem.schema import _PARAM_TYPE_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -57,45 +56,10 @@ class ClaudeSkillAdapter:
 
     def _manifest_to_skill(self, manifest: PluginManifest) -> dict[str, Any]:
         """将 PluginManifest 转换为 Claude Skill 描述。"""
-        # 构建 input_schema（JSON Schema）
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-        for param in manifest.params:
-            prop: dict[str, Any] = {
-                "type": _PARAM_TYPE_MAP.get(param.type, "string"),
-                "description": param.description,
-            }
-            if param.enum is not None:
-                prop["enum"] = param.enum
-            if param.default is not None:
-                prop["default"] = param.default
-            properties[param.name] = prop
-            if param.required:
-                required.append(param.name)
+        # E7：委托 skill_adapter 的 SSOT，避免双份 input_schema 逻辑漂移
+        from fusion_plugins_ecosystem.skill_adapter import build_skill_dict
 
-        input_schema: dict[str, Any] = {
-            "type": "object",
-            "properties": properties,
-        }
-        if required:
-            input_schema["required"] = required
-
-        # Claude Skill 描述
-        skill: dict[str, Any] = {
-            "name": manifest.id,
-            "description": manifest.description,
-            "input_schema": input_schema,
-            # 扩展字段，供 Desk 配置面板使用
-            "_fusion": {
-                "plugin_name": manifest.name,
-                "version": manifest.version,
-                "category": manifest.category.value,
-                "capabilities": [c.value for c in manifest.capabilities],
-                "default_mounted": manifest.default_mounted,
-                "timeout_seconds": manifest.timeout_seconds,
-            },
-        }
-        return skill
+        return build_skill_dict(manifest)
 
     def export_default_mounted(self) -> list[dict[str, Any]]:
         """导出所有 default_mounted=True 的插件 Skill（默认挂载给 Claude 会话）。

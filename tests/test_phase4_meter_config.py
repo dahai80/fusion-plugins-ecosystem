@@ -45,6 +45,8 @@ def test_persist_saves_to_file() -> None:
                 output_tokens=5,
             )
         )
+        # R4：节流落盘，单条记录不立即写文件，需显式 flush
+        meter.flush()
         assert os.path.exists(path)
         data = json.loads(open(path).read())
         assert len(data) == 1
@@ -112,6 +114,8 @@ def test_persist_roundtrip() -> None:
                 metadata={"model": "llama"},
             )
         )
+        # R4：节流落盘，flush 后才落盘供 meter2 读取
+        meter1.flush()
 
         meter2 = TokenMeter(persist_path=path)
         records = meter2.all_records()

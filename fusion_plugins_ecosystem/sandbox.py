@@ -72,9 +72,68 @@ class PluginSandbox:
         await sandbox.kill("my_plugin")
     """
 
-    def __init__(self, default_limits: ResourceLimits | None = None) -> None:
+    def __init__(
+        self,
+        default_limits: ResourceLimits | None = None,
+        desk: Any = None,
+    ) -> None:
         self._processes: dict[str, SandboxProcess] = {}
         self.default_limits = default_limits or ResourceLimits()
+        # R1：宿主 DeskRuntime 句柄，供 worker 资源代理 RPC 回调
+        self.desk = desk
+
+    async def _handle_rpc(self, proc: SandboxProcess, msg: dict) -> None:
+        """处理 worker 回调宿主的资源请求（R1：PROCESS 沙箱资源代理）。
+
+        worker 内 _DeskProxy 的 acquire_vram/mlx_chat/check_file_permission/
+        get_api_key 通过 stdout 发 rpc 消息回调宿主，宿主执行后经 stdin 回写结果。
+        """
+        rpc_id = msg.get("id", "")
+        method = msg.get("method", "")
+        args = msg.get("args", {})
+        result: Any = None
+        error: str | None = None
+        try:
+            if self.desk is None:
+                raise RuntimeError("宿主 DeskRuntime 未注入，无法代理资源请求")
+            if method == "acquire_vram":
+                result = self.desk.acquire_vram(
+                    args.get("plugin_id", proc.plugin_id),
+                    int(args.get("mb", 0)),
+                )
+            elif method == "release_vram":
+                self.desk.release_vram(args.get("plugin_id", proc.plugin_id))
+                result = True
+            elif method == "check_file_permission":
+                result = self.desk.check_file_permission(
+                    args.get("plugin_id", proc.plugin_id),
+                    args.get("path", ""),
+                )
+            elif method == "get_api_key":
+                result = self.desk.get_api_key(args.get("provider", ""))
+            elif method == "mlx_chat":
+                # 异步方法，需 await
+                result = await self.desk.mlx_chat(
+                    args.get("model", ""),
+                    args.get("messages", []),
+                    **args.get("kwargs", {}),
+                )
+            else:
+                raise RuntimeError(f"未知 rpc 方法 {method!r}")
+        except Exception as exc:
+            error = str(exc)
+            logger.warning("sandbox: rpc %s 失败: %s", method, exc)
+        reply = {"type": "rpc_result", "id": rpc_id}
+        if error is not None:
+            reply["error"] = error
+        else:
+            reply["result"] = result
+        try:
+            line = json.dumps(reply, default=str) + "\n"
+            proc.process.stdin.write(line.encode("utf-8"))
+            await proc.process.stdin.drain()
+        except Exception as exc:
+            logger.warning("sandbox: rpc 回写失败: %s", exc)
 
     async def spawn(
         self,
@@ -242,6 +301,9 @@ class PluginSandbox:
                     proc.last_heartbeat = time.time()
                 elif msg_type == "log":
                     self._handle_log(proc, msg)
+                elif msg_type == "rpc":
+                    # R1：PROCESS 沙箱资源代理 RPC，worker 回调宿主 DeskRuntime
+                    await self._handle_rpc(proc, msg)
                 else:
                     logger.warning(
                         "sandbox: unknown msg type %r from %s", msg_type, proc.plugin_id
@@ -341,6 +403,8 @@ class PluginSandbox:
             f"_ENTRY={entry_str!r}\n"
             f"_CONFIG={json.dumps(config)}\n"
             f"_MEM_LIMIT_MB={limits.memory_limit_mb}\n"
+            # E2：CPU 限时（秒，向上取整），0 表示不限。RLIMIT_CPU 触发 SIGXCPU
+            f"_CPU_LIMIT_SEC={int(limits.cpu_limit) if limits.cpu_limit > 0 else 0}\n"
             "_OUT_LOCK=threading.Lock()\n"
             "def _send(msg):\n"
             "    line=json.dumps(msg)+'\\n'\n"
@@ -349,25 +413,52 @@ class PluginSandbox:
             "        sys.stdout.flush()\n"
             "def _log(level,message,**extra):\n"
             "    _send({'type':'log','level':level,'message':message,'extra':extra})\n"
+            # R1：资源代理 RPC 状态。_rpc_futures[rid]=Future，rpc 回包按 id 唤醒。
+            # 用 concurrent.futures.Future（线程安全），_stdin_reader 线程解析回包后 set_result。
+            "import concurrent.futures as _cf\n"
+            "_rpc_futures={}\n"
+            "_rpc_counter=[0]\n"
+            "_rpc_lock=threading.Lock()\n"
+            "_RPC_TIMEOUT=60\n"
+            "def _rpc_call(method,args):\n"
+            "    with _rpc_lock:\n"
+            "        _rpc_counter[0]+=1\n"
+            "        rid=str(_rpc_counter[0])\n"
+            "    fut=_cf.Future()\n"
+            "    _rpc_futures[rid]=fut\n"
+            "    _send({'type':'rpc','id':rid,'method':method,'args':args})\n"
+            "    try:\n"
+            "        return fut.result(timeout=_RPC_TIMEOUT)\n"
+            "    except _cf.TimeoutError:\n"
+            "        _rpc_futures.pop(rid,None)\n"
+            "        raise TimeoutError('资源代理 RPC 超时: %s'%method)\n"
             "class _DeskProxy:\n"
             "    def log(self,plugin_id,level,message,**kw):\n"
             "        _log(level,message,**kw)\n"
             "    def acquire_vram(self,plugin_id,mb):\n"
-            "        raise NotImplementedError('PROCESS 沙箱不支持 vRAM 申请，请用 INLINE 模式')\n"
+            "        return _rpc_call('acquire_vram',{'plugin_id':plugin_id,'mb':mb})\n"
             "    def release_vram(self,plugin_id):\n"
-            "        pass\n"
-            "    def mlx_chat(self,*a,**kw):\n"
-            "        raise NotImplementedError('PROCESS 沙箱不支持 mlx_chat，请用 INLINE 模式')\n"
+            "        return _rpc_call('release_vram',{'plugin_id':plugin_id})\n"
+            "    def mlx_chat(self,model,messages,**kw):\n"
+            "        return _rpc_call('mlx_chat',{'model':model,'messages':messages,'kwargs':kw})\n"
             "    def get_api_key(self,provider):\n"
-            "        return None\n"
+            "        return _rpc_call('get_api_key',{'provider':provider})\n"
             "    def check_file_permission(self,plugin_id,path):\n"
-            "        return False\n"
+            "        return _rpc_call('check_file_permission',{'plugin_id':plugin_id,'path':path})\n"
             "desk=_DeskProxy()\n"
             "try:\n"
             "    soft,hard=resource.getrlimit(resource.RLIMIT_AS)\n"
             "    resource.setrlimit(resource.RLIMIT_AS,(_MEM_LIMIT_MB*1024*1024,hard))\n"
             "except Exception as e:\n"
-            "    _log('WARNING','setrlimit failed: %s'%e)\n"
+            "    _log('WARNING','setrlimit RLIMIT_AS failed: %s'%e)\n"
+            # E2：CPU 限时（秒）。超限触发 SIGXCPU，worker 被 OS 终止，宿主侧
+            # _read_loop 收到 EOF 走 CRASHED 路径，避免插件独占 CPU 卡死宿主。
+            "if _CPU_LIMIT_SEC>0:\n"
+            "    try:\n"
+            "        soft,hard=resource.getrlimit(resource.RLIMIT_CPU)\n"
+            "        resource.setrlimit(resource.RLIMIT_CPU,(_CPU_LIMIT_SEC,hard))\n"
+            "    except Exception as e:\n"
+            "        _log('WARNING','setrlimit RLIMIT_CPU failed: %s'%e)\n"
             "def _load_entry():\n"
             "    if not _ENTRY: return None\n"
             "    if ':' in _ENTRY:\n"
@@ -416,6 +507,15 @@ class PluginSandbox:
             "        try:\n"
             "            req=json.loads(line)\n"
             "        except json.JSONDecodeError:\n"
+            "            continue\n"
+            "        if req.get('type')=='rpc_result':\n"
+            "            rid=req.get('id','')\n"
+            "            fut=_rpc_futures.pop(rid,None)\n"
+            "            if fut is None: continue\n"
+            "            if req.get('error') is not None:\n"
+            "                fut.set_exception(RuntimeError(req.get('error')))\n"
+            "            else:\n"
+            "                fut.set_result(req.get('result'))\n"
             "            continue\n"
             "        if req.get('type')!='call': continue\n"
             "        call_id=req.get('id','')\n"

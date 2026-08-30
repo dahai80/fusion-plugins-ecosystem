@@ -159,10 +159,12 @@ class SSETransport(Transport):
         handler: Callable[[dict], Any] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,
+        auth_token: str | None = None,
     ) -> None:
         super().__init__(handler)
         self._host = host
         self._port = port
+        self._auth_token = auth_token
         self._server: asyncio.Server | None = None
         self._running = False
         self._sessions: dict[str, asyncio.Queue] = {}
@@ -217,6 +219,14 @@ class SSETransport(Transport):
                 return
 
             content_length = _safe_content_length(headers)
+
+            # R6：SSE/HTTP 远程传输鉴权，Bearer token 匹配才放行
+            if not _check_auth(self._auth_token, headers):
+                logger.warning("SSETransport: 鉴权失败，拒绝请求")
+                await _write_simple_response(writer, 401, b"Unauthorized")
+                writer.close()
+                await writer.wait_closed()
+                return
 
             if request_text.startswith("GET"):
                 await self._handle_sse_handshake(writer)
@@ -317,10 +327,12 @@ class HTTPTransport(Transport):
         handler: Callable[[dict], Any] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,
+        auth_token: str | None = None,
     ) -> None:
         super().__init__(handler)
         self._host = host
         self._port = port
+        self._auth_token = auth_token
         self._server: asyncio.Server | None = None
         self._running = False
 
@@ -361,6 +373,14 @@ class HTTPTransport(Transport):
                 return
 
             content_length = _safe_content_length(headers)
+
+            # R6：SSE/HTTP 远程传输鉴权，Bearer token 匹配才放行
+            if not _check_auth(self._auth_token, headers):
+                logger.warning("HTTPTransport: 鉴权失败，拒绝请求")
+                await _write_simple_response(writer, 401, b"Unauthorized")
+                writer.close()
+                await writer.wait_closed()
+                return
 
             if not request_text.startswith("POST"):
                 await _write_simple_response(writer, 400, b"Bad Request")
@@ -466,12 +486,29 @@ def _safe_content_length(headers: dict[str, str]) -> int:
     return cl
 
 
+def _check_auth(auth_token: str | None, headers: dict[str, str]) -> bool:
+    """R6：校验 Authorization: Bearer <token>。
+
+    auth_token 为 None 时表示未启用鉴权（本地/测试），放行。
+    启用后必须匹配，使用 hmac.compare_digest 常量时间比较防侧信道。
+    """
+    if not auth_token:
+        return True
+    import hmac
+
+    raw = headers.get("authorization", "")
+    if not raw.startswith("Bearer "):
+        return False
+    return hmac.compare_digest(raw[len("Bearer ") :], auth_token)
+
+
 async def _write_simple_response(
     writer: asyncio.StreamWriter, status: int, message: bytes
 ) -> None:
     """写一个无 body 的简单 HTTP 错误响应。"""
     reason = {
         400: b"Bad Request",
+        401: b"Unauthorized",
         408: b"Request Timeout",
         413: b"Payload Too Large",
     }.get(status, b"Error")
@@ -498,12 +535,14 @@ def create_transport(
             handler=handler,
             host=kwargs.get("host", "127.0.0.1"),
             port=kwargs.get("port", 0),
+            auth_token=kwargs.get("auth_token"),
         )
     elif transport_type == "http":
         return HTTPTransport(
             handler=handler,
             host=kwargs.get("host", "127.0.0.1"),
             port=kwargs.get("port", 0),
+            auth_token=kwargs.get("auth_token"),
         )
     else:
         raise ValueError(f"Unknown transport type: {transport_type}")

@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -352,8 +353,6 @@ class ClaudeGateway:
         """构造 MCP tools/call 成功响应。"""
         # 将 dict 结果序列化为 text content；其他类型直接 str()
         if isinstance(result, dict):
-            import json
-
             text = json.dumps(result, ensure_ascii=False, default=str)
         else:
             text = str(result)

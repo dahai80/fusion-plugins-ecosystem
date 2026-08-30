@@ -126,9 +126,42 @@ class PluginLifecycle:
         self._instances: dict[str, PluginInstance] = {}
         # 同步锁：load/unload 是同步函数，asyncio.Lock 无法 await，故用 threading.Lock
         self._instances_lock = threading.RLock()
-        self._sandbox = PluginSandbox()
+        # R1：注入 DeskRuntime，使 PROCESS 沙箱资源代理 RPC 可访问宿主资源
+        self._sandbox = PluginSandbox(desk=self.desk)
         # 异常检测任务句柄
         self._watcher_task: asyncio.Task[None] | None = None
+        # E3：持有 unload 触发的 kill 后台任务引用，防止 GC 回收导致进程未清理
+        self._pending_kill_tasks: set[asyncio.Task] = set()
+        # R2：inline 并发闸，限制 to_thread 线程池并发插件执行数
+        self._concurrency_sem: asyncio.Semaphore | None = None
+
+    # ── A2：配置驱动阈值，config 缺失回退类常量（兼容无 config 的测试路径）──
+
+    def _cfg_timeout(self) -> int:
+        if self.config is not None:
+            return self.config.subagent_timeout_seconds
+        return self.DEFAULT_TIMEOUT
+
+    def _cfg_max_restart(self) -> int:
+        if self.config is not None:
+            return self.config.max_auto_restart
+        return self.MAX_RESTART
+
+    def _cfg_heartbeat_stale(self) -> int:
+        if self.config is not None:
+            return self.config.heartbeat_stale_seconds
+        return self.HEARTBEAT_STALE
+
+    def _cfg_max_concurrent(self) -> int:
+        if self.config is not None:
+            return self.config.max_concurrent_plugins
+        return 16
+
+    def _concurrency_semaphore(self) -> asyncio.Semaphore:
+        """惰性创建并发信号量（需事件循环，故延迟构造）。"""
+        if self._concurrency_sem is None:
+            self._concurrency_sem = asyncio.Semaphore(self._cfg_max_concurrent())
+        return self._concurrency_sem
 
     def _transition(self, inst: PluginInstance, new_state: PluginState) -> None:
         """执行状态转换（带合法性校验）。
@@ -248,10 +281,13 @@ class PluginLifecycle:
         if inst.manifest.vram_mb > 0:
             self.desk.release_vram(plugin_id)
         if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
-            # 同步上下文无法 await kill；调度到事件循环异步清理
+            # 同步上下文无法 await kill；调度到事件循环异步清理。
+            # E3：持有 task 引用防止 GC 回收，完成后自动移除。
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(self._sandbox.kill(plugin_id))
+                task = loop.create_task(self._sandbox.kill(plugin_id))
+                self._pending_kill_tasks.add(task)
+                task.add_done_callback(self._pending_kill_tasks.discard)
             except RuntimeError:
                 # 无运行事件循环（同步测试路径），尽力 terminate
                 logger.debug("lifecycle: unload 无事件循环，跳过 PROCESS kill")
@@ -274,7 +310,9 @@ class PluginLifecycle:
             if inst is None or inst.state != PluginState.ENABLED:
                 raise RuntimeError(f"插件 {plugin_id!r} 未启用，无法执行")
             timeout = (
-                timeout_override or inst.manifest.timeout_seconds or self.DEFAULT_TIMEOUT
+                timeout_override
+                or inst.manifest.timeout_seconds
+                or self._cfg_timeout()
             )
             inst.last_heartbeat = time.time()
 
@@ -335,12 +373,15 @@ class PluginLifecycle:
         """进程内调用插件入口。
 
         同步入口用 to_thread 丢线程池，避免阻塞事件循环、使 wait_for 超时真生效（P1-2）。
+        R2：信号量限制并发 inline 执行数，防止无界线程池耗尽资源。
         """
         instance = inst.instance
         if inspect.iscoroutinefunction(instance):
-            return await instance(self.desk, params)
+            async with self._concurrency_semaphore():
+                return await instance(self.desk, params)
         if callable(instance):
-            return await asyncio.to_thread(instance, self.desk, params)
+            async with self._concurrency_semaphore():
+                return await asyncio.to_thread(instance, self.desk, params)
         raise RuntimeError(f"插件 {inst.manifest.id!r} 入口不可调用")
 
     async def _invoke_sandbox(
@@ -349,19 +390,27 @@ class PluginLifecycle:
         """沙箱进程调用插件入口。"""
         plugin_id = inst.manifest.id
         if self._sandbox.health(plugin_id) != "alive":
+            # E1：传递真实插件配置而非空 dict，worker 内可读取运行参数
+            spawn_config = {}
+            if self.config is not None:
+                spawn_config = dict(self.config.to_dict())
             await self._sandbox.spawn(
                 plugin_id,
                 entry_point=inst.manifest.entry_point,
-                config={},
+                config=spawn_config,
                 limits=ResourceLimits(
                     timeout_seconds=inst.manifest.timeout_seconds
-                    or self.DEFAULT_TIMEOUT,
+                    or self._cfg_timeout(),
                 ),
             )
         return await self._sandbox.call(plugin_id, "execute", params)
 
     async def _maybe_restart(self, plugin_id: str) -> None:
-        """崩溃后自动重启（限制 max_restart 次，优先使用插件级配置）。"""
+        """崩溃后自动重启（限制 max_restart 次，优先使用插件级配置）。
+
+        R3：重启前指数退避（2^n 秒，上限 60s），避免崩溃循环瞬间打满 CPU；
+        enable 异常被捕获，避免重启失败向调用方二次抛错导致递归熔断。
+        """
         with self._instances_lock:
             inst = self._instances.get(plugin_id)
             if inst is None:
@@ -369,19 +418,37 @@ class PluginLifecycle:
             max_restart = (
                 inst.manifest.max_restart
                 if inst.manifest.max_restart is not None
-                else self.MAX_RESTART
+                else self._cfg_max_restart()
             )
             if inst.restart_count >= max_restart:
                 self.desk.log(plugin_id, "ERROR", "达到最大重启次数，插件保持崩溃状态")
                 return
             # 保存计数，unload 会删除旧 instance
             new_count = inst.restart_count + 1
+        # R3：指数退避，避免崩溃循环瞬间重启打满资源。
+        # 无 config 的测试路径不退避（保持原即时重启语义），生产路径按 2^n 退避。
+        backoff = 0
+        if self.config is not None:
+            backoff = min(2 ** (new_count - 1), 60)
+        if backoff > 0:
+            await asyncio.sleep(backoff)
+            # 退避期间插件可能已被 disable/unload，二次确认
+            with self._instances_lock:
+                if plugin_id not in self._instances:
+                    return
         self.unload(plugin_id)
         new_inst = self.load(plugin_id)
         with self._instances_lock:
             new_inst.restart_count = new_count
-        await self.enable(plugin_id)
-        self.desk.log(plugin_id, "INFO", "插件已自动重启", count=new_count)
+        try:
+            await self.enable(plugin_id)
+            self.desk.log(plugin_id, "INFO", "插件已自动重启", count=new_count)
+        except Exception as exc:
+            # R3：重启 enable 失败不向调用方抛错，记录崩溃态避免递归
+            with self._instances_lock:
+                self._transition(new_inst, PluginState.CRASHED)
+                new_inst.last_error = f"自动重启失败: {exc}"
+            self.desk.log(plugin_id, "ERROR", "插件自动重启失败", error=str(exc))
 
     async def start_watcher(self) -> None:
         """启动异常检测循环，发现卡死插件自动熔断。"""
@@ -413,7 +480,7 @@ class PluginLifecycle:
                     and inst.manifest.sandbox_mode == SandboxMode.PROCESS
                 ]
             for plugin_id, inst in candidates:
-                threshold = inst.manifest.timeout_seconds or self.HEARTBEAT_STALE
+                threshold = inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
                 if now - inst.last_heartbeat > threshold:
                     with self._instances_lock:
                         if inst.state != PluginState.ENABLED:
@@ -422,7 +489,7 @@ class PluginLifecycle:
                     self.desk.log(plugin_id, "ERROR", "心跳超时，判定卡死，熔断")
                     await self._sandbox.kill(plugin_id)
                     await self._maybe_restart(plugin_id)
-            await asyncio.sleep(self.HEARTBEAT_STALE // 2)
+            await asyncio.sleep(self._cfg_heartbeat_stale() // 2)
 
     def list_states(self) -> list[dict[str, Any]]:
         """返回所有插件实例状态快照（供消费端查询）。"""

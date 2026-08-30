@@ -67,6 +67,8 @@ class TokenMeter:
         desk: Any | None = None,
         max_records: int = 10000,
         persist_path: str | None = None,
+        save_batch: int = 50,
+        save_interval_seconds: float = 2.0,
     ) -> None:
         self.desk = desk
         self._max_records = max_records
@@ -75,6 +77,11 @@ class TokenMeter:
         self._by_plugin: dict[str, list[TokenRecord]] = {}
         # 持久化锁：record 可被多协程并发调用，写文件必须串行（P1-7）
         self._save_lock = threading.Lock()
+        # R4：节流持久化，避免每条记录全量重写打满 IO
+        self._save_batch = max(1, save_batch)
+        self._save_interval_seconds = save_interval_seconds
+        self._dirty_count = 0
+        self._last_save_ts = time.time()
         if persist_path:
             self._load(persist_path)
 
@@ -83,7 +90,10 @@ class TokenMeter:
         self._records.append(rec)
         self._by_plugin.setdefault(rec.plugin_id, []).append(rec)
         self._prune()
-        self._save()
+        # R4：节流落盘，累计 _save_batch 条或距上次保存超过 _save_interval_seconds 才写
+        self._dirty_count += 1
+        if self._should_save():
+            self._save()
         # 异常检测：PLUGIN_LOCAL 但 input/output tokens 为 0 且 wall_seconds 很长
         # 对应「子代理跑 40 分钟无 token 消耗」痛点
         if (
@@ -103,6 +113,21 @@ class TokenMeter:
                     "长时间无 token 消耗，疑似卡死",
                     wall_seconds=rec.wall_seconds,
                 )
+
+    def _should_save(self) -> bool:
+        if self._persist_path is None:
+            return False
+        if self._dirty_count >= self._save_batch:
+            return True
+        if time.time() - self._last_save_ts >= self._save_interval_seconds:
+            return True
+        return False
+
+    def flush(self) -> None:
+        """强制持久化当前全部记录（停机/显式 flush 调用）。"""
+        if self._persist_path is None:
+            return
+        self._save()
 
     def measure(
         self,
@@ -216,8 +241,7 @@ class TokenMeter:
         """持久化记录到 persist_path。
 
         写文件加锁 + 原子替换（temp + os.replace），避免并发 record 交错写损坏
-        JSON（P1-7）。全量重写仍在，但串行化保证一致性；高频场景应由调用方
-        批量记录后单次 flush，或上层降频（本计量器不自行节流以免丢记录）。
+        JSON（P1-7）。R4：由 record 节流调用 + flush 强制调用，不再每条全量重写。
         """
         if not self._persist_path:
             return
@@ -253,6 +277,9 @@ class TokenMeter:
                     except OSError:
                         pass
                     raise
+            # R4：落盘成功后重置节流计数与时间戳
+            self._dirty_count = 0
+            self._last_save_ts = time.time()
         except Exception as e:
             logger.warning("token_meter: persist failed: %s", e)
 

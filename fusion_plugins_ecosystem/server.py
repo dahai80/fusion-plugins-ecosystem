@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 from typing import Any
@@ -41,9 +42,18 @@ class MCPServer:
         self.desk = DeskRuntime(
             mcp_gateway_port=self.config.mcp_port or None,
         )
+        # A3：vram_limit_mb 同步到 DeskRuntime 显存总预算
+        if self.config.vram_limit_mb:
+            self.desk.vram_total_mb = self.config.vram_limit_mb
         self.registry = PluginRegistry(desk=self.desk)
-        self.lifecycle = PluginLifecycle(self.registry)
-        self.token_meter = TokenMeter(self.desk)
+        # A2：lifecycle 注入 config，超时/重启/心跳阈值改由配置驱动
+        self.lifecycle = PluginLifecycle(self.registry, config=self.config)
+        # A5：token_meter 注入配置的计量阈值与持久化路径
+        self.token_meter = TokenMeter(
+            self.desk,
+            max_records=self.config.max_token_records,
+            persist_path=self.config.token_persist_path,
+        )
         self.handler = MCPHandler(
             registry=self.registry,
             lifecycle=self.lifecycle,
@@ -51,6 +61,13 @@ class MCPServer:
             config=self.config,
             token_meter=self.token_meter,
         )
+        # A4：启动时从 config_center 恢复持久化配置与已安装插件集合
+        self.handler.restore_config()
+        # A3：应用配置日志级别到根 logger（CLI --log-level 优先，此处补可编程入口）
+        if self.config.log_level and self.config.log_level != "INFO":
+            logging.getLogger().setLevel(
+                getattr(logging, self.config.log_level, logging.INFO)
+            )
         self._transport: Any = None
         self._running = False
         # 停止信号：start() 等待、stop() 触发，跨协程保活/停机
@@ -81,15 +98,33 @@ class MCPServer:
                     except Exception as exc:
                         logger.warning("auto-mount: %s 启用失败: %s", manifest.id, exc)
 
+        # A4：从 config_center 恢复持久化的已安装插件（非默认挂载的手动安装项）
+        for plugin_id in self.handler.restore_installed():
+            if plugin_id in self.lifecycle._instances:
+                continue
+            if self.registry.get(plugin_id) is None:
+                logger.warning("restore: 持久化的插件 %s 未注册，跳过", plugin_id)
+                continue
+            try:
+                await self.lifecycle.enable(plugin_id)
+                logger.info("restore: %s 已恢复启用", plugin_id)
+            except Exception as exc:
+                logger.warning("restore: %s 恢复失败: %s", plugin_id, exc)
+
         transport_type = transport or self.config.mcp_transport
         host = kwargs.get("host", self.config.mcp_host)
         port = kwargs.get("port", self.config.mcp_port)
+        # R6：SSE/HTTP 远程传输鉴权 token（环境变量注入，不落盘配置）
+        auth_token = kwargs.get(
+            "auth_token", os.environ.get("FUSION_PLUGIN_AUTH_TOKEN")
+        )
 
         self._transport = create_transport(
             transport_type,
             handler=self.handler.handle,
             host=host,
             port=port,
+            auth_token=auth_token,
         )
 
         self._running = True

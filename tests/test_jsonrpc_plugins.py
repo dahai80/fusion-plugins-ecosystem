@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.jsonrpc import MCPHandler
 from fusion_plugins_ecosystem.registry import (
@@ -48,9 +49,10 @@ def _registry_with_plugin() -> tuple[PluginRegistry, PluginManifest]:
 
 def _make_handler(
     registry: PluginRegistry | None = None,
+    config: "EcosystemConfig | None" = None,
 ) -> tuple[MCPHandler, PluginRegistry]:
     registry = registry or _registry_with_plugin()[0]
-    handler = MCPHandler(registry=registry)
+    handler = MCPHandler(registry=registry, config=config)
     return handler, registry
 
 
@@ -440,9 +442,10 @@ async def test_plugins_config_set_rejects_bad_value() -> None:
     result = await _call(handler, "plugins/config.set", {"mcp_port": 99999})
     assert result["ok"] is False
     assert "error" in result
-    # 配置未被污染
+    # 配置未被污染：mcp_port 已是独立后端字段，config.get 返回 Studio 投影，
+    # 其中 vram_limit_mb 保持默认 0（与 mcp_port 无投影关系）
     config = await _call(handler, "plugins/config.get")
-    assert config["vram_limit_mb"] == 0  # mcp_port 投影名
+    assert config["vram_limit_mb"] == 0
 
 
 async def test_plugins_config_set_rejects_unknown_key() -> None:
@@ -479,3 +482,35 @@ async def test_plugins_state_last_error_truncated() -> None:
     assert err is not None
     assert len(err) <= 303  # 300 + 省略号
     assert err.endswith("…")
+
+
+# ── E8：config 驱动 lifecycle / token_meter 接线校验 ──
+
+
+async def test_handler_config_drives_lifecycle_and_token_meter() -> None:
+    """注入 config 后，handler.lifecycle 与 handler.token_meter 应读取配置阈值，
+    避免旧实现中 handler 自建无 config 的 lifecycle/token_meter（A2/A5 断裂）。"""
+    cfg = EcosystemConfig(
+        max_token_records=7,
+        token_persist_path=None,
+        subagent_timeout_seconds=42,
+        max_auto_restart=5,
+    )
+    handler, _ = _make_handler(config=cfg)
+    # A5：token_meter 读取 max_token_records
+    assert handler.token_meter._max_records == 7
+    # A2：lifecycle 持有同一 config 实例
+    assert handler.lifecycle.config is cfg
+    # A2：配置阈值经 getter 生效
+    assert handler.lifecycle._cfg_max_restart() == 5
+    assert handler.lifecycle._cfg_timeout() == 42
+
+
+async def test_handler_config_get_reflects_set_value() -> None:
+    """plugins/config.set 成功后 plugins/config.get 应返回新值（端到端 config 接线）。"""
+    handler, _ = _make_handler()
+    # log_level 是 Studio 投影键 → 直接对应后端 log_level
+    result = await _call(handler, "plugins/config.set", {"log_level": "DEBUG"})
+    assert result["ok"] is True
+    config = await _call(handler, "plugins/config.get")
+    assert config["log_level"] == "DEBUG"
