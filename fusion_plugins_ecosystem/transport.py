@@ -242,6 +242,8 @@ class SSETransport(Transport):
             if request_text.startswith("POST"):
                 if content_length <= 0 or content_length > _MAX_BODY:
                     await _write_simple_response(writer, 400, b"Bad Request")
+                    writer.close()
+                    await writer.wait_closed()
                     return
                 body = await asyncio.wait_for(
                     reader.read(content_length), timeout=_READ_TIMEOUT
@@ -251,6 +253,8 @@ class SSETransport(Transport):
                 except (UnicodeDecodeError, json.JSONDecodeError) as e:
                     logger.warning("SSETransport: invalid JSON body: %s", e)
                     await _write_simple_response(writer, 400, b"Bad Request")
+                    writer.close()
+                    await writer.wait_closed()
                     return
                 if self._handler:
                     response = await self._handler(request)
@@ -398,12 +402,16 @@ class HTTPTransport(Transport):
 
             if not request_text.startswith("POST"):
                 await _write_simple_response(writer, 400, b"Bad Request")
+                writer.close()
+                await writer.wait_closed()
                 return
             if content_length <= 0 or content_length > _MAX_BODY:
                 await _write_simple_response(
                     writer, 413 if content_length > _MAX_BODY else 400,
                     b"Bad Request" if content_length <= 0 else b"Payload Too Large",
                 )
+                writer.close()
+                await writer.wait_closed()
                 return
 
             body = await asyncio.wait_for(
@@ -414,6 +422,8 @@ class HTTPTransport(Transport):
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
                 logger.warning("HTTPTransport: invalid JSON body: %s", e)
                 await _write_simple_response(writer, 400, b"Bad Request")
+                writer.close()
+                await writer.wait_closed()
                 return
 
             if self._handler:

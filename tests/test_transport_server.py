@@ -246,6 +246,29 @@ async def test_http_transport_bad_request() -> None:
     await t.stop()
 
 
+async def test_http_transport_bad_request_closes_connection() -> None:
+    """400 错误路径必须关闭连接（HTTP/Connection: close），否则客户端
+    阻塞读 EOF 致测试超时挂起。回归 HTTPTransport GET 400 漏 close。"""
+    t = HTTPTransport(handler=None, host="127.0.0.1", port=0)
+    await t.start()
+    port = t.port
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    writer.write(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+    await writer.drain()
+
+    response_line = await reader.readline()
+    assert b"400 Bad Request" in response_line
+    # read(-1) 仅在 EOF 返回；服务端写完 400 后主动关连接，
+    # 故 wait_for 内必返回（证明连接已关闭，非永久挂起泄漏）。
+    rest = await asyncio.wait_for(reader.read(-1), timeout=5)
+    assert b"Connection: close" in rest
+
+    writer.close()
+    await writer.wait_closed()
+    await t.stop()
+
+
 def test_mcp_server_init() -> None:
     server = MCPServer()
     assert server.config is not None
