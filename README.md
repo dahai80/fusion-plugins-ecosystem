@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-449%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-464%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -202,7 +202,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/            ← timeout meltdown + restart
 │   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
 │   └── ex09_file_access/          ← file permission gating
-└── tests/                        ← 449 tests
+└── tests/                        ← 464 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -221,6 +221,7 @@ fusion-plugins-ecosystem/
     ├── test_phase3_adapters.py
     ├── test_phase4_meter_config.py
     ├── test_schema.py
+    ├── test_product_audit.py        ← production audit P0-P3 fix regressions
     └── test_integration.py
 ```
 
@@ -240,6 +241,12 @@ fusion-plugins-ecosystem/
 | `sandbox_default_mode` | Default sandbox mode | `inline` / `process` |
 | `max_token_records` | Max token meter records | pruning threshold |
 | `token_persist_path` | Token persistence file | `None` = in-memory |
+| `vram_limit_mb` | Total vRAM budget (synced to `DeskRuntime.vram_total_mb`) | `0` = unlimited |
+| `max_concurrent_plugins` | Inline execution concurrency gate (`asyncio.Semaphore`) | unbounded |
+| `log_level` | Root logger level (applied on `MCPServer` init) | `INFO` |
+| `subagent_timeout_seconds` | Subagent execution timeout | `600` |
+| `max_auto_restart` | Crash auto-restart cap | `3` |
+| `heartbeat_stale_seconds` | Heartbeat staleness threshold | `120` |
 
 ```python
 from fusion_plugins_ecosystem import EcosystemConfig
@@ -262,6 +269,46 @@ restored = EcosystemConfig.from_dict(d)
 | MCP port conflicts | fusion-cowork single MCP gateway; `MCPExporter` multiplexes |
 | Subagent hangs, no unified restart | `PluginLifecycle` timeout meltdown + `_maybe_restart` (≤ `MAX_RESTART`) |
 | Heartbeat stall | `PluginLifecycle._watch_loop` flags `HEARTBEAT_STALE` → `TIMEOUT` |
+
+## 🛡️ Hardening (audit P0–P3)
+
+A full architecture audit (`audit/fusion-plugins-ecosytem--audit-result-0830.md`) surfaced
+20 P0–P3 findings; all fixable in-repo are addressed:
+
+| ID | Finding | Fix |
+|----|---------|-----|
+| A3 | Studio config keys semantically reversed | `log_level`/`vram_limit_mb`/`max_concurrent_plugins` map to real backend fields (no longer to `mcp_transport`/`mcp_port`/`max_auto_restart`) |
+| R6 | SSE/HTTP zero-auth + plaintext API keys | Bearer-token auth (`FUSION_PLUGIN_AUTH_TOKEN` env, constant-time compare); API keys at-rest Fernet-encrypted (`enc:` prefix, plaintext passthrough for back-compat) |
+| A4 | config/install zero-persistence | `plugins/config.set`, `plugins/install`, `plugins/uninstall` persist to Desk `config_center`; `MCPServer.start()` restores installed plugin set |
+| R1 | PROCESS sandbox `_DeskProxy` no-op | Worker → host resource-proxy RPC (`acquire_vram`/`release_vram`/`mlx_chat`/`get_api_key`/`check_file_permission`) over stdin/stdout, thread-safe future resolution |
+| A2 | config → lifecycle break, dead fields | `MCPServer`/`MCPHandler` inject `config` into `PluginLifecycle`; timeout/restart/heartbeat thresholds config-driven with class-constant fallback |
+| A5 | token_meter ↔ config break | `MCPHandler`/`MCPServer` construct `TokenMeter` with `max_token_records`/`token_persist_path` from config |
+| R2 | inline unbounded thread pool | `asyncio.Semaphore` (`max_concurrent_plugins`) gates `to_thread` inline execution |
+| R3 | `_maybe_restart` no backoff | exponential backoff `min(2**(n-1), 60)` (skipped when no config, preserving test immediacy); double-check plugin existence post-backoff; enable failure → CRASHED |
+| R4 | token_meter full-rewrite per record | throttled persistence (batch/interval) + explicit `flush()` |
+| R5 | per-handler rate limit | session + rate-limit state shared on `DeskRuntime` (cross-handler single source, lock-guarded) |
+| R7 | log lock contention | `get_logs` snapshots under lock, filters outside |
+| E1 | spawn passes empty config | `_invoke_sandbox` forwards `config.to_dict()` to worker |
+| E2 | `cpu_limit` decorative | `RLIMIT_CPU` enforced in worker (SIGXCPU on exceed) |
+| E3 | unload fire-and-forget | kill task tracked in `_pending_kill_tasks` to prevent GC |
+| E4 | `dispatch_subagent` uncaught enable exception | enable errors caught, logged, returned as `failed` state |
+| E5 | version string compare not semver | `_version_key` tuple parse (`"1.0"` == `"1.0.0"`) |
+| E6 | in-function repeated `import json` | hoisted to module top (`jsonrpc.py`, `claude_gateway.py`) |
+| E7 | `claude_adapter` legacy double logic | SSOT `build_skill_dict` in `skill_adapter.py`, legacy adapter delegates |
+| E8 | tests mask config break | `_make_handler` accepts `config`; wiring test asserts config drives lifecycle/token_meter |
+| A1 | zero cluster/multi-node awareness | **out of scope** — requires cross-project distributed state layer; upstream issue [fusion-cowork#79](https://github.com/dahai80/fusion-cowork/issues/79) |
+
+### Remote transport auth
+
+SSE/HTTP transports are remote-capable and therefore require a Bearer token when exposed
+beyond localhost. Set it via environment variable (never persisted to config):
+
+```bash
+FUSION_PLUGIN_AUTH_TOKEN="$(openssl rand -hex 32)" fusion-plugin-server --transport http --port 8765
+```
+
+Requests without `Authorization: Bearer <token>` get `401 Unauthorized`. stdio transport
+(local subprocess) is exempt.
 
 ## 🖥️ fusion-studio integration
 
@@ -311,7 +358,7 @@ and `{pong: true}`.
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **449 passed**.
+Latest run: **451 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -327,7 +374,7 @@ Latest run: **449 passed**.
 | `test_registry.py` | 13 | (legacy) registry + adapter + exporter + caveman integration |
 | `test_hook_adapter.py` | 8 | HookAdapter event mapping / capability filtering |
 | `test_transport_server.py` | 25 | SSE/HTTP/stdio transport + MCPServer start/stop lifecycle + CLI main() |
-| `test_jsonrpc_plugins.py` | 23 | Studio `plugins/*` 15-method dict envelopes + exact-key matching |
+| `test_jsonrpc_plugins.py` | 25 | Studio `plugins/*` 15-method dict envelopes + exact-key matching + config-driven wiring (E8) |
 
 ## ⚠️ Technical constraints
 

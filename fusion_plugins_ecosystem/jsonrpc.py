@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -40,16 +41,30 @@ _MAX_SESSIONS = 256
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_\-:.]{1,128}$")
 
 # Studio EcosystemConfig 期望的 7 个字段名 → 后端 EcosystemConfig 字段映射
-# 后端字段名与 Studio 不一致，这里做适配投影
+# A3 修复：log_level/vram_limit_mb/max_concurrent_plugins 已补齐真实后端字段，
+# 不再错误映射到 mcp_transport/mcp_port/max_auto_restart（语义反转 bug）
 _STUDIO_CONFIG_KEYS = {
     "sandbox_mode": "sandbox_default_mode",
     "auto_update": "auto_export_claude_skill",
-    "max_concurrent_plugins": "max_auto_restart",
-    "log_level": "mcp_transport",
+    "max_concurrent_plugins": "max_concurrent_plugins",
+    "log_level": "log_level",
     "token_budget": "max_token_records",
-    "vram_limit_mb": "mcp_port",
+    "vram_limit_mb": "vram_limit_mb",
     "mcp_enabled": "enable_claude_mcp",
 }
+
+# P1-5：安全敏感字段经 RPC 只读。变更沙箱隔离强度、监听地址、凭据存储开关
+# 等属部署期决策，不应经运行时 RPC 被未授权客户端翻转。
+_RPC_READONLY_CONFIG_KEYS = frozenset(
+    {
+        "sandbox_default_mode",
+        "mcp_host",
+        "mcp_port",
+        "mcp_transport",
+        "enable_volcengine_claude_plan",
+        "token_persist_path",
+    }
+)
 
 
 def _extract_plugin_id(tool_name: str) -> str | None:
@@ -61,6 +76,15 @@ def _extract_plugin_id(tool_name: str) -> str | None:
     if tool_name.startswith(_MCP_TOOL_NAMESPACE_PREFIX):
         return tool_name[len(_MCP_TOOL_NAMESPACE_PREFIX) :]
     return tool_name if tool_name else None
+
+
+# P2-2：plugin_id 字符集白名单，防换行/控制字符伪造日志行（日志注入）
+_PLUGIN_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
+
+
+def _valid_plugin_id(plugin_id: str | None) -> bool:
+    """校验 plugin_id 格式：仅字母数字/下划线/点/连字符，长度 1-128。"""
+    return bool(plugin_id) and bool(_PLUGIN_ID_RE.match(plugin_id))
 
 
 def _error_response(
@@ -93,17 +117,26 @@ class MCPHandler:
         rate_limit_per_minute: int = 60,
     ) -> None:
         self.registry = registry
-        self.lifecycle = lifecycle or PluginLifecycle(registry)
-        self.desk = desk or registry.desk
         self.config = config or EcosystemConfig()
-        self.token_meter: TokenMeter = token_meter or TokenMeter(self.desk)
+        # A2/A5：lifecycle 与 token_meter 默认构造时注入 config，避免
+        # 超时/重启/心跳阈值与 token 计量配置脱钩（调用方传显式实例则优先用之）
+        self.lifecycle = lifecycle or PluginLifecycle(registry, config=self.config)
+        self.desk = desk or registry.desk
+        self.token_meter: TokenMeter = token_meter or TokenMeter(
+            self.desk,
+            max_records=self.config.max_token_records,
+            persist_path=self.config.token_persist_path,
+        )
         self._initialized = False
         self._client_info: dict[str, Any] = {}
-        # C12: 会话管理
-        self._sessions: dict[str, dict[str, Any]] = {}
-        # C13: 速率限制
+        # C12/C13: 会话 + 速率限制状态挂在 desk 上（R5），多个 MCPHandler 共用
+        # 同一 DeskRuntime 时以 desk 为单一来源，避免 per-handler 计数放大限流上限。
+        # 单 handler 场景（每个 handler 独立 desk）行为不变。
+        self._sessions = self.desk._mcp_sessions
+        self._call_timestamps = self.desk._mcp_call_timestamps
+        self._state_lock = self.desk._mcp_state_lock
+        # C13: 速率上限仍为 per-handler 配置（不同入口可设不同上限）
         self._rate_limit = rate_limit_per_minute
-        self._call_timestamps: dict[str, deque] = {}
 
     async def handle(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """分发 JSON-RPC 请求。"""
@@ -151,8 +184,10 @@ class MCPHandler:
                 return None
             return _result_response(request_id, result)
         except Exception as e:
-            logger.error("jsonrpc: handler %s error: %s", method, e)
-            return _error_response(request_id, -32603, f"Internal error: {e}")
+            # P1-7：对外仅返回通用错误码，详情写日志，避免异常文本泄露
+            # 内部模块路径/文件系统结构/变量值等敏感信息。
+            logger.error("jsonrpc: handler %s error: %s", method, e, exc_info=True)
+            return _error_response(request_id, -32603, "Internal error")
 
     # ── 协议方法 ──
 
@@ -245,9 +280,14 @@ class MCPHandler:
                 self._touch_session(session_id, plugin_id)
             return {"content": content, "isError": False}
         except Exception as e:
-            logger.error("jsonrpc: tools/call %s error: %s", tool_name, e)
+            # P1-7：对外返回通用错误消息，原始异常详情写日志，防信息泄露
+            logger.error(
+                "jsonrpc: tools/call %s error: %s", tool_name, e, exc_info=True
+            )
             return {
-                "content": [{"type": "text", "text": f"Error: {e}"}],
+                "content": [
+                    {"type": "text", "text": f"Plugin execution failed: {type(e).__name__}"}
+                ],
                 "isError": True,
             }
 
@@ -326,8 +366,14 @@ class MCPHandler:
         return {"plugins": items}
 
     async def _plugins_install(self, params: dict[str, Any]) -> dict[str, Any]:
-        """plugins/install：加载并启用插件。"""
+        """plugins/install：加载并启用插件。
+
+        A4：安装结果持久化到 config_center，进程重启后可由 server.start() 恢复。
+        """
         plugin_id = params.get("plugin_id", "")
+        # P2-2：plugin_id 格式校验，防日志注入
+        if not _valid_plugin_id(plugin_id):
+            return {"ok": False, "error": "非法 plugin_id"}
         manifest = self.registry.get(plugin_id)
         if manifest is None:
             return {"ok": False, "error": f"插件 {plugin_id!r} 未注册"}
@@ -336,13 +382,21 @@ class MCPHandler:
         except Exception as exc:
             logger.error("jsonrpc: install %s 失败: %s", plugin_id, exc)
             return {"ok": False, "error": str(exc)}
+        self._persist_installed(plugin_id, True)
         return {"ok": True}
 
     async def _plugins_uninstall(self, params: dict[str, Any]) -> dict[str, Any]:
-        """plugins/uninstall：禁用并卸载插件（保留注册）。"""
+        """plugins/uninstall：禁用并卸载插件（保留注册）。
+
+        A4：卸载同步从持久化已安装集合移除。
+        """
         plugin_id = params.get("plugin_id", "")
+        # P2-2：plugin_id 格式校验
+        if not _valid_plugin_id(plugin_id):
+            return {"ok": False, "error": "非法 plugin_id"}
         await self.lifecycle.disable(plugin_id)
         self.lifecycle.unload(plugin_id)
+        self._persist_installed(plugin_id, False)
         return {"ok": True}
 
     async def _plugins_config_get(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -363,6 +417,16 @@ class MCPHandler:
         if backend_key not in self.config.to_dict():
             logger.warning("jsonrpc: config.set 拒绝未知字段 %r", key)
             return {"ok": False, "error": f"未知字段 {key!r}"}
+        # P1-5：安全敏感字段经 RPC 只读，防止未授权翻转沙箱模式/监听地址等。
+        # 变更需在部署期（环境变量/配置文件）完成，不经运行时 RPC。
+        if backend_key in _RPC_READONLY_CONFIG_KEYS:
+            logger.warning(
+                "jsonrpc: config.set 拒绝敏感字段 %r（RPC 只读）", backend_key
+            )
+            return {
+                "ok": False,
+                "error": f"字段 {key!r} 为安全敏感项，不可经 RPC 修改",
+            }
         probe, warnings = EcosystemConfig.from_dict({backend_key: value})
         if warnings:
             logger.warning(
@@ -371,6 +435,8 @@ class MCPHandler:
             return {"ok": False, "error": "; ".join(warnings)}
         setattr(self.config, backend_key, getattr(probe, backend_key))
         self.config._notify_change(backend_key, None, getattr(probe, backend_key))
+        # A4：配置变更持久化到 config_center，进程重启后可恢复
+        self._persist_config(backend_key, getattr(probe, backend_key))
         return {"ok": True}
 
     async def _plugins_states(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -380,6 +446,9 @@ class MCPHandler:
     async def _plugins_state_get(self, params: dict[str, Any]) -> dict[str, Any]:
         """plugins/state.get：返回单个插件状态快照（dict 信封）。"""
         plugin_id = params.get("plugin_id", "")
+        # P2-2：plugin_id 格式校验
+        if not _valid_plugin_id(plugin_id):
+            return {"id": plugin_id, "plugin_id": plugin_id, "state": "unknown"}
         state = self.lifecycle.get_state(plugin_id)
         if state is None:
             return {
@@ -518,30 +587,128 @@ class MCPHandler:
             result[studio_key] = backend.get(backend_key)
         return result
 
+    # ── A4 持久化辅助：config_center 缺失时静默降级（standalone/测试）──
+
+    _PERSIST_CONFIG_PREFIX = "plugin_ecosystem.config."
+    _PERSIST_INSTALLED_KEY = "plugin_ecosystem.installed_ids"
+
+    def _persist_config(self, key: str, value: Any) -> None:
+        """单字段配置变更持久化到 Desk config_center。"""
+        cc = getattr(self.desk, "config_center", None)
+        if cc is None:
+            return
+        try:
+            cc.set(self._PERSIST_CONFIG_PREFIX + key, value)
+        except Exception as exc:
+            logger.warning("jsonrpc: 配置持久化 %s 失败: %s", key, exc)
+
+    def persist_full_config(self) -> None:
+        """全量配置持久化（启动恢复前落盘调用）。"""
+        cc = getattr(self.desk, "config_center", None)
+        if cc is None:
+            return
+        try:
+            for key, value in self.config.to_dict().items():
+                cc.set(self._PERSIST_CONFIG_PREFIX + key, value)
+        except Exception as exc:
+            logger.warning("jsonrpc: 全量配置持久化失败: %s", exc)
+
+    def _persist_installed(self, plugin_id: str, installed: bool) -> None:
+        """更新持久化已安装插件 ID 集合。"""
+        cc = getattr(self.desk, "config_center", None)
+        if cc is None:
+            return
+        try:
+            raw = cc.get(self._PERSIST_INSTALLED_KEY) or []
+            ids = set(raw) if isinstance(raw, list) else set()
+            ids.add(plugin_id) if installed else ids.discard(plugin_id)
+            cc.set(self._PERSIST_INSTALLED_KEY, sorted(ids))
+        except Exception as exc:
+            logger.warning("jsonrpc: 安装态持久化 %s 失败: %s", plugin_id, exc)
+
+    def restore_installed(self) -> list[str]:
+        """从 config_center 读取持久化的已安装插件 ID 列表（server 启动恢复用）。"""
+        cc = getattr(self.desk, "config_center", None)
+        if cc is None:
+            return []
+        try:
+            raw = cc.get(self._PERSIST_INSTALLED_KEY)
+            return list(raw) if isinstance(raw, list) else []
+        except Exception:
+            return []
+
+    def restore_config(self) -> list[str]:
+        """从 config_center 读取持久化配置并合并到 self.config，返回恢复的键列表。"""
+        cc = getattr(self.desk, "config_center", None)
+        if cc is None:
+            return []
+        restored: list[str] = []
+        patch: dict[str, Any] = {}
+        try:
+            for key in self.config.to_dict():
+                stored = cc.get(self._PERSIST_CONFIG_PREFIX + key)
+                if stored is not None:
+                    patch[key] = stored
+                    restored.append(key)
+        except Exception as exc:
+            logger.warning("jsonrpc: 配置恢复失败: %s", exc)
+            return []
+        if patch:
+            merged, warnings = EcosystemConfig.from_dict(
+                {**self.config.to_dict(), **patch}
+            )
+            self.config = merged
+            if warnings:
+                logger.warning("jsonrpc: 恢复配置校验告警: %s", "; ".join(warnings))
+            # P2-1：恢复的配置须同步应用到 lifecycle 与 token_meter，
+            # 否则 server 启动时二者仍绑旧 config，超时/心跳/token 持久化阈值静默失效。
+            self._apply_config_to_deps()
+        return restored
+
+    def _apply_config_to_deps(self) -> None:
+        """把 self.config 同步到 lifecycle 与 token_meter（配置恢复后调用）。
+
+        lifecycle 通过 getter 实时读 config，仅需替换其 config 引用；
+        token_meter 的 max_records/persist_path 为构造期快照，需显式刷新。
+        """
+        try:
+            if self.lifecycle is not None:
+                self.lifecycle.config = self.config
+        except Exception as exc:
+            logger.warning("jsonrpc: 同步 config 到 lifecycle 失败: %s", exc)
+        try:
+            if self.token_meter is not None:
+                self.token_meter._max_records = self.config.max_token_records
+                self.token_meter._persist_path = self.config.token_persist_path
+        except Exception as exc:
+            logger.warning("jsonrpc: 同步 config 到 token_meter 失败: %s", exc)
+
     # C12: 会话管理
     def _touch_session(self, session_id: str, plugin_id: str) -> None:
         # sessionId 格式校验，拒绝伪造无界 ID（P0-5）
         if not _SESSION_ID_RE.match(session_id):
             logger.warning("jsonrpc: 拒绝非法 sessionId %r", session_id)
             return
-        # 会话数上限 + LRU 淘汰，防止内存耗尽（P0-5）
-        if len(self._sessions) >= _MAX_SESSIONS and session_id not in self._sessions:
-            self._evict_oldest_session()
-        session = self._sessions.setdefault(
-            session_id,
-            {
-                "created_at": time.time(),
-                "last_active": time.time(),
-                "calls": [],
-            },
-        )
-        session["last_active"] = time.time()
-        session["calls"].append({"plugin_id": plugin_id, "ts": time.time()})
-        if len(session["calls"]) > 1000:
-            session["calls"] = session["calls"][-500:]
+        # R5：共享状态加锁，多 handler 并发 touch 不丢失/错乱会话
+        with self._state_lock:
+            # 会话数上限 + LRU 淘汰，防止内存耗尽（P0-5）
+            if len(self._sessions) >= _MAX_SESSIONS and session_id not in self._sessions:
+                self._evict_oldest_session()
+            session = self._sessions.setdefault(
+                session_id,
+                {
+                    "created_at": time.time(),
+                    "last_active": time.time(),
+                    "calls": [],
+                },
+            )
+            session["last_active"] = time.time()
+            session["calls"].append({"plugin_id": plugin_id, "ts": time.time()})
+            if len(session["calls"]) > 1000:
+                session["calls"] = session["calls"][-500:]
 
     def _evict_oldest_session(self) -> None:
-        """淘汰最久未活跃的会话（LRU）。"""
+        """淘汰最久未活跃的会话（LRU）。调用方须持 _state_lock。"""
         if not self._sessions:
             return
         oldest_id = min(self._sessions, key=lambda s: self._sessions[s]["last_active"])
@@ -555,30 +722,39 @@ class MCPHandler:
         return [{"session_id": sid, **s} for sid, s in self._sessions.items()]
 
     def prune_sessions(self, max_age_seconds: float = 3600) -> int:
-        cutoff = time.time() - max_age_seconds
-        stale = [sid for sid, s in self._sessions.items() if s["last_active"] < cutoff]
-        for sid in stale:
-            del self._sessions[sid]
-        return len(stale)
+        with self._state_lock:
+            cutoff = time.time() - max_age_seconds
+            stale = [
+                sid
+                for sid, s in self._sessions.items()
+                if s["last_active"] < cutoff
+            ]
+            for sid in stale:
+                del self._sessions[sid]
+            return len(stale)
 
     # C13: 速率限制
     def _check_rate_limit(self, plugin_id: str) -> bool:
         now = time.time()
         cutoff = now - 60.0
-        timestamps = self._call_timestamps.get(plugin_id)
-        if timestamps is None:
-            timestamps = deque()
-            self._call_timestamps[plugin_id] = timestamps
-        # 从左侧淘汰过期时间戳（已按时间顺序入队，左侧最旧）
-        while timestamps and timestamps[0] <= cutoff:
-            timestamps.popleft()
-        if len(timestamps) >= self._rate_limit:
-            logger.warning(
-                "jsonrpc: 插件 %s 速率限制触发 (%d/min)", plugin_id, self._rate_limit
-            )
-            return False
-        timestamps.append(now)
-        return True
+        # R5：共享时间戳表加锁，多 handler 并发计数不漏判/超判
+        with self._state_lock:
+            timestamps = self._call_timestamps.get(plugin_id)
+            if timestamps is None:
+                timestamps = deque()
+                self._call_timestamps[plugin_id] = timestamps
+            # 从左侧淘汰过期时间戳（已按时间顺序入队，左侧最旧）
+            while timestamps and timestamps[0] <= cutoff:
+                timestamps.popleft()
+            if len(timestamps) >= self._rate_limit:
+                logger.warning(
+                    "jsonrpc: 插件 %s 速率限制触发 (%d/min)",
+                    plugin_id,
+                    self._rate_limit,
+                )
+                return False
+            timestamps.append(now)
+            return True
 
     def _manifest_to_mcp_tool(self, manifest: Any) -> dict[str, Any] | None:
         """将 PluginManifest 转为 MCP Tool 描述（委托 SSOT，避免双份分叉）。"""
@@ -589,15 +765,11 @@ class MCPHandler:
         if isinstance(result, dict):
             if "content" in result and isinstance(result["content"], list):
                 return result["content"]
-            import json
-
             text = json.dumps(result, ensure_ascii=False, default=str)
             return [{"type": "text", "text": text}]
         if isinstance(result, str):
             return [{"type": "text", "text": result}]
         if isinstance(result, list):
             return result
-        import json
-
         text = json.dumps(result, ensure_ascii=False, default=str)
         return [{"type": "text", "text": text}]

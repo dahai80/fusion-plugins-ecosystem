@@ -159,10 +159,12 @@ class SSETransport(Transport):
         handler: Callable[[dict], Any] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,
+        auth_token: str | None = None,
     ) -> None:
         super().__init__(handler)
         self._host = host
         self._port = port
+        self._auth_token = auth_token
         self._server: asyncio.Server | None = None
         self._running = False
         self._sessions: dict[str, asyncio.Queue] = {}
@@ -216,7 +218,22 @@ class SSETransport(Transport):
                 await writer.wait_closed()
                 return
 
+            # P2-8：未鉴权健康探针短路
+            if _is_health_request(request_text):
+                await _write_health_response(writer)
+                writer.close()
+                await writer.wait_closed()
+                return
+
             content_length = _safe_content_length(headers)
+
+            # R6：SSE/HTTP 远程传输鉴权，Bearer token 匹配才放行
+            if not _check_auth(self._auth_token, headers):
+                logger.warning("SSETransport: 鉴权失败，拒绝请求")
+                await _write_simple_response(writer, 401, b"Unauthorized")
+                writer.close()
+                await writer.wait_closed()
+                return
 
             if request_text.startswith("GET"):
                 await self._handle_sse_handshake(writer)
@@ -317,10 +334,12 @@ class HTTPTransport(Transport):
         handler: Callable[[dict], Any] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,
+        auth_token: str | None = None,
     ) -> None:
         super().__init__(handler)
         self._host = host
         self._port = port
+        self._auth_token = auth_token
         self._server: asyncio.Server | None = None
         self._running = False
 
@@ -360,7 +379,22 @@ class HTTPTransport(Transport):
                 await writer.wait_closed()
                 return
 
+            # P2-8：未鉴权健康探针短路
+            if _is_health_request(request_text):
+                await _write_health_response(writer)
+                writer.close()
+                await writer.wait_closed()
+                return
+
             content_length = _safe_content_length(headers)
+
+            # R6：SSE/HTTP 远程传输鉴权，Bearer token 匹配才放行
+            if not _check_auth(self._auth_token, headers):
+                logger.warning("HTTPTransport: 鉴权失败，拒绝请求")
+                await _write_simple_response(writer, 401, b"Unauthorized")
+                writer.close()
+                await writer.wait_closed()
+                return
 
             if not request_text.startswith("POST"):
                 await _write_simple_response(writer, 400, b"Bad Request")
@@ -466,12 +500,29 @@ def _safe_content_length(headers: dict[str, str]) -> int:
     return cl
 
 
+def _check_auth(auth_token: str | None, headers: dict[str, str]) -> bool:
+    """R6：校验 Authorization: Bearer <token>。
+
+    auth_token 为 None 时表示未启用鉴权（本地/测试），放行。
+    启用后必须匹配，使用 hmac.compare_digest 常量时间比较防侧信道。
+    """
+    if not auth_token:
+        return True
+    import hmac
+
+    raw = headers.get("authorization", "")
+    if not raw.startswith("Bearer "):
+        return False
+    return hmac.compare_digest(raw[len("Bearer ") :], auth_token)
+
+
 async def _write_simple_response(
     writer: asyncio.StreamWriter, status: int, message: bytes
 ) -> None:
     """写一个无 body 的简单 HTTP 错误响应。"""
     reason = {
         400: b"Bad Request",
+        401: b"Unauthorized",
         408: b"Request Timeout",
         413: b"Payload Too Large",
     }.get(status, b"Error")
@@ -482,6 +533,26 @@ async def _write_simple_response(
         b"Connection: close\r\n\r\n" + message
     )
     writer.write(resp)
+    await writer.drain()
+
+
+def _is_health_request(request_text: str) -> bool:
+    """P2-8：判断是否为未鉴权 GET /health 健康探针请求。"""
+    parts = request_text.split()
+    if len(parts) < 2 or parts[0] != "GET":
+        return False
+    return parts[1].rstrip("/") == "/health"
+
+
+async def _write_health_response(writer: asyncio.StreamWriter) -> None:
+    """写未鉴权健康探针响应（供编排器/K8s liveness 检测）。"""
+    body = b'{"status":"ok"}'
+    writer.write(
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+        b"Connection: close\r\n\r\n" + body
+    )
     await writer.drain()
 
 
@@ -498,12 +569,14 @@ def create_transport(
             handler=handler,
             host=kwargs.get("host", "127.0.0.1"),
             port=kwargs.get("port", 0),
+            auth_token=kwargs.get("auth_token"),
         )
     elif transport_type == "http":
         return HTTPTransport(
             handler=handler,
             host=kwargs.get("host", "127.0.0.1"),
             port=kwargs.get("port", 0),
+            auth_token=kwargs.get("auth_token"),
         )
     else:
         raise ValueError(f"Unknown transport type: {transport_type}")

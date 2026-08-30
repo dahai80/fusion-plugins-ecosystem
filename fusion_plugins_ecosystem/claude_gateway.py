@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -86,9 +87,17 @@ class ClaudeGateway:
     ) -> None:
         self.registry = registry
         self.desk: DeskRuntime = desk or registry.desk
-        self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(registry)
         self.config: EcosystemConfig = config or EcosystemConfig()
-        self.token_meter: TokenMeter = token_meter or TokenMeter(self.desk)
+        # P3-1：lifecycle 注入 config，使 _maybe_restart 的指数退避生效
+        # （config=None 时退避退化为 0，重启无间隔）。
+        self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(
+            registry, config=self.config
+        )
+        self.token_meter: TokenMeter = token_meter or TokenMeter(
+            self.desk,
+            max_records=self.config.max_token_records,
+            persist_path=self.config.token_persist_path,
+        )
         # 委托适配器
         self._skill_adapter = SkillAdapter(registry)
         self._mcp_exporter = MCPExporter(registry, self.desk)
@@ -173,13 +182,20 @@ class ClaudeGateway:
                 result = await self.lifecycle.execute(plugin_id, arguments)
             return self._mcp_success(plugin_id, result)
         except Exception as exc:
+            # P1-7：原始异常详情仅入 desk.log，对外返回通用消息防信息泄露
             self.desk.log(
                 plugin_id,
                 "ERROR",
                 "MCP tools/call 执行失败",
                 error=str(exc),
             )
-            return self._mcp_error(plugin_id, f"执行失败: {exc}")
+            logger.error(
+                "claude_gateway: invoke_mcp_tool %s error: %s",
+                plugin_id,
+                exc,
+                exc_info=True,
+            )
+            return self._mcp_error(plugin_id, "执行失败")
 
     def gateway_info(self) -> dict[str, Any]:
         """返回 MCP 网关元信息（供 Claude Desktop / Claude Code 配置对接）。"""
@@ -352,8 +368,6 @@ class ClaudeGateway:
         """构造 MCP tools/call 成功响应。"""
         # 将 dict 结果序列化为 text content；其他类型直接 str()
         if isinstance(result, dict):
-            import json
-
             text = json.dumps(result, ensure_ascii=False, default=str)
         else:
             text = str(result)

@@ -22,6 +22,21 @@ from fusion_plugins_ecosystem.schema import PluginParamType, SandboxMode
 logger = logging.getLogger(__name__)
 
 
+def _version_key(version: str) -> tuple:
+    """将语义版本字符串解析为可比较的元组（E5）。
+
+    "1.2.0" -> (1, 2, 0)；非数字段按字符串保留。解析失败回退原字符串，
+    保证不抛异常、不改变既有「不同版本即拒绝」语义。
+    """
+    parts = []
+    for seg in str(version).split("."):
+        if seg.isdigit():
+            parts.append(int(seg))
+        else:
+            parts.append(seg)
+    return tuple(parts)
+
+
 class PluginCategory(str, Enum):
     """插件分类（对应 PRD「Claude Code 专属插件分类」）。"""
 
@@ -144,7 +159,8 @@ class PluginRegistry:
         """注册插件清单。相同 ID + 相同版本幂等；不同版本拒绝。"""
         existing = self._manifests.get(manifest.id)
         if existing is not None:
-            if existing.version == manifest.version:
+            # E5：语义版本比较，"1.0" 与 "1.0.0" 视为等价（幂等忽略）
+            if _version_key(existing.version) == _version_key(manifest.version):
                 logger.debug(
                     "registry: 插件 %s v%s 重复注册（幂等忽略）",
                     manifest.id,

@@ -12,8 +12,11 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 import os
+import socket
 import threading
 import time
 from collections import deque
@@ -24,6 +27,85 @@ logger = logging.getLogger(__name__)
 
 # 日志环形缓冲区上限（避免无限增长）
 _LOG_BUFFER_MAX = 2000
+
+# API 密钥加密前缀（R6：config_center 内不再明文落盘）
+_KEY_ENC_PREFIX = "enc:"
+
+
+def _derive_key() -> bytes:
+    """派生本机密钥用于 API 密钥对称加密（Fernet）。
+
+    密钥源 = 主机名 + 当前用户 + 环境盐 FUSION_PLUGIN_KEY_SALT。
+    单机本机威胁模型下防止配置文件明文泄露密钥；跨机/跨用户不可解密。
+    """
+    salt = os.environ.get("FUSION_PLUGIN_KEY_SALT", "fusion-plugins-default-salt")
+    if salt == "fusion-plugins-default-salt":
+        # P2-3：默认盐下任何本机同 uid 进程可派生密钥解密 config_center 密钥。
+        # 生产应设置 FUSION_PLUGIN_KEY_SALT；严格模式下默认盐视为弱派生并告警。
+        logger.warning(
+            "desk_runtime: 使用默认 API 密钥盐，生产环境应设置 FUSION_PLUGIN_KEY_SALT"
+        )
+    material = f"{salt}|{socket.gethostname()}|{os.getuid()}"
+    digest = hashlib.sha256(material.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
+def _safe_realpath(path: str) -> str:
+    """安全解析真实路径，realpath 失败时回退 normpath（不抛异常）。"""
+    try:
+        return os.path.realpath(path)
+    except (OSError, ValueError):
+        return os.path.normpath(path)
+
+
+def _strict_encryption() -> bool:
+    """生产严格模式：FUSION_PLUGIN_STRICT_ENCRYPTION=1 时密钥加密失败视为硬错误，
+    不回退明文落盘（违背 R6 设计意图）。测试/离线默认宽松回退。"""
+    return os.environ.get("FUSION_PLUGIN_STRICT_ENCRYPTION", "") == "1"
+
+
+def _encrypt_key(plaintext: str) -> str:
+    """加密 API 密钥，返回 enc: 前缀密文。
+
+    P2-4：严格模式下 cryptography 缺失或加密失败抛错而非回退明文；
+    宽松模式（默认，兼容测试/离线）回退明文并告警。
+    """
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:
+        if _strict_encryption():
+            raise RuntimeError("desk_runtime: 严格模式下 cryptography 未安装，拒绝明文存储 API 密钥")
+        logger.warning("desk_runtime: cryptography 未安装，API 密钥以明文存储")
+        return plaintext
+    try:
+        return _KEY_ENC_PREFIX + Fernet(_derive_key()).encrypt(
+            plaintext.encode("utf-8")
+        ).decode("ascii")
+    except Exception as exc:
+        if _strict_encryption():
+            raise RuntimeError(f"desk_runtime: 严格模式下 API 密钥加密失败，拒绝回退明文: {exc}")
+        logger.warning("desk_runtime: API 密钥加密失败，回退明文: %s", exc)
+        return plaintext
+
+
+def _decrypt_key(stored: str | None) -> str | None:
+    """解密 API 密钥；非 enc: 前缀视为历史明文直接返回（向后兼容）。"""
+    if stored is None:
+        return None
+    if not stored.startswith(_KEY_ENC_PREFIX):
+        return stored
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:
+        logger.warning("desk_runtime: cryptography 未安装，无法解密 API 密钥")
+        return None
+    try:
+        return Fernet(_derive_key()).decrypt(
+            stored[len(_KEY_ENC_PREFIX) :].encode("ascii")
+        ).decode("utf-8")
+    except Exception as exc:
+        logger.warning("desk_runtime: API 密钥解密失败: %s", exc)
+        return None
 
 FUSION_COWORK_AVAILABLE = False
 try:
@@ -73,6 +155,12 @@ class DeskRuntime:
     _vram_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     # 日志缓冲写锁：_log_counter 自增 + append 需原子，避免并发 id 重复/丢条目
     _log_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    # R5：跨 handler 共享的 MCP 会话状态 + 速率限制时间戳。
+    # 多个 MCPHandler 共用同一 DeskRuntime 时，限流/会话以 desk 为单一来源，
+    # 避免 per-handler 各自计数导致 N 个 handler 放大 N 倍限流上限。
+    _mcp_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
+    _mcp_call_timestamps: dict[str, Any] = field(default_factory=dict)
+    _mcp_state_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def __post_init__(self) -> None:
         if not FUSION_COWORK_AVAILABLE:
@@ -181,30 +269,37 @@ class DeskRuntime:
         need_pid = plugin_id
         need_lvl = level.upper() if level is not None else None
         collected: list[dict[str, Any]] = []
+        # R7：读路径快照 deque 后释放锁，避免长时间持锁阻塞并发写日志。
+        # 环形缓冲上限 2000，浅拷贝开销可忽略。
         with self._log_lock:
-            for entry in reversed(self.log_entries):
-                if need_pid is not None and entry["plugin_id"] != need_pid:
-                    continue
-                if need_lvl is not None and entry["level"] != need_lvl:
-                    continue
-                collected.append(entry)
-                if limit > 0 and len(collected) >= limit:
-                    break
+            snapshot = list(reversed(self.log_entries))
+        for entry in snapshot:
+            if need_pid is not None and entry["plugin_id"] != need_pid:
+                continue
+            if need_lvl is not None and entry["level"] != need_lvl:
+                continue
+            collected.append(entry)
+            if limit > 0 and len(collected) >= limit:
+                break
         collected.reverse()
         return collected
 
     # ── 文件权限 ──
 
     def check_file_permission(self, plugin_id: str, path: str) -> bool:
-        """检查插件是否具备对指定路径的访问权限（路径标准化）。"""
+        """检查插件是否具备对指定路径的访问权限（路径标准化）。
+
+        P1-6：用 realpath 解析符号链接后再前缀匹配，防止插件以合法前缀路径
+        申请权限后经符号链接指向白名单外目标越权访问。
+        """
         perms = self.plugin_permissions.get(plugin_id, {})
         allowed = perms.get("allowed_paths", [])
         # 空白名单 = 允许全部（测试便利）
         if not allowed:
             return True
-        normalized = os.path.normpath(path)
+        normalized = _safe_realpath(path)
         for allowed_path in allowed:
-            norm_allowed = os.path.normpath(allowed_path)
+            norm_allowed = _safe_realpath(allowed_path)
             # 精确匹配或前缀匹配（带分隔符）
             if normalized == norm_allowed:
                 return True
@@ -228,18 +323,21 @@ class DeskRuntime:
         """
         if self.config_center is None:
             return None
-        # 约定：config_center.get(f"api_keys.{provider}") 返回密钥
+        # 约定：config_center.get(f"api_keys.{provider}") 返回密文
         try:
-            return self.config_center.get(f"api_keys.{provider}")
+            stored = self.config_center.get(f"api_keys.{provider}")
+            return _decrypt_key(stored)
         except Exception:
             return None
 
     def set_api_key(self, provider: str, key: str) -> None:
-        """写入 API 密钥到 Desk 配置中心。"""
+        """写入 API 密钥到 Desk 配置中心（加密落盘，R6）。"""
         if self.config_center is None:
             return
         try:
-            self.config_center.set(f"api_keys.{provider}", key)
+            self.config_center.set(
+                f"api_keys.{provider}", _encrypt_key(key)
+            )
         except Exception as exc:
             logger.warning("desk_runtime: 写入 API 密钥失败: %s", exc)
 

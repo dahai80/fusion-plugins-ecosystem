@@ -25,6 +25,48 @@ from fusion_plugins_ecosystem.schema import PARAM_TYPE_TO_JSON_SCHEMA, PluginPar
 logger = logging.getLogger(__name__)
 
 
+def build_skill_dict(manifest: PluginManifest) -> dict[str, Any]:
+    """PluginManifest → Claude Skill 描述字典（SSOT，E7）。
+
+    skill_adapter 与 legacy claude_adapter 共用此实现，避免 input_schema 双份逻辑漂移。
+    """
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for param in manifest.params:
+        prop: dict[str, Any] = {
+            "type": PARAM_TYPE_TO_JSON_SCHEMA.get(
+                param.type, PluginParamType.STRING
+            ),
+            "description": param.description,
+        }
+        if param.enum is not None:
+            prop["enum"] = list(param.enum)
+        if param.default is not None:
+            prop["default"] = param.default
+        properties[param.name] = prop
+        if param.required:
+            required.append(param.name)
+    input_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+    }
+    if required:
+        input_schema["required"] = required
+    return {
+        "name": manifest.id,
+        "description": manifest.description,
+        "input_schema": input_schema,
+        "_fusion": {
+            "plugin_name": manifest.name,
+            "version": manifest.version,
+            "category": manifest.category.value,
+            "capabilities": [c.value for c in manifest.capabilities],
+            "default_mounted": manifest.default_mounted,
+            "timeout_seconds": manifest.timeout_seconds,
+        },
+    }
+
+
 @dataclass(frozen=True)
 class SkillBundle:
     """Claude Code Skill 包。"""
@@ -181,38 +223,5 @@ class SkillAdapter:
         return self._manifest_to_skill_dict(manifest)
 
     def _manifest_to_skill_dict(self, manifest: PluginManifest) -> dict[str, Any]:
-        properties: dict[str, Any] = {}
-        required: list[str] = []
-        for param in manifest.params:
-            prop: dict[str, Any] = {
-                "type": PARAM_TYPE_TO_JSON_SCHEMA.get(
-                    param.type, PluginParamType.STRING
-                ),
-                "description": param.description,
-            }
-            if param.enum is not None:
-                prop["enum"] = list(param.enum)
-            if param.default is not None:
-                prop["default"] = param.default
-            properties[param.name] = prop
-            if param.required:
-                required.append(param.name)
-        input_schema: dict[str, Any] = {
-            "type": "object",
-            "properties": properties,
-        }
-        if required:
-            input_schema["required"] = required
-        return {
-            "name": manifest.id,
-            "description": manifest.description,
-            "input_schema": input_schema,
-            "_fusion": {
-                "plugin_name": manifest.name,
-                "version": manifest.version,
-                "category": manifest.category.value,
-                "capabilities": [c.value for c in manifest.capabilities],
-                "default_mounted": manifest.default_mounted,
-                "timeout_seconds": manifest.timeout_seconds,
-            },
-        }
+        # E7：委托模块级 SSOT，避免与 legacy claude_adapter 逻辑漂移
+        return build_skill_dict(manifest)
