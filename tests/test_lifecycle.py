@@ -20,6 +20,7 @@ from fusion_plugins_ecosystem.registry import (
     PluginManifest,
     PluginRegistry,
 )
+from fusion_plugins_ecosystem.schema import SandboxMode
 
 
 # ── 测试用插件工厂 ──
@@ -30,6 +31,7 @@ def _make_manifest(
     vram_mb: int = 0,
     timeout_seconds: int | None = None,
     entry_point: Any = None,
+    sandbox_mode: SandboxMode = SandboxMode.INLINE,
 ) -> PluginManifest:
     return PluginManifest(
         id=plugin_id,
@@ -41,6 +43,7 @@ def _make_manifest(
         entry_point=entry_point,
         vram_mb=vram_mb,
         timeout_seconds=timeout_seconds,
+        sandbox_mode=sandbox_mode,
     )
 
 
@@ -120,7 +123,11 @@ async def test_enable_vram_exceeds_budget_crashes() -> None:
     registry = PluginRegistry(desk=desk)
     registry.register(m)
     lifecycle = PluginLifecycle(registry)
-    inst = await lifecycle.enable("test_plugin")
+    # 显存超预算应抛 RuntimeError（P1-4），而非返回 CRASHED 实例误导调用方成功
+    with pytest.raises(RuntimeError, match="显存申请失败"):
+        await lifecycle.enable("test_plugin")
+    inst = lifecycle._instances.get("test_plugin")
+    assert inst is not None
     assert inst.state == PluginState.CRASHED
 
 
@@ -312,7 +319,9 @@ async def test_watcher_detects_stale_heartbeat() -> None:
     def entry(_desk, _params):
         return {}
 
-    m = _make_manifest(entry_point=entry)
+    # watcher 仅对 PROCESS 沙箱生效（有独立心跳线程，能真实反映进程活性）；
+    # inline 执行期间无法发心跳，watcher 介入会误杀合法长任务（P2-3）。
+    m = _make_manifest(entry_point=entry, sandbox_mode=SandboxMode.PROCESS)
     registry = _make_registry(m)
     lifecycle = PluginLifecycle(registry)
     lifecycle.HEARTBEAT_STALE = 0.05

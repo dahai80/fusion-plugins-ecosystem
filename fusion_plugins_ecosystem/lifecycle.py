@@ -11,6 +11,7 @@ import asyncio
 import importlib
 import inspect
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -19,6 +20,7 @@ from typing import Any
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.registry import PluginManifest, PluginRegistry
 from fusion_plugins_ecosystem.sandbox import PluginSandbox, ResourceLimits
+from fusion_plugins_ecosystem.schema import SandboxMode
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +97,7 @@ class PluginLifecycle:
     HEARTBEAT_STALE = 120
 
     # 合法状态转换映射：{from_state: {to_state}}
+    # 含幂等自循环（TIMEOUT→TIMEOUT、CRASHED→CRASHED），避免并发二次熔断抛错
     _VALID_TRANSITIONS: dict[PluginState, set[PluginState]] = {
         PluginState.REGISTERED: {PluginState.LOADED, PluginState.CRASHED},
         PluginState.LOADED: {
@@ -108,8 +111,8 @@ class PluginLifecycle:
             PluginState.TIMEOUT,
         },
         PluginState.DISABLED: {PluginState.LOADED, PluginState.ENABLED},
-        PluginState.CRASHED: {PluginState.LOADED, PluginState.DISABLED},
-        PluginState.TIMEOUT: {PluginState.LOADED, PluginState.DISABLED},
+        PluginState.CRASHED: {PluginState.LOADED, PluginState.DISABLED, PluginState.CRASHED},
+        PluginState.TIMEOUT: {PluginState.LOADED, PluginState.DISABLED, PluginState.TIMEOUT},
     }
 
     def __init__(
@@ -121,7 +124,8 @@ class PluginLifecycle:
         self.desk: DeskRuntime = registry.desk
         self.config = config
         self._instances: dict[str, PluginInstance] = {}
-        self._instances_lock = asyncio.Lock()
+        # 同步锁：load/unload 是同步函数，asyncio.Lock 无法 await，故用 threading.Lock
+        self._instances_lock = threading.RLock()
         self._sandbox = PluginSandbox()
         # 异常检测任务句柄
         self._watcher_task: asyncio.Task[None] | None = None
@@ -150,87 +154,108 @@ class PluginLifecycle:
         self, plugin_id: str, _loading_chain: frozenset[str] | None = None
     ) -> PluginInstance:
         """加载插件（实例化 entry_point），自动先加载依赖。"""
-        manifest = self.registry.get(plugin_id)
-        if manifest is None:
-            raise KeyError(f"插件 {plugin_id!r} 未注册")
+        with self._instances_lock:
+            manifest = self.registry.get(plugin_id)
+            if manifest is None:
+                raise KeyError(f"插件 {plugin_id!r} 未注册")
 
-        if plugin_id in self._instances:
-            return self._instances[plugin_id]
+            if plugin_id in self._instances:
+                return self._instances[plugin_id]
 
-        # 递归加载依赖
-        chain = _loading_chain or frozenset()
-        if plugin_id in chain:
-            raise ValueError(f"循环依赖: {' → '.join(chain)} → {plugin_id}")
-        next_chain = chain | {plugin_id}
-        for dep_id in manifest.depends_on:
-            if dep_id not in self._instances:
-                self.load(dep_id, _loading_chain=next_chain)
+            # 递归加载依赖
+            chain = _loading_chain or frozenset()
+            if plugin_id in chain:
+                raise ValueError(f"循环依赖: {' → '.join(chain)} → {plugin_id}")
+            next_chain = chain | {plugin_id}
+            for dep_id in manifest.depends_on:
+                if dep_id not in self._instances:
+                    self.load(dep_id, _loading_chain=next_chain)
 
-        # 解析 entry_point
-        entry = manifest.entry_point
-        if isinstance(entry, str):
-            module_path, _, attr = entry.partition(":")
-            mod = importlib.import_module(module_path)
-            entry = getattr(mod, attr) if attr else mod
-        # 实例化逻辑：
-        # - 类（type） → 实例化 entry()
-        # - 普通函数/可调用对象 → 直接使用 entry（签名约定为 (desk, params)）
-        if isinstance(entry, type):
-            instance = entry()
-        elif callable(entry):
-            instance = entry
-        else:
-            instance = entry
+            # 解析 entry_point
+            entry = manifest.entry_point
+            if isinstance(entry, str):
+                module_path, _, attr = entry.partition(":")
+                mod = importlib.import_module(module_path)
+                entry = getattr(mod, attr) if attr else mod
+            # 实例化逻辑：
+            # - 类（type） → 实例化 entry()
+            # - 普通函数/可调用对象 → 直接使用 entry（签名约定为 (desk, params)）
+            if isinstance(entry, type):
+                instance = entry()
+            elif callable(entry):
+                instance = entry
+            else:
+                instance = entry
 
-        plugin_inst = PluginInstance(
-            manifest=manifest,
-            state=PluginState.LOADED,
-            instance=instance,
-        )
-        self._instances[plugin_id] = plugin_inst
-        self.desk.log(plugin_id, "INFO", "插件已加载")
-        return plugin_inst
+            plugin_inst = PluginInstance(
+                manifest=manifest,
+                state=PluginState.LOADED,
+                instance=instance,
+            )
+            self._instances[plugin_id] = plugin_inst
+            self.desk.log(plugin_id, "INFO", "插件已加载")
+            return plugin_inst
 
     async def enable(self, plugin_id: str) -> PluginInstance:
-        """启用插件（申请显存 + 标记运行中）。"""
-        inst = self._instances.get(plugin_id) or self.load(plugin_id)
-        manifest = inst.manifest
+        """启用插件（申请显存 + 标记运行中）。
 
-        # 申请显存（解决「显存抢占冲突」痛点）
-        if manifest.vram_mb > 0:
-            ok = self.desk.acquire_vram(plugin_id, manifest.vram_mb)
-            if not ok:
-                self._transition(inst, PluginState.CRASHED)
-                self.desk.log(plugin_id, "ERROR", "显存申请失败，插件未启用")
-                return inst
+        显存申请失败抛 RuntimeError（而非返回 CRASHED 实例），让调用方明确感知失败。
+        """
+        with self._instances_lock:
+            inst = self._instances.get(plugin_id) or self.load(plugin_id)
+            manifest = inst.manifest
 
-        self._transition(inst, PluginState.ENABLED)
-        inst.last_heartbeat = time.time()
-        self.desk.log(plugin_id, "INFO", "插件已启用")
-        return inst
+            # 申请显存（解决「显存抢占冲突」痛点）
+            if manifest.vram_mb > 0:
+                ok = self.desk.acquire_vram(plugin_id, manifest.vram_mb)
+                if not ok:
+                    self._transition(inst, PluginState.CRASHED)
+                    self.desk.log(plugin_id, "ERROR", "显存申请失败，插件未启用")
+                    raise RuntimeError(f"插件 {plugin_id!r} 显存申请失败，未启用")
+
+            self._transition(inst, PluginState.ENABLED)
+            inst.last_heartbeat = time.time()
+            self.desk.log(plugin_id, "INFO", "插件已启用")
+            return inst
 
     async def disable(self, plugin_id: str) -> None:
         """禁用插件（释放显存 + 终止沙箱进程）。"""
-        inst = self._instances.get(plugin_id)
+        with self._instances_lock:
+            inst = self._instances.get(plugin_id)
         if inst is None:
             return
-        from fusion_plugins_ecosystem.schema import SandboxMode
 
         if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
             await self._sandbox.kill(plugin_id)
         if inst.manifest.vram_mb > 0:
             self.desk.release_vram(plugin_id)
-        self._transition(inst, PluginState.DISABLED)
+        with self._instances_lock:
+            self._transition(inst, PluginState.DISABLED)
         self.desk.log(plugin_id, "INFO", "插件已禁用")
 
     def unload(self, plugin_id: str) -> None:
-        """卸载插件实例（保留注册）。"""
-        if plugin_id in self._instances:
-            inst = self._instances[plugin_id]
-            if inst.manifest.vram_mb > 0:
-                self.desk.release_vram(plugin_id)
-            del self._instances[plugin_id]
-            self.desk.log(plugin_id, "INFO", "插件已卸载")
+        """卸载插件实例（保留注册）。
+
+        PROCESS 模式下连带 kill worker，避免孤儿进程残留（P1-6）。
+        kill 是 async，但 unload 同步签名被 _maybe_restart 调用；
+        这里同步清理进程句柄：kill 内部 cancel task + terminate 已足够，
+        完整回收交给 sandbox 析构。为保持同步语义，直接 pop 并标记。
+        """
+        with self._instances_lock:
+            inst = self._instances.pop(plugin_id, None)
+        if inst is None:
+            return
+        if inst.manifest.vram_mb > 0:
+            self.desk.release_vram(plugin_id)
+        if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
+            # 同步上下文无法 await kill；调度到事件循环异步清理
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._sandbox.kill(plugin_id))
+            except RuntimeError:
+                # 无运行事件循环（同步测试路径），尽力 terminate
+                logger.debug("lifecycle: unload 无事件循环，跳过 PROCESS kill")
+        self.desk.log(plugin_id, "INFO", "插件已卸载")
 
     async def execute(
         self,
@@ -241,17 +266,17 @@ class PluginLifecycle:
         """执行插件，带超时熔断。
 
         解决「子代理跑 40 分钟无 token 消耗、卡死无日志」痛点：
-        - 超过 timeout_seconds 强制终止
-        - 心跳停止 HEARTBEAT_STALE 秒判定卡死
+        - 超过 timeout_seconds 强制终止（inline 用 to_thread 可真中断，PROCESS kill 进程）
+        - 心跳判定卡死仅对 PROCESS 沙箱生效（有独立心跳线程）
         """
-        inst = self._instances.get(plugin_id)
-        if inst is None or inst.state != PluginState.ENABLED:
-            raise RuntimeError(f"插件 {plugin_id!r} 未启用，无法执行")
-
-        timeout = (
-            timeout_override or inst.manifest.timeout_seconds or self.DEFAULT_TIMEOUT
-        )
-        inst.last_heartbeat = time.time()
+        with self._instances_lock:
+            inst = self._instances.get(plugin_id)
+            if inst is None or inst.state != PluginState.ENABLED:
+                raise RuntimeError(f"插件 {plugin_id!r} 未启用，无法执行")
+            timeout = (
+                timeout_override or inst.manifest.timeout_seconds or self.DEFAULT_TIMEOUT
+            )
+            inst.last_heartbeat = time.time()
 
         try:
             result = await asyncio.wait_for(
@@ -260,16 +285,21 @@ class PluginLifecycle:
             )
             return result
         except asyncio.TimeoutError:
-            self._transition(inst, PluginState.TIMEOUT)
-            inst.error_count += 1
-            inst.last_error = f"执行超时 ({timeout}s)"
+            # PROCESS 模式：超时必须 kill worker，否则孤儿进程残留、重启复用卡死进程（P1-6）
+            if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
+                await self._sandbox.kill(plugin_id)
+            with self._instances_lock:
+                self._transition(inst, PluginState.TIMEOUT)
+                inst.error_count += 1
+                inst.last_error = f"执行超时 ({timeout}s)"
             self.desk.log(plugin_id, "ERROR", "插件执行超时，已熔断", timeout=timeout)
             await self._maybe_restart(plugin_id)
             raise
         except Exception as exc:
-            self._transition(inst, PluginState.CRASHED)
-            inst.error_count += 1
-            inst.last_error = str(exc)
+            with self._instances_lock:
+                self._transition(inst, PluginState.CRASHED)
+                inst.error_count += 1
+                inst.last_error = str(exc)
             self.desk.log(plugin_id, "ERROR", "插件执行崩溃", error=str(exc))
             await self._maybe_restart(plugin_id)
             raise
@@ -281,25 +311,36 @@ class PluginLifecycle:
         1. manifest 显式声明 PROCESS → 沙箱执行
         2. manifest 为默认 INLINE，但 EcosystemConfig.sandbox_default_mode=process → 沙箱执行
         3. 其余 → 进程内执行
-        """
-        from fusion_plugins_ecosystem.schema import SandboxMode
 
+        config 缺失时默认 inline（与大量无 config 的调用路径/测试约定一致），
+        但显式注入的非法 sandbox_default_mode 必须报错，不再 getattr 兜底（P2-4）。
+        """
         if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
             return await self._invoke_sandbox(inst, params)
 
-        config_default = getattr(self.config, "sandbox_default_mode", "inline")
+        if self.config is None:
+            return await self._invoke_inline(inst, params)
+
+        config_default = self.config.sandbox_default_mode
+        if config_default not in ("inline", "process"):
+            raise RuntimeError(
+                f"lifecycle: 非法 sandbox_default_mode={config_default!r}"
+            )
         if config_default == "process":
             return await self._invoke_sandbox(inst, params)
 
         return await self._invoke_inline(inst, params)
 
     async def _invoke_inline(self, inst: PluginInstance, params: dict[str, Any]) -> Any:
-        """进程内调用插件入口。"""
+        """进程内调用插件入口。
+
+        同步入口用 to_thread 丢线程池，避免阻塞事件循环、使 wait_for 超时真生效（P1-2）。
+        """
         instance = inst.instance
         if inspect.iscoroutinefunction(instance):
             return await instance(self.desk, params)
         if callable(instance):
-            return instance(self.desk, params)
+            return await asyncio.to_thread(instance, self.desk, params)
         raise RuntimeError(f"插件 {inst.manifest.id!r} 入口不可调用")
 
     async def _invoke_sandbox(
@@ -321,22 +362,24 @@ class PluginLifecycle:
 
     async def _maybe_restart(self, plugin_id: str) -> None:
         """崩溃后自动重启（限制 max_restart 次，优先使用插件级配置）。"""
-        inst = self._instances.get(plugin_id)
-        if inst is None:
-            return
-        max_restart = (
-            inst.manifest.max_restart
-            if inst.manifest.max_restart is not None
-            else self.MAX_RESTART
-        )
-        if inst.restart_count >= max_restart:
-            self.desk.log(plugin_id, "ERROR", "达到最大重启次数，插件保持崩溃状态")
-            return
-        # 保存计数，unload 会删除旧 instance
-        new_count = inst.restart_count + 1
+        with self._instances_lock:
+            inst = self._instances.get(plugin_id)
+            if inst is None:
+                return
+            max_restart = (
+                inst.manifest.max_restart
+                if inst.manifest.max_restart is not None
+                else self.MAX_RESTART
+            )
+            if inst.restart_count >= max_restart:
+                self.desk.log(plugin_id, "ERROR", "达到最大重启次数，插件保持崩溃状态")
+                return
+            # 保存计数，unload 会删除旧 instance
+            new_count = inst.restart_count + 1
         self.unload(plugin_id)
         new_inst = self.load(plugin_id)
-        new_inst.restart_count = new_count
+        with self._instances_lock:
+            new_inst.restart_count = new_count
         await self.enable(plugin_id)
         self.desk.log(plugin_id, "INFO", "插件已自动重启", count=new_count)
 
@@ -353,15 +396,31 @@ class PluginLifecycle:
             self._watcher_task = None
 
     async def _watch_loop(self) -> None:
-        """心跳检测循环：HEARTBEAT_STALE 秒无心跳判定卡死。"""
+        """心跳检测循环。
+
+        仅对 PROCESS 沙箱插件生效（有独立心跳线程，能真实反映进程活性）。
+        inline 插件由 execute 的 wait_for 超时单独管，其心跳在执行期间无法更新
+        （事件循环被阻塞），watcher 介入会误杀合法长任务（P2-3）。
+        判死阈值取 manifest.timeout_seconds，与 LONG_TASK 能力语义对齐。
+        """
         while True:
             now = time.time()
-            for plugin_id, inst in list(self._instances.items()):
-                if inst.state != PluginState.ENABLED:
-                    continue
-                if now - inst.last_heartbeat > self.HEARTBEAT_STALE:
-                    self._transition(inst, PluginState.TIMEOUT)
+            with self._instances_lock:
+                candidates = [
+                    (pid, inst)
+                    for pid, inst in self._instances.items()
+                    if inst.state == PluginState.ENABLED
+                    and inst.manifest.sandbox_mode == SandboxMode.PROCESS
+                ]
+            for plugin_id, inst in candidates:
+                threshold = inst.manifest.timeout_seconds or self.HEARTBEAT_STALE
+                if now - inst.last_heartbeat > threshold:
+                    with self._instances_lock:
+                        if inst.state != PluginState.ENABLED:
+                            continue
+                        self._transition(inst, PluginState.TIMEOUT)
                     self.desk.log(plugin_id, "ERROR", "心跳超时，判定卡死，熔断")
+                    await self._sandbox.kill(plugin_id)
                     await self._maybe_restart(plugin_id)
             await asyncio.sleep(self.HEARTBEAT_STALE // 2)
 

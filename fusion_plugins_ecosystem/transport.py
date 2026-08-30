@@ -19,6 +19,15 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
+# 请求体硬上限（字节），防止伪造 Content-Length 导致 OOM
+_MAX_BODY = 1 << 20  # 1 MiB
+# 单个 header 行最大长度（字节）
+_MAX_HEADER_LINE = 8192
+# 最多 header 行数
+_MAX_HEADERS = 100
+# 连接读取超时（秒）：请求行/headers/body 各阶段防止慢速攻击
+_READ_TIMEOUT = 30.0
+
 
 class Transport(ABC):
     """MCP 传输抽象基类。"""
@@ -185,13 +194,14 @@ class SSETransport(Transport):
         logger.info("SSETransport stopped")
 
     async def send(self, message: dict[str, Any]) -> None:
-        data = json.dumps(message, ensure_ascii=False)
-        for session_id, queue in list(self._sessions.items()):
-            await queue.put(f"data: {data}\n\n")
+        # 广播已禁用：JSON-RPC 响应是 per-request 的，POST 分支已同步回写。
+        # 跨客户端广播会造成数据泄露（P0-2）。服务端主动通知用 send_to_session。
+        logger.warning("SSETransport: send() 广播已禁用，使用 send_to_session 按会话路由")
 
     async def send_to_session(self, session_id: str, message: dict[str, Any]) -> None:
         queue = self._sessions.get(session_id)
         if queue is None:
+            logger.debug("SSETransport: session %s 不存在，丢弃消息", session_id)
             return
         data = json.dumps(message, ensure_ascii=False)
         await queue.put(f"data: {data}\n\n")
@@ -200,30 +210,31 @@ class SSETransport(Transport):
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
         try:
-            request_line = await reader.readline()
-            if not request_line:
+            request_text, headers = await _read_http_head(reader)
+            if request_text is None:
                 writer.close()
                 await writer.wait_closed()
                 return
-            request_text = request_line.decode("utf-8").strip()
-            headers: dict[str, str] = {}
-            while True:
-                header_line = await reader.readline()
-                header_text = header_line.decode("utf-8").strip()
-                if not header_text:
-                    break
-                if ":" in header_text:
-                    key, value = header_text.split(":", 1)
-                    headers[key.strip().lower()] = value.strip()
-            content_length = int(headers.get("content-length", "0"))
+
+            content_length = _safe_content_length(headers)
 
             if request_text.startswith("GET"):
                 await self._handle_sse_handshake(writer)
                 return
 
-            if request_text.startswith("POST") and content_length > 0:
-                body = await reader.read(content_length)
-                request = json.loads(body.decode("utf-8"))
+            if request_text.startswith("POST"):
+                if content_length <= 0 or content_length > _MAX_BODY:
+                    await _write_simple_response(writer, 400, b"Bad Request")
+                    return
+                body = await asyncio.wait_for(
+                    reader.read(content_length), timeout=_READ_TIMEOUT
+                )
+                try:
+                    request = json.loads(body.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                    logger.warning("SSETransport: invalid JSON body: %s", e)
+                    await _write_simple_response(writer, 400, b"Bad Request")
+                    return
                 if self._handler:
                     response = await self._handler(request)
                     if response is not None:
@@ -238,8 +249,18 @@ class SSETransport(Transport):
                             b"\r\n" + resp_bytes
                         )
                         await writer.drain()
+            else:
+                await _write_simple_response(writer, 400, b"Bad Request")
+            writer.close()
+            await writer.wait_closed()
+        except asyncio.TimeoutError:
+            logger.warning("SSETransport: 连接读取超时")
+            try:
+                await _write_simple_response(writer, 408, b"Request Timeout")
                 writer.close()
                 await writer.wait_closed()
+            except Exception:
+                pass
         except Exception as e:
             logger.error("SSETransport connection error: %s", e)
             try:
@@ -333,33 +354,33 @@ class HTTPTransport(Transport):
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
         try:
-            request_line = await reader.readline()
-            if not request_line:
-                writer.close()
-                await writer.wait_closed()
-                return
-            request_text = request_line.decode("utf-8").strip()
-            headers: dict[str, str] = {}
-            while True:
-                header_line = await reader.readline()
-                header_text = header_line.decode("utf-8").strip()
-                if not header_text:
-                    break
-                if ":" in header_text:
-                    key, value = header_text.split(":", 1)
-                    headers[key.strip().lower()] = value.strip()
-            content_length = int(headers.get("content-length", "0"))
-
-            if not request_text.startswith("POST") or content_length == 0:
-                resp = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
-                writer.write(resp)
-                await writer.drain()
+            request_text, headers = await _read_http_head(reader)
+            if request_text is None:
                 writer.close()
                 await writer.wait_closed()
                 return
 
-            body = await reader.read(content_length)
-            request = json.loads(body.decode("utf-8"))
+            content_length = _safe_content_length(headers)
+
+            if not request_text.startswith("POST"):
+                await _write_simple_response(writer, 400, b"Bad Request")
+                return
+            if content_length <= 0 or content_length > _MAX_BODY:
+                await _write_simple_response(
+                    writer, 413 if content_length > _MAX_BODY else 400,
+                    b"Bad Request" if content_length <= 0 else b"Payload Too Large",
+                )
+                return
+
+            body = await asyncio.wait_for(
+                reader.read(content_length), timeout=_READ_TIMEOUT
+            )
+            try:
+                request = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                logger.warning("HTTPTransport: invalid JSON body: %s", e)
+                await _write_simple_response(writer, 400, b"Bad Request")
+                return
 
             if self._handler:
                 response = await self._handler(request)
@@ -375,6 +396,14 @@ class HTTPTransport(Transport):
                     await writer.drain()
             writer.close()
             await writer.wait_closed()
+        except asyncio.TimeoutError:
+            logger.warning("HTTPTransport: 连接读取超时")
+            try:
+                await _write_simple_response(writer, 408, b"Request Timeout")
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
         except Exception as e:
             logger.error("HTTPTransport request error: %s", e)
             try:
@@ -382,6 +411,78 @@ class HTTPTransport(Transport):
                 await writer.wait_closed()
             except Exception:
                 pass
+
+
+async def _read_http_head(
+    reader: asyncio.StreamReader,
+) -> tuple[str | None, dict[str, str]]:
+    """读取 HTTP 请求行 + headers，带超时、行数/行长上限。
+
+    返回 (request_text, headers)；请求行 EOF 返回 (None, {})。
+    """
+    try:
+        request_line = await asyncio.wait_for(
+            reader.readline(), timeout=_READ_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        raise
+    if not request_line:
+        return None, {}
+    request_text = request_line.decode("utf-8", errors="replace").strip()
+    headers: dict[str, str] = {}
+    for _ in range(_MAX_HEADERS):
+        try:
+            header_line = await asyncio.wait_for(
+                reader.readline(), timeout=_READ_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            raise
+        if len(header_line) > _MAX_HEADER_LINE:
+            logger.warning("transport: header 行过长，拒绝请求")
+            return None, {}
+        header_text = header_line.decode("utf-8", errors="replace").strip()
+        if not header_text:
+            break
+        if ":" in header_text:
+            key, value = header_text.split(":", 1)
+            headers[key.strip().lower()] = value.strip()
+    else:
+        logger.warning("transport: header 行数超限 %d，拒绝请求", _MAX_HEADERS)
+        return None, {}
+    return request_text, headers
+
+
+def _safe_content_length(headers: dict[str, str]) -> int:
+    """安全解析 Content-Length，非法/缺失返回 -1。"""
+    raw = headers.get("content-length")
+    if raw is None:
+        return -1
+    try:
+        cl = int(raw)
+    except (TypeError, ValueError):
+        return -1
+    if cl < 0:
+        return -1
+    return cl
+
+
+async def _write_simple_response(
+    writer: asyncio.StreamWriter, status: int, message: bytes
+) -> None:
+    """写一个无 body 的简单 HTTP 错误响应。"""
+    reason = {
+        400: b"Bad Request",
+        408: b"Request Timeout",
+        413: b"Payload Too Large",
+    }.get(status, b"Error")
+    resp = (
+        f"HTTP/1.1 {status} ".encode() + reason + b"\r\n"
+        b"Content-Type: text/plain\r\n"
+        b"Content-Length: " + str(len(message)).encode() + b"\r\n"
+        b"Connection: close\r\n\r\n" + message
+    )
+    writer.write(resp)
+    await writer.drain()
 
 
 def create_transport(

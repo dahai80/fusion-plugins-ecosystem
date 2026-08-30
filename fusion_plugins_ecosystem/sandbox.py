@@ -153,10 +153,19 @@ class PluginSandbox:
             return await asyncio.wait_for(future, timeout=proc.limits.timeout_seconds)
         except asyncio.TimeoutError:
             proc.pending_calls.pop(call_id, None)
+            # 超时后必须 kill worker：否则孤儿进程残留，下次 call 复用卡死进程（P0-4）。
+            # _invoke_sandbox 在 health!=alive 时会 respawn。
+            self.desk_log(proc, "ERROR", f"call {call_id} 超时，kill worker 并等待 respawn")
+            await self.kill(plugin_id)
             raise TimeoutError(
                 f"sandbox: plugin {plugin_id!r} call timed out after "
                 f"{proc.limits.timeout_seconds}s"
             )
+
+    def desk_log(self, proc: SandboxProcess, level: str, message: str, **kw: Any) -> None:
+        """沙箱侧日志经宿主 logger 输出（worker 自身日志已通过 IPC 回传）。"""
+        log_method = getattr(logger, level.lower(), logger.info)
+        log_method("sandbox:%s: %s %s", proc.plugin_id, message, kw or "")
 
     async def kill(self, plugin_id: str) -> None:
         """终止沙箱子进程。"""
@@ -315,7 +324,8 @@ class PluginSandbox:
         - 入口调用签名对齐 inline 契约 entry(desk, params)，desk 为 _DeskProxy
         - stdout 输出加锁，心跳线程与主循环不再竞争交错
         - 日志经 _DeskProxy.log 通过 stdout IPC 回传宿主，不再写 stderr 避免管道阻塞
-        - 支持异步入口（iscoroutinefunction 检测 + asyncio.run）
+        - 持久事件循环 + 每次调用独立 task（按 call_id 调度），支持并发分发与取消（P1-8）：
+          旧版 for-line-in-stdin 串行，调用 A 阻塞则调用 B 排队，且无法取消卡死调用。
         """
         entry_str = ""
         if callable(entry_point):
@@ -376,33 +386,46 @@ class PluginSandbox:
             "    t=threading.Thread(target=_tick,daemon=True)\n"
             "    t.start()\n"
             "_heartbeat_loop()\n"
-            "def _execute(call_id,args):\n"
+            # 持久事件循环：每个 call 起独立 task，并发分发；按 call_id 索引结果。
+            "async def _execute(call_id,args):\n"
             "    if not _entry_obj:\n"
             "        _send({'type':'error','id':call_id,'error':'插件入口未配置'})\n"
             "        return\n"
             "    try:\n"
             "        if inspect.iscoroutinefunction(_entry_obj):\n"
-            "            result=asyncio.run(_entry_obj(desk,args))\n"
+            "            result=await _entry_obj(desk,args)\n"
             "        elif callable(_entry_obj):\n"
-            "            result=_entry_obj(desk,args)\n"
+            # 同步入口丢线程池，不阻塞事件循环（与宿主 _invoke_inline to_thread 同理）
+            "            result=await asyncio.to_thread(_entry_obj,desk,args)\n"
             "        else:\n"
             "            result=str(_entry_obj)\n"
             "        _send({'type':'result','id':call_id,'result':result})\n"
-            "    except Exception as e:\n"
+            # BaseException 覆盖 SystemExit（插件 sys.exit 场景），转为 error 回传而非静默死 task
+            "    except BaseException as e:\n"
             "        _send({'type':'error','id':call_id,'error':str(e)})\n"
-            "for line in sys.stdin:\n"
-            "    line=line.strip()\n"
-            "    if not line: continue\n"
-            "    try:\n"
-            "        req=json.loads(line)\n"
-            "    except json.JSONDecodeError:\n"
-            "        continue\n"
-            "    if req.get('type')!='call': continue\n"
-            "    call_id=req.get('id','')\n"
-            "    method=req.get('method','')\n"
-            "    args=req.get('args',{})\n"
-            "    if method=='execute':\n"
-            "        _execute(call_id,args)\n"
-            "    else:\n"
-            "        _send({'type':'error','id':call_id,'error':f'Unknown method {method}'})\n"
+            "async def _main():\n"
+            # loop=asyncio.get_event_loop() 保证后续 add_reader 可用
+            "    loop=asyncio.get_event_loop()\n"
+            "    loop.run_in_executor(None,_stdin_reader,loop)\n"
+            "    while True:\n"
+            "        await asyncio.sleep(3600)\n"
+            "def _stdin_reader(loop):\n"
+            "    for line in sys.stdin:\n"
+            "        line=line.strip()\n"
+            "        if not line: continue\n"
+            "        try:\n"
+            "            req=json.loads(line)\n"
+            "        except json.JSONDecodeError:\n"
+            "            continue\n"
+            "        if req.get('type')!='call': continue\n"
+            "        call_id=req.get('id','')\n"
+            "        method=req.get('method','')\n"
+            "        args=req.get('args',{})\n"
+            "        if method=='execute':\n"
+            "            asyncio.run_coroutine_threadsafe(_execute(call_id,args),loop)\n"
+            "        else:\n"
+            "            _send({'type':'error','id':call_id,'error':f'Unknown method {method}'})\n"
+            "    _log('ERROR','worker stdin EOF，退出')\n"
+            "    loop.call_soon_threadsafe(loop.stop)\n"
+            "asyncio.run(_main())\n"
         )

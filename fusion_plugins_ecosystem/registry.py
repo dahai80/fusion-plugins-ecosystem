@@ -220,30 +220,21 @@ class PluginRegistry:
         return order
 
     def register_builtin(self) -> None:
-        """注册内置插件（自动扫描 builtin 包）。
+        """注册内置插件（显式聚合清单）。
 
-        扫描 fusion_plugins_ecosystem.builtin 包下所有含 *_MANIFEST
-        模块级变量的模块，自动注册。
+        新增内置插件时在此追加。不再用 pkgutil+dir() 扫描：dir() 会拾起
+        被导入到模块命名空间的 *_MANIFEST 符号（误注册非内置插件）、顺序
+        不稳定、且无法在导入期静态发现新增模块（P2-6）。
         """
-        import importlib
-        import pkgutil
+        from fusion_plugins_ecosystem.builtin.caveman_compress import (
+            CAVEMAN_MANIFEST,
+        )
 
-        import fusion_plugins_ecosystem.builtin as builtin_pkg
-
-        for importer, mod_name, is_pkg in pkgutil.iter_modules(builtin_pkg.__path__):
-            if is_pkg:
-                continue
-            fqn = f"fusion_plugins_ecosystem.builtin.{mod_name}"
-            try:
-                mod = importlib.import_module(fqn)
-            except Exception as exc:
-                logger.warning("registry: 跳过内置模块 %s: %s", fqn, exc)
-                continue
-            for attr_name in dir(mod):
-                if attr_name.endswith("_MANIFEST"):
-                    manifest = getattr(mod, attr_name)
-                    if isinstance(manifest, PluginManifest):
-                        self.register(manifest)
+        builtin_manifests: list[PluginManifest] = [
+            CAVEMAN_MANIFEST,
+        ]
+        for manifest in builtin_manifests:
+            self.register(manifest)
 
     def default_mounted(self) -> list[PluginManifest]:
         """返回所有 default_mounted=True 的插件（默认挂载给 Claude 会话）。"""

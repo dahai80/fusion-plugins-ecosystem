@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -230,23 +231,39 @@ class ClaudeGateway:
                 "state": "completed",
                 "result": result,
             }
-        except Exception as exc:
+        except asyncio.TimeoutError as exc:
             self.desk.log(
                 task.plugin_id,
                 "ERROR",
-                "子代理任务执行失败",
+                "子代理任务执行超时",
                 task=task.name,
                 error=str(exc),
             )
-            # 超时自动销毁
+            # 仅超时销毁：字段名 subagent_timeout_destroy 语义为「超时后销毁」，
+            # 崩溃走保留路径供排查（P2-5，旧实现对所有异常都 unload，语义与命名相反）。
             if self.config.subagent_timeout_destroy:
                 self.lifecycle.unload(task.plugin_id)
                 self.desk.log(
                     task.plugin_id,
                     "WARN",
-                    "子代理超时/崩溃，已自动销毁",
+                    "子代理超时，已自动销毁",
                     task=task.name,
                 )
+            return {
+                "task": task.name,
+                "plugin_id": task.plugin_id,
+                "state": "failed",
+                "error": str(exc),
+            }
+        except Exception as exc:
+            self.desk.log(
+                task.plugin_id,
+                "ERROR",
+                "子代理任务执行崩溃",
+                task=task.name,
+                error=str(exc),
+            )
+            # 崩溃保留实例（CRASHED 状态），便于排查；销毁仅由超时分支触发
             return {
                 "task": task.name,
                 "plugin_id": task.plugin_id,
