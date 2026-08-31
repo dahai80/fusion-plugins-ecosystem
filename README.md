@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-473%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-493%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 473 passed
+# → 493 passed
 ```
 
 ```python
@@ -184,6 +184,7 @@ fusion-plugins-ecosystem/
 │   ├── mcp_exporter.py           ← plugin → MCP Tools
 │   ├── claude_gateway.py         ← unified Claude full-chain gateway
 │   ├── token_meter.py            ← unified token accounting + persistence
+│   ├── metrics.py                ← observability: Prometheus counters/gauges + registry
 │   ├── config.py                 ← one-toggle config panel + observers
 │   ├── hook_adapter.py           ← Claude Code Plugin hooks adapter
 │   └
@@ -202,7 +203,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/            ← timeout meltdown + restart
 │   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
 │   └── ex09_file_access/          ← file permission gating
-└── tests/                        ← 473 tests
+└── tests/                        ← 493 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -222,6 +223,7 @@ fusion-plugins-ecosystem/
     ├── test_phase4_meter_config.py
     ├── test_schema.py
     ├── test_product_audit.py        ← production audit P0-P3 fix regressions
+    ├── test_metrics.py              ← observability metrics + /metrics endpoint
     └── test_integration.py
 ```
 
@@ -358,7 +360,7 @@ and `{pong: true}`.
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **473 passed**.
+Latest run: **493 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -375,6 +377,7 @@ Latest run: **473 passed**.
 | `test_hook_adapter.py` | 8 | HookAdapter event mapping / capability filtering |
 | `test_transport_server.py` | 25 | SSE/HTTP/stdio transport + MCPServer start/stop lifecycle + CLI main() |
 | `test_jsonrpc_plugins.py` | 25 | Studio `plugins/*` 15-method dict envelopes + exact-key matching + config-driven wiring (E8) |
+| `test_metrics.py` | 20 | observability counters/gauges / Prometheus render / label escaping / `/metrics` endpoint / path counters (lifecycle/MCP/sandbox/vram/session) |
 
 ## ⚠️ Technical constraints
 
