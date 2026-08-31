@@ -16,7 +16,10 @@ import time
 
 import pytest
 
-from fusion_cowork.distributed_state import (
+# fusion-cowork 仅在本地 monorepo venv 可用；CI 单仓环境未安装。
+# 缺失时整个多节点桥接测试跳过（与 cluster_bridge 的 no-op 降级语义一致）。
+pytest.importorskip("fusion_cowork")
+from fusion_cowork.distributed_state import (  # noqa: E402
     DistributedStateStore,
     reset_cluster_state_store,
 )
