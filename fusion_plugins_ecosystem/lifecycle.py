@@ -550,7 +550,7 @@ class PluginLifecycle:
                 # 已被并发 restart 替换，沿用其计数 +1 以保留崩溃预算累加语义
                 current.restart_count = max(current.restart_count, new_count)
         try:
-            await self.enable(plugin_id)
+            await self._enable_with_retry(plugin_id)
             self.desk.log(plugin_id, "INFO", "插件已自动重启", count=new_count)
         except Exception as exc:
             # R3：重启 enable 失败不向调用方抛错，记录崩溃态避免递归
@@ -558,6 +558,36 @@ class PluginLifecycle:
                 self._transition(new_inst, PluginState.CRASHED)
                 new_inst.last_error = f"自动重启失败: {exc}"
             self.desk.log(plugin_id, "ERROR", "插件自动重启失败", error=str(exc))
+
+    async def _enable_with_retry(
+        self, plugin_id: str, max_attempts: int = 3, backoff: float = 1.0
+    ) -> PluginInstance:
+        """带暂态重试的 enable（P3-6c）。
+
+        仅 vRAM 申请失败这类暂态错误重试（显存争用可能瞬态释放）；
+        其他错误（状态转换/配置）立即抛出，不浪费预算。墙钟重试不叠加 max_restart
+        预算（那是崩溃重启预算，enable 暂态重试是独立的）。
+        """
+        last_exc: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await self.enable(plugin_id)
+            except RuntimeError as exc:
+                last_exc = exc
+                # 仅显存申请失败视为暂态，其他 RuntimeError（状态转换/配置）不重试
+                if "显存申请失败" not in str(exc):
+                    raise
+                self.desk.log(
+                    plugin_id,
+                    "WARNING",
+                    "enable 暂态失败（显存争用），重试",
+                    attempt=attempt,
+                    error=str(exc),
+                )
+                if attempt < max_attempts:
+                    await asyncio.sleep(backoff * attempt)
+        assert last_exc is not None
+        raise last_exc
 
     async def start_watcher(self) -> None:
         """启动异常检测循环，发现卡死插件自动熔断。"""

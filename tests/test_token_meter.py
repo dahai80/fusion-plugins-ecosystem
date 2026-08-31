@@ -210,3 +210,141 @@ def test_token_kind_values() -> None:
     assert TokenKind.PLUGIN_LOCAL.value == "plugin_local"
     assert TokenKind.MLX_INFERENCE.value == "mlx_inference"
     assert TokenKind.MCP_RELAY.value == "mcp_relay"
+
+
+# ── P3-4: 追加写 + 周期压缩 ──
+
+
+def test_wal_append_roundtrip(tmp_path) -> None:
+    """record → flush → 新 meter 加载 = 同样记录（WAL 压缩 snapshot 后单文件可恢复）。"""
+    import json
+    import os
+
+    path = str(tmp_path / "tokens.json")
+    m1 = TokenMeter(persist_path=path, save_batch=1)
+    m1.record(TokenRecord("p1", TokenKind.CLAUDE_MODEL, 10, 20))
+    m1.record(TokenRecord("p2", TokenKind.PLUGIN_LOCAL, 5, 5))
+    m1.flush()
+    assert os.path.exists(path)
+    m2 = TokenMeter(persist_path=path)
+    recs = m2.all_records()
+    assert len(recs) == 2
+    assert recs[0].plugin_id == "p1"
+    assert recs[0].total_tokens == 30
+    assert recs[1].plugin_id == "p2"
+    assert json.loads(open(path).read())["last_seq"] >= 2
+
+
+def test_wal_replay_dedups_after_snapshot(tmp_path) -> None:
+    """崩溃恢复去重：snapshot.last_seq 已含的 wal 行不重复加载。
+
+    模拟：写 snapshot(last_seq=1) + wal 含 seq≤1 的行 → load 仅取未重复记录。
+    """
+    import json
+
+    path = str(tmp_path / "tokens.json")
+    wal_path = path + ".wal"
+    with open(path, "w") as f:
+        json.dump(
+            {
+                "last_seq": 1,
+                "records": [
+                    {
+                        "plugin_id": "snap_p",
+                        "kind": "claude_model",
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "total_tokens": 2,
+                        "wall_seconds": 0.0,
+                        "timestamp": 1000.0,
+                        "metadata": {},
+                    }
+                ],
+            },
+            f,
+        )
+    # wal 含 seq=1（已在 snapshot）与 seq=2（新）
+    with open(wal_path, "w") as f:
+        f.write(
+            json.dumps(
+                {
+                    "plugin_id": "dup_p",
+                    "kind": "plugin_local",
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "wall_seconds": 0.0,
+                    "timestamp": 2000.0,
+                    "metadata": {},
+                    "seq": 1,
+                }
+            )
+            + "\n"
+        )
+        f.write(
+            json.dumps(
+                {
+                    "plugin_id": "new_p",
+                    "kind": "plugin_local",
+                    "input_tokens": 3,
+                    "output_tokens": 4,
+                    "total_tokens": 7,
+                    "wall_seconds": 0.0,
+                    "timestamp": 3000.0,
+                    "metadata": {},
+                    "seq": 2,
+                }
+            )
+            + "\n"
+        )
+    m = TokenMeter(persist_path=path)
+    recs = m.all_records()
+    assert len(recs) == 2
+    pids = [r.plugin_id for r in recs]
+    assert "dup_p" not in pids
+    assert "new_p" in pids
+    assert m._next_seq == 3
+
+
+def test_wal_compaction_triggers_on_threshold(tmp_path) -> None:
+    """wal 行数超 _compact_threshold → 写 snapshot 并清空 wal。"""
+    import os
+
+    path = str(tmp_path / "tokens.json")
+    # 极低阈值强制压缩
+    m = TokenMeter(persist_path=path, save_batch=1, max_records=100)
+    m._compact_threshold = 3
+    for i in range(4):
+        m.record(TokenRecord(f"p{i}", TokenKind.PLUGIN_LOCAL, i, i))
+    # 第 3 条后 wal_line_count>=3 触发压缩 → snapshot 已落盘
+    assert os.path.exists(path)
+    # flush 强制压缩，停机后单文件恢复，含全部 4 条
+    m.flush()
+    assert m._wal_line_count == 0
+    assert m._next_seq == 5
+    snapshot_records = json_load_records(path)
+    assert len(snapshot_records) == 4
+
+
+def test_wal_appends_without_snapshot_until_compact(tmp_path) -> None:
+    """常态 _save 只追加 wal，不写 snapshot（直到阈值/flush）。"""
+    import os
+
+    path = str(tmp_path / "tokens.json")
+    wal_path = path + ".wal"
+    m = TokenMeter(persist_path=path, save_batch=1, max_records=1000)
+    m._compact_threshold = 1000
+    for i in range(3):
+        m.record(TokenRecord(f"p{i}", TokenKind.PLUGIN_LOCAL, i, i))
+    # 3 条 < 阈值 → 无 snapshot，wal 存在且 3 行
+    assert not os.path.exists(path)
+    assert os.path.exists(wal_path)
+    lines = [ln for ln in open(wal_path).read().splitlines() if ln.strip()]
+    assert len(lines) == 3
+
+
+def json_load_records(path: str) -> list:
+    import json
+
+    raw = json.loads(open(path).read())
+    return raw["records"] if isinstance(raw, dict) else raw

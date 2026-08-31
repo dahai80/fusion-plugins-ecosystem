@@ -600,3 +600,76 @@ def test_list_by_state_filters() -> None:
     assert len(loaded) == 2
     enabled = lifecycle.list_by_state(PluginState.ENABLED)
     assert len(enabled) == 0
+
+
+# ── P3-6c: _enable_with_retry ──
+
+
+async def test_enable_with_retry_succeeds_after_transient_vram() -> None:
+    """显存申请失败这类暂态错误应重试，最终成功（不浪费崩溃重启预算）。"""
+
+    def entry(_desk, _params):
+        return {"ok": True}
+
+    m = _make_manifest(entry_point=entry, vram_mb=100)
+    desk = DeskRuntime(vram_total_mb=100)
+    registry = PluginRegistry(desk=desk)
+    registry.register(m)
+    lifecycle = PluginLifecycle(registry)
+    attempts = {"n": 0}
+
+    real_acquire = desk.acquire_vram
+
+    def flaky_acquire(plugin_id, mb):
+        attempts["n"] += 1
+        if attempts["n"] < 2:
+            raise RuntimeError("插件 'test_plugin' 显存申请失败，未启用")
+        return real_acquire(plugin_id, mb)
+
+    desk.acquire_vram = flaky_acquire
+    inst = await lifecycle._enable_with_retry(
+        "test_plugin", max_attempts=3, backoff=0.01
+    )
+    assert inst.state == PluginState.ENABLED
+    assert attempts["n"] == 2  # 首次失败 + 重试一次成功
+
+
+async def test_enable_with_retry_permanent_error_raises_immediately() -> None:
+    """非显存争用的 RuntimeError（状态/配置错误）立即抛出，不重试。"""
+
+    def entry(_desk, _params):
+        return {"ok": True}
+
+    m = _make_manifest(entry_point=entry)
+    registry = _make_registry(m)
+    lifecycle = PluginLifecycle(registry)
+    calls = {"n": 0}
+
+    async def fail_once(plugin_id):
+        calls["n"] += 1
+        raise RuntimeError("状态转换非法")
+
+    lifecycle.enable = fail_once
+    with pytest.raises(RuntimeError, match="状态转换非法"):
+        await lifecycle._enable_with_retry("test_plugin", max_attempts=3, backoff=0.01)
+    assert calls["n"] == 1  # 未重试
+
+
+async def test_enable_with_retry_exhausts_attempts_raises_last() -> None:
+    """暂态错误重试耗尽后抛最后一次异常。"""
+
+    def entry(_desk, _params):
+        return {"ok": True}
+
+    m = _make_manifest(entry_point=entry, vram_mb=100)
+    desk = DeskRuntime(vram_total_mb=100)
+    registry = PluginRegistry(desk=desk)
+    registry.register(m)
+    lifecycle = PluginLifecycle(registry)
+
+    async def always_fail(plugin_id):
+        raise RuntimeError("插件 'test_plugin' 显存申请失败，未启用")
+
+    lifecycle.enable = always_fail
+    with pytest.raises(RuntimeError, match="显存申请失败"):
+        await lifecycle._enable_with_retry("test_plugin", max_attempts=3, backoff=0.01)

@@ -54,7 +54,7 @@ def _exit_worker_entry(desk, params):
 def test_resource_limits_defaults() -> None:
     limits = ResourceLimits()
     assert limits.memory_limit_mb == 512
-    assert limits.cpu_limit == 1.0
+    assert limits.cpu_limit == 0.0
     assert limits.timeout_seconds == 600
     assert limits.grace_period_seconds == 10
     assert limits.vram_budget_mb == 0

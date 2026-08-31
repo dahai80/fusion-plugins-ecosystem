@@ -17,7 +17,25 @@ import sys
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
+from fusion_plugins_ecosystem.logging_setup import (
+    reset_correlation_id,
+    set_correlation_id,
+)
+
 logger = logging.getLogger(__name__)
+
+
+def _stamp_cid(request: dict[str, Any]) -> Any:
+    """从请求 _meta.cid 取或生成 correlation_id，stamp 到当前上下文。返回 token。"""
+    cid = None
+    if isinstance(request, dict):
+        meta = request.get("_meta")
+        if isinstance(meta, dict):
+            cid = meta.get("cid") or meta.get("correlation_id")
+    if not cid:
+        cid = f"{id(request) & 0xFFFFFFFF:08x}-{int(asyncio.get_running_loop().time()) & 0xFFFF:04x}"
+    return set_correlation_id(str(cid))
+
 
 # 请求体硬上限（字节），防止伪造 Content-Length 导致 OOM
 _MAX_BODY = 1 << 20  # 1 MiB
@@ -27,6 +45,9 @@ _MAX_HEADER_LINE = 8192
 _MAX_HEADERS = 100
 # 连接读取超时（秒）：请求行/headers/body 各阶段防止慢速攻击
 _READ_TIMEOUT = 30.0
+# P3-6：单连接 SSE 事件队列容量上限。慢客户端读不过来时不再无限堆积内存，
+# 满队时 send_to_session 丢弃新事件并记日志（不阻塞 RPC 调用方）。
+_SSE_QUEUE_MAXSIZE = 256
 
 
 class Transport(ABC):
@@ -134,12 +155,15 @@ class StdioTransport(Transport):
                     )
                     continue
                 if self._handler:
+                    token = _stamp_cid(request)
                     try:
                         response = await self._handler(request)
                         if response is not None:
                             await self.send(response)
                     except Exception as e:
                         logger.error("StdioTransport handler error: %s", e)
+                    finally:
+                        reset_correlation_id(token)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -210,7 +234,16 @@ class SSETransport(Transport):
             logger.debug("SSETransport: session %s 不存在，丢弃消息", session_id)
             return
         data = json.dumps(message, ensure_ascii=False)
-        await queue.put(f"data: {data}\n\n")
+        # P3-6：满队丢弃而非阻塞。慢客户端读不过来时 put_nowait 抛 QueueFull，
+        # 丢弃该事件并记日志，避免 send 调用方挂起 + 内存无界堆积。
+        try:
+            queue.put_nowait(f"data: {data}\n\n")
+        except asyncio.QueueFull:
+            logger.warning(
+                "SSETransport: session %s 事件队列已满（>%d），丢弃事件",
+                session_id,
+                _SSE_QUEUE_MAXSIZE,
+            )
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -268,7 +301,11 @@ class SSETransport(Transport):
                     await writer.wait_closed()
                     return
                 if self._handler:
-                    response = await self._handler(request)
+                    token = _stamp_cid(request)
+                    try:
+                        response = await self._handler(request)
+                    finally:
+                        reset_correlation_id(token)
                     if response is not None:
                         resp_body = json.dumps(response, ensure_ascii=False)
                         resp_bytes = resp_body.encode("utf-8")
@@ -305,7 +342,7 @@ class SSETransport(Transport):
         import uuid
 
         session_id = uuid.uuid4().hex[:12]
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=_SSE_QUEUE_MAXSIZE)
         self._sessions[session_id] = queue
 
         writer.write(
@@ -448,7 +485,11 @@ class HTTPTransport(Transport):
                 return
 
             if self._handler:
-                response = await self._handler(request)
+                token = _stamp_cid(request)
+                try:
+                    response = await self._handler(request)
+                finally:
+                    reset_correlation_id(token)
                 if response is not None:
                     resp_body = json.dumps(response, ensure_ascii=False)
                     resp_bytes = resp_body.encode("utf-8")

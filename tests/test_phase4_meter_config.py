@@ -46,12 +46,14 @@ def test_persist_saves_to_file() -> None:
             )
         )
         # R4：节流落盘，单条记录不立即写文件，需显式 flush
+        # P3-4：flush 触发压缩，snapshot 为 dict {last_seq, records} 格式
         meter.flush()
         assert os.path.exists(path)
-        data = json.loads(open(path).read())
-        assert len(data) == 1
-        assert data[0]["plugin_id"] == "test_p"
-        assert data[0]["kind"] == "claude_model"
+        snapshot = json.loads(open(path).read())
+        records = snapshot["records"] if isinstance(snapshot, dict) else snapshot
+        assert len(records) == 1
+        assert records[0]["plugin_id"] == "test_p"
+        assert records[0]["kind"] == "claude_model"
 
 
 def test_persist_load_from_file() -> None:

@@ -149,6 +149,34 @@ async def test_http_transport_request_response() -> None:
     await t.stop()
 
 
+async def test_sse_send_to_session_drops_when_queue_full() -> None:
+    """P3-6b：满队丢弃事件而非阻塞。填满队列后 send_to_session 不挂起、不抛。"""
+    from fusion_plugins_ecosystem.transport import _SSE_QUEUE_MAXSIZE
+
+    # 生产队列上限存在且为正
+    assert _SSE_QUEUE_MAXSIZE > 0
+
+    t = SSETransport()
+    # 直接构造一个已满队列的 session（绕过握手，隔离测试队列边界）
+    full_q: asyncio.Queue = asyncio.Queue(maxsize=2)
+    t._sessions["full"] = full_q
+    full_q.put_nowait("data: a\n\n")
+    full_q.put_nowait("data: b\n\n")
+    assert full_q.full()
+    # 超容 send 应立即返回（丢弃），不阻塞
+    await asyncio.wait_for(t.send_to_session("full", {"x": 1}), timeout=2.0)
+    # 队列仍 2 条（丢弃新事件）
+    assert full_q.qsize() == 2
+
+    # 极小 maxsize 边界：单条即满
+    one_q: asyncio.Queue = asyncio.Queue(maxsize=1)
+    t._sessions["one"] = one_q
+    await t.send_to_session("one", {"y": 1})
+    assert one_q.qsize() == 1
+    await t.send_to_session("one", {"y": 2})  # 满后丢弃
+    assert one_q.qsize() == 1
+
+
 # ── MCPServer ──
 
 
