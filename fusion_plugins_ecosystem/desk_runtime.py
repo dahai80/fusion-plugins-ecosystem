@@ -168,12 +168,23 @@ class DeskRuntime:
     _mcp_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
     _mcp_call_timestamps: dict[str, Any] = field(default_factory=dict)
     _mcp_state_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    # 可观测性指标注册表（企业级运维）：经此单例注入各模块，单一来源
+    _metrics: Any | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not FUSION_COWORK_AVAILABLE:
             logger.info(
                 "desk_runtime: fusion-cowork 未安装，DeskRuntime 以降级模式运行"
             )
+
+    @property
+    def metrics(self) -> Any:
+        """惰性初始化 MetricsRegistry 单例（避免循环导入）。"""
+        if self._metrics is None:
+            from fusion_plugins_ecosystem.metrics import MetricsRegistry
+
+            self._metrics = MetricsRegistry()
+        return self._metrics
 
     # ── 显存调度 ──
 
@@ -202,6 +213,9 @@ class DeskRuntime:
                 return False
             self.vram_allocations[plugin_id] = mb
             logger.info("desk_runtime: 插件 %s 显存 %dMB→%dMB", plugin_id, current, mb)
+            self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(
+                sum(self.vram_allocations.values())
+            )
             return True
 
     def release_vram(self, plugin_id: str) -> None:
@@ -210,6 +224,9 @@ class DeskRuntime:
             freed = self.vram_allocations.pop(plugin_id, 0)
         if freed:
             logger.info("desk_runtime: 插件 %s 释放 %dMB 显存", plugin_id, freed)
+        self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(
+            sum(self.vram_allocations.values())
+        )
 
     def vram_usage(self) -> dict[str, int]:
         """返回当前显存台账快照。"""

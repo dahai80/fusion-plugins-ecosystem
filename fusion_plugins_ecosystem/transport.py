@@ -160,11 +160,13 @@ class SSETransport(Transport):
         host: str = "127.0.0.1",
         port: int = 0,
         auth_token: str | None = None,
+        metrics_provider: Callable[[], str] | None = None,
     ) -> None:
         super().__init__(handler)
         self._host = host
         self._port = port
         self._auth_token = auth_token
+        self._metrics_provider = metrics_provider
         self._server: asyncio.Server | None = None
         self._running = False
         self._sessions: dict[str, asyncio.Queue] = {}
@@ -223,6 +225,13 @@ class SSETransport(Transport):
             # P2-8：未鉴权健康探针短路
             if _is_health_request(request_text):
                 await _write_health_response(writer)
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            # 可观测性：未鉴权 GET /metrics 短路（Prometheus scrape）
+            if _is_metrics_request(request_text) and self._metrics_provider:
+                await _write_metrics_response(writer, self._metrics_provider())
                 writer.close()
                 await writer.wait_closed()
                 return
@@ -341,11 +350,13 @@ class HTTPTransport(Transport):
         host: str = "127.0.0.1",
         port: int = 0,
         auth_token: str | None = None,
+        metrics_provider: Callable[[], str] | None = None,
     ) -> None:
         super().__init__(handler)
         self._host = host
         self._port = port
         self._auth_token = auth_token
+        self._metrics_provider = metrics_provider
         self._server: asyncio.Server | None = None
         self._running = False
 
@@ -388,6 +399,13 @@ class HTTPTransport(Transport):
             # P2-8：未鉴权健康探针短路
             if _is_health_request(request_text):
                 await _write_health_response(writer)
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            # 可观测性：未鉴权 GET /metrics 短路（Prometheus scrape）
+            if _is_metrics_request(request_text) and self._metrics_provider:
+                await _write_metrics_response(writer, self._metrics_provider())
                 writer.close()
                 await writer.wait_closed()
                 return
@@ -567,6 +585,28 @@ async def _write_health_response(writer: asyncio.StreamWriter) -> None:
     await writer.drain()
 
 
+def _is_metrics_request(request_text: str) -> bool:
+    """判断是否为未鉴权 GET /metrics 请求（Prometheus scrape）。"""
+    parts = request_text.split()
+    if len(parts) < 2 or parts[0] != "GET":
+        return False
+    return parts[1].rstrip("/") == "/metrics"
+
+
+async def _write_metrics_response(
+    writer: asyncio.StreamWriter, exposition: str
+) -> None:
+    """写 Prometheus 文本暴露格式响应（未鉴权，供 scrape 拉取）。"""
+    body = exposition.encode("utf-8")
+    writer.write(
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: text/plain; version=0.0.4\r\n"
+        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+        b"Connection: close\r\n\r\n" + body
+    )
+    await writer.drain()
+
+
 def create_transport(
     transport_type: str,
     handler: Callable[[dict], Any] | None = None,
@@ -581,6 +621,7 @@ def create_transport(
             host=kwargs.get("host", "127.0.0.1"),
             port=kwargs.get("port", 0),
             auth_token=kwargs.get("auth_token"),
+            metrics_provider=kwargs.get("metrics_provider"),
         )
     elif transport_type == "http":
         return HTTPTransport(
@@ -588,6 +629,7 @@ def create_transport(
             host=kwargs.get("host", "127.0.0.1"),
             port=kwargs.get("port", 0),
             auth_token=kwargs.get("auth_token"),
+            metrics_provider=kwargs.get("metrics_provider"),
         )
     else:
         raise ValueError(f"Unknown transport type: {transport_type}")

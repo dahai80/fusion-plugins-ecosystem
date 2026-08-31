@@ -160,6 +160,7 @@ class MCPServer:
             host=host,
             port=port,
             auth_token=auth_token,
+            metrics_provider=lambda: self.desk.metrics.render(),
         )
 
         self._running = True

@@ -155,6 +155,8 @@ class PluginLifecycle:
         self._idem_cache: dict[tuple[str, str], tuple[float, Any]] = {}
         self._idem_lock = threading.Lock()
         self._IDEM_TTL = 600  # 秒，与 DEFAULT_TIMEOUT 对齐
+        # 可观测性：启动即注册活跃插件 gauge（初值 0），保证 /metrics 恒有该指标行
+        self.desk.metrics.gauge("active_plugins", "当前 ENABLED 态插件数").set(0)
 
     # ── A2：配置驱动阈值，config 缺失回退类常量（兼容无 config 的测试路径）──
 
@@ -279,6 +281,7 @@ class PluginLifecycle:
             self._transition(inst, PluginState.ENABLED)
             inst.last_heartbeat = time.time()
             self.desk.log(plugin_id, "INFO", "插件已启用")
+            self._update_active_gauge()
             return inst
 
     async def disable(self, plugin_id: str) -> None:
@@ -295,6 +298,15 @@ class PluginLifecycle:
         with self._instances_lock:
             self._transition(inst, PluginState.DISABLED)
         self.desk.log(plugin_id, "INFO", "插件已禁用")
+        self._update_active_gauge()
+
+    def _update_active_gauge(self) -> None:
+        """同步活跃插件数 gauge（统计 ENABLED 态实例数）。"""
+        with self._instances_lock:
+            active = sum(
+                1 for i in self._instances.values() if i.state == PluginState.ENABLED
+            )
+        self.desk.metrics.gauge("active_plugins", "当前 ENABLED 态插件数").set(active)
 
     def unload(self, plugin_id: str) -> None:
         """卸载插件实例（保留注册）。
@@ -350,6 +362,9 @@ class PluginLifecycle:
                         "INFO",
                         f"幂等命中 plugin={plugin_id} key={idem_key}，跳过重复执行",
                     )
+                    self.desk.metrics.counter(
+                        "plugin_executions_total", "插件执行总数（按结果分桶）"
+                    ).inc(plugin=plugin_id, status="idempotent_hit")
                     return hit[1]
                 # 清过期条目（惰性，避免独立清扫线程）
                 stale = [
@@ -383,6 +398,9 @@ class PluginLifecycle:
             if idem_key:
                 with self._idem_lock:
                     self._idem_cache[(plugin_id, str(idem_key))] = (time.time(), result)
+            self.desk.metrics.counter(
+                "plugin_executions_total", "插件执行总数（按结果分桶）"
+            ).inc(plugin=plugin_id, status="success")
             return result
         except asyncio.TimeoutError:
             # PROCESS 模式：超时必须 kill worker，否则孤儿进程残留、重启复用卡死进程（P1-6）
@@ -393,6 +411,12 @@ class PluginLifecycle:
                 inst.error_count += 1
                 inst.last_error = f"执行超时 ({timeout}s)"
             self.desk.log(plugin_id, "ERROR", "插件执行超时，已熔断", timeout=timeout)
+            self.desk.metrics.counter(
+                "plugin_executions_total", "插件执行总数（按结果分桶）"
+            ).inc(plugin=plugin_id, status="timeout")
+            self.desk.metrics.counter(
+                "plugin_errors_total", "插件执行错误总数（按类型分桶）"
+            ).inc(plugin=plugin_id, kind="timeout")
             await self._maybe_restart(plugin_id)
             raise
         except Exception as exc:
@@ -401,6 +425,12 @@ class PluginLifecycle:
                 inst.error_count += 1
                 inst.last_error = str(exc)
             self.desk.log(plugin_id, "ERROR", "插件执行崩溃", error=str(exc))
+            self.desk.metrics.counter(
+                "plugin_executions_total", "插件执行总数（按结果分桶）"
+            ).inc(plugin=plugin_id, status="error")
+            self.desk.metrics.counter(
+                "plugin_errors_total", "插件执行错误总数（按类型分桶）"
+            ).inc(plugin=plugin_id, kind=type(exc).__name__)
             # P3-3：加载期不可调用属配置错误，重启无意义且浪费预算，跳过自动重启
             if not isinstance(exc, PluginLoadError):
                 await self._maybe_restart(plugin_id)
