@@ -150,6 +150,11 @@ class PluginLifecycle:
         self._pending_kill_tasks: set[asyncio.Task] = set()
         # R2：inline 并发闸，限制 to_thread 线程池并发插件执行数
         self._concurrency_sem: asyncio.Semaphore | None = None
+        # P2-5：幂等缓存，防客户端断连重试导致重复副作用（双重执行/记账）。
+        # key=(plugin_id, idempotency_key)，TTL 内重复请求直接返回缓存结果。
+        self._idem_cache: dict[tuple[str, str], tuple[float, Any]] = {}
+        self._idem_lock = threading.Lock()
+        self._IDEM_TTL = 600  # 秒，与 DEFAULT_TIMEOUT 对齐
 
     # ── A2：配置驱动阈值，config 缺失回退类常量（兼容无 config 的测试路径）──
 
@@ -192,6 +197,15 @@ class PluginLifecycle:
                 new_state.value,
                 inst.manifest.id,
             )
+            # P2-9：非法状态转移汇入 desk 环形缓冲，运维可经 plugins/logs.stream 查询
+            try:
+                self.registry.desk.infra_log(
+                    "lifecycle",
+                    "ERROR",
+                    f"非法状态转换 {inst.state.value} → {new_state.value} (plugin={inst.manifest.id})",
+                )
+            except Exception:
+                pass
             raise RuntimeError(
                 f"非法状态转换 {inst.state.value} → {new_state.value} "
                 f"(plugin={inst.manifest.id})"
@@ -321,6 +335,31 @@ class PluginLifecycle:
         - 超过 timeout_seconds 强制终止（inline 用 to_thread 可真中断，PROCESS kill 进程）
         - 心跳判定卡死仅对 PROCESS 沙箱生效（有独立心跳线程）
         """
+        # P2-5：幂等键去重。客户端断连后重试 tools/call 会二次执行非幂等插件
+        # （双重副作用/记账）。携带 idempotency_key 时，TTL 内命中即返回缓存结果，
+        # 跳过执行。键从 params 弹出，不透传给插件入口。
+        idem_key = params.pop("_idempotency_key", None) if params else None
+        if idem_key:
+            cache_key = (plugin_id, str(idem_key))
+            now = time.time()
+            with self._idem_lock:
+                hit = self._idem_cache.get(cache_key)
+                if hit and now - hit[0] < self._IDEM_TTL:
+                    self.desk.infra_log(
+                        "lifecycle",
+                        "INFO",
+                        f"幂等命中 plugin={plugin_id} key={idem_key}，跳过重复执行",
+                    )
+                    return hit[1]
+                # 清过期条目（惰性，避免独立清扫线程）
+                stale = [
+                    k
+                    for k, (ts, _) in self._idem_cache.items()
+                    if now - ts >= self._IDEM_TTL
+                ]
+                for k in stale:
+                    del self._idem_cache[k]
+
         with self._instances_lock:
             inst = self._instances.get(plugin_id)
             if inst is None or inst.state != PluginState.ENABLED:
@@ -340,6 +379,10 @@ class PluginLifecycle:
             with self._instances_lock:
                 if inst.restart_count:
                     inst.restart_count = 0
+            # P2-5：成功结果入幂等缓存，供断连重试复用
+            if idem_key:
+                with self._idem_lock:
+                    self._idem_cache[(plugin_id, str(idem_key))] = (time.time(), result)
             return result
         except asyncio.TimeoutError:
             # PROCESS 模式：超时必须 kill worker，否则孤儿进程残留、重启复用卡死进程（P1-6）

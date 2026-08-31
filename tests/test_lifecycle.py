@@ -187,6 +187,63 @@ async def test_execute_sync_entry_point() -> None:
     assert result == {"echo": "hello"}
 
 
+async def test_execute_idempotency_key_dedupes() -> None:
+    """P2-5：携带 _idempotency_key 的重复请求命中缓存，跳过重复执行。"""
+    call_count = {"n": 0}
+
+    def entry(_desk, params):
+        call_count["n"] += 1
+        return {"seq": call_count["n"], "echo": params.get("text")}
+
+    m = _make_manifest(entry_point=entry)
+    registry = _make_registry(m)
+    lifecycle = PluginLifecycle(registry)
+    await lifecycle.enable("test_plugin")
+
+    r1 = await lifecycle.execute("test_plugin", {"text": "a", "_idempotency_key": "k1"})
+    r2 = await lifecycle.execute("test_plugin", {"text": "b", "_idempotency_key": "k1"})
+    assert r1 == {"seq": 1, "echo": "a"}
+    assert r2 == r1  # 命中缓存，不重复执行
+    assert call_count["n"] == 1  # 入口仅执行一次
+
+
+async def test_execute_idempotency_key_different_keys_independent() -> None:
+    """P2-5：不同幂等键各自独立执行。"""
+    call_count = {"n": 0}
+
+    def entry(_desk, params):
+        call_count["n"] += 1
+        return {"seq": call_count["n"]}
+
+    m = _make_manifest(entry_point=entry)
+    registry = _make_registry(m)
+    lifecycle = PluginLifecycle(registry)
+    await lifecycle.enable("test_plugin")
+
+    r1 = await lifecycle.execute("test_plugin", {"_idempotency_key": "k1"})
+    r2 = await lifecycle.execute("test_plugin", {"_idempotency_key": "k2"})
+    assert r1 == {"seq": 1}
+    assert r2 == {"seq": 2}
+    assert call_count["n"] == 2
+
+
+async def test_execute_idempotency_key_not_passed_to_plugin() -> None:
+    """P2-5：幂等键从 params 弹出，不透传给插件入口。"""
+    seen = {}
+
+    def entry(_desk, params):
+        seen.update(params)
+        return {"ok": True}
+
+    m = _make_manifest(entry_point=entry)
+    registry = _make_registry(m)
+    lifecycle = PluginLifecycle(registry)
+    await lifecycle.enable("test_plugin")
+    await lifecycle.execute("test_plugin", {"text": "x", "_idempotency_key": "k1"})
+    assert "_idempotency_key" not in seen
+    assert seen.get("text") == "x"
+
+
 async def test_execute_async_entry_point() -> None:
     async def entry(_desk, params):
         await asyncio.sleep(0.01)
