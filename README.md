@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-518%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-536%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 518 passed
+# → 536 passed
 ```
 
 ```python
@@ -183,9 +183,10 @@ fusion-plugins-ecosystem/
 │   ├── claude_adapter.py         ← legacy adapter (backward compat)
 │   ├── mcp_exporter.py           ← plugin → MCP Tools
 │   ├── claude_gateway.py         ← unified Claude full-chain gateway
-│   ├── token_meter.py            ← unified token accounting + persistence
+│   ├── token_meter.py            ← unified token accounting + WAL append-write persistence
 │   ├── metrics.py                ← observability: Prometheus counters/gauges + registry
 │   ├── cluster_bridge.py         ← multi-node distributed state bridge (cowork cluster sync + failover)
+│   ├── logging_setup.py          ← structured JSON logging + correlation_id (P3-6)
 │   ├── config.py                 ← one-toggle config panel + observers
 │   ├── hook_adapter.py           ← Claude Code Plugin hooks adapter
 │   └
@@ -204,7 +205,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/            ← timeout meltdown + restart
 │   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
 │   └── ex09_file_access/          ← file permission gating
-└── tests/                        ← 518 tests
+└── tests/                        ← 536 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -364,14 +365,14 @@ and `{pong: true}`.
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **518 passed**.
+Latest run: **536 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
 | `test_desk_runtime.py` | 30 | vRAM / logging / permissions / API keys / MLX / node bridge / scheduler bridge |
-| `test_lifecycle.py` | 24 | load/enable/disable/unload/execute/timeout/crash/restart/watcher |
+| `test_lifecycle.py` | 40 | load/enable/disable/unload/execute/timeout/crash/restart/watcher/idempotency + _enable_with_retry (vRAM transient retry, permanent-error no-retry) |
 | `test_mcp_exporter.py` | 13 | list_tools / call_tool / gateway_info / manifest_to_mcp_tool |
-| `test_token_meter.py` | 16 | TokenRecord / record / measure / summary / stuck-subagent warning |
+| `test_token_meter.py` | 22 | TokenRecord / record / measure / summary / stuck-subagent warning / WAL append+compaction (round-trip, crash-recovery dedup, threshold) |
 | `test_claude_adapter.py` | 13 | export_one / export_all / export_default_mounted / param types / enum / required |
 | `test_claude_gateway.py` | 45 | three-layer compat / forward-reverse / auth / config toggles / token integration |
 | `test_config.py` | 9 | defaults / to_dict / from_dict / roundtrip / partial / unknown key |
@@ -379,12 +380,13 @@ Latest run: **518 passed**.
 | `test_caveman.py` | 22 | _compress_text / caveman_compress / CAVEMAN_MANIFEST fields |
 | `test_registry.py` | 13 | (legacy) registry + adapter + exporter + caveman integration |
 | `test_hook_adapter.py` | 8 | HookAdapter event mapping / capability filtering |
-| `test_transport_server.py` | 25 | SSE/HTTP/stdio transport + MCPServer start/stop lifecycle + CLI main() |
+| `test_transport_server.py` | 27 | SSE/HTTP/stdio transport + MCPServer start/stop lifecycle + CLI main() + SSE queue-bound drop-on-full |
 | `test_jsonrpc_plugins.py` | 25 | Studio `plugins/*` 15-method dict envelopes + exact-key matching + config-driven wiring (E8) |
 | `test_metrics.py` | 20 | observability counters/gauges / Prometheus render / label escaping / `/metrics` endpoint / path counters (lifecycle/MCP/sandbox/vram/session) |
 | `test_load.py` | 8 | load/concurrency safety: lifecycle concurrent execute + max_concurrent semaphore, metrics thread-safety (counter/gauge/render), token-meter high-freq + concurrent record, PROCESS sandbox spawn storm no-leak |
 | `test_cluster_bridge.py` | 9 | multi-node distributed state: cross-node plugin enable/disable + vRAM visibility, stale-node failover evict (clears state/vRAM), heartbeat keeps-alive, cluster_bridge singleton sync, lifecycle enable/disable cluster sync, DeskRuntime cluster query methods, cluster-disabled no-op degradation |
 | `test_soak.py` | 8 | long-run stability: token-meter cap holds under 50k records, log buffer deque cap, session _MAX_SESSIONS LRU cap + calls-list bound, counter 100k monotonic inc no-drift (labeled buckets), lifecycle 500 sustained execute no-residual, token-meter 8k record + query aggregate consistent |
+| `test_logging_setup.py` | 10 | structured JSON logging: JsonFormatter output + correlation_id propagation (set/reset/contextvar), configure idempotent + extras + exc_info + non-serializable fallback (P3-6) |
 
 ## ⚠️ Technical constraints
 

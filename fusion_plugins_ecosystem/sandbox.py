@@ -40,7 +40,10 @@ class ResourceLimits:
 
     vram_budget_mb: int = 0
     memory_limit_mb: int = 512
-    cpu_limit: float = 1.0
+    # P3-5：默认 0=不限。RLIMIT_CPU 是累计 CPU 秒，1.0 会 SIGXCPU 杀掉合法计算插件
+    # （MLX 推理/压缩）。墙钟上限已由 timeout_seconds + heartbeat 覆盖；需 CPU 封顶
+    # 的插件在 manifest 显式声明 cpu_limit。worker 脚本 cpu_limit>0 才 setrlimit。
+    cpu_limit: float = 0.0
     timeout_seconds: int = 600
     grace_period_seconds: int = 10
 

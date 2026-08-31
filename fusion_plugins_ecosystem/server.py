@@ -13,7 +13,6 @@ import ipaddress
 import logging
 import os
 import signal
-import sys
 from typing import Any
 
 from fusion_plugins_ecosystem.config import EcosystemConfig
@@ -291,11 +290,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        stream=sys.stderr,
-    )
+    # P3-6：结构化 JSON 日志 + correlation_id（见 logging_setup）。
+    # 替代旧 plain-text basicConfig，便于 ELK/Loki 聚合与请求关联。
+    from fusion_plugins_ecosystem.logging_setup import configure_structured_logging
+
+    configure_structured_logging(level=getattr(logging, args.log_level))
 
     server = MCPServer()
     try:
