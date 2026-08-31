@@ -187,6 +187,13 @@ class MCPHandler:
             # P1-7：对外仅返回通用错误码，详情写日志，避免异常文本泄露
             # 内部模块路径/文件系统结构/变量值等敏感信息。
             logger.error("jsonrpc: handler %s error: %s", method, e, exc_info=True)
+            # P2-9：handler 错误汇入 desk 环形缓冲（不记异常详情防泄露）
+            try:
+                self.desk.infra_log(
+                    "jsonrpc", "ERROR", f"handler {method} error: {type(e).__name__}"
+                )
+            except Exception:
+                pass
             return _error_response(request_id, -32603, "Internal error")
 
     # ── 协议方法 ──
@@ -245,6 +252,11 @@ class MCPHandler:
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
         session_id = params.get("_meta", {}).get("sessionId")
+        # P2-5：从 _meta.idempotencyKey 取幂等键（客户端断连重试防重复执行），
+        # 透传给 lifecycle.execute 走幂等缓存。不进入插件 arguments。
+        idem_key = params.get("_meta", {}).get("idempotencyKey")
+        if idem_key:
+            arguments = {**arguments, "_idempotency_key": str(idem_key)}
 
         plugin_id = _extract_plugin_id(tool_name)
         if plugin_id is None:
@@ -284,6 +296,15 @@ class MCPHandler:
             logger.error(
                 "jsonrpc: tools/call %s error: %s", tool_name, e, exc_info=True
             )
+            # P2-9：tools/call 执行错误汇入 desk 环形缓冲
+            try:
+                self.desk.infra_log(
+                    "jsonrpc",
+                    "ERROR",
+                    f"tools/call {tool_name} error: {type(e).__name__}",
+                )
+            except Exception:
+                pass
             return {
                 "content": [
                     {

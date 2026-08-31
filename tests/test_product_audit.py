@@ -302,3 +302,40 @@ def test_worker_config_expr_is_valid_python() -> None:
     expr = m.group(1)
     assert " true" not in expr and "\ttrue" not in expr
     assert "True" in expr or "False" in expr or "None" in expr
+
+
+# ── P2-9：infra_log 双日志流汇集 ──
+
+
+def test_infra_log_records_to_ring_buffer() -> None:
+    """P2-9：infra_log 写入环形缓冲，plugin_id=_infra，运维可经 get_logs 查询。"""
+    desk = DeskRuntime()
+    desk.infra_log("jsonrpc", "ERROR", "handler foo error: ValueError")
+    logs = desk.get_logs(plugin_id="_infra", limit=10)
+    assert any("[jsonrpc]" in e["message"] for e in logs)
+    assert any("handler foo error" in e["message"] for e in logs)
+
+
+async def test_illegal_transition_logged_to_desk() -> None:
+    """P2-9：非法状态转移同时汇入 desk 环形缓冲（不只 stderr）。"""
+    from fusion_plugins_ecosystem.lifecycle import PluginLifecycle, PluginState
+    from fusion_plugins_ecosystem.registry import PluginRegistry
+
+    desk = DeskRuntime()
+    registry = PluginRegistry(desk=desk)
+    lifecycle = PluginLifecycle(registry)
+    # 构造一个 LOADED 实例，非法转移到 ENABLED 外的态
+    from fusion_plugins_ecosystem.lifecycle import PluginInstance
+
+    from tests.test_lifecycle import _make_manifest
+
+    inst = PluginInstance(
+        manifest=_make_manifest(entry_point=lambda d, p: {}),
+        state=PluginState.LOADED,
+    )
+    registry._manifests = {inst.manifest.id: inst.manifest}
+    lifecycle._instances[inst.manifest.id] = inst
+    with pytest.raises(RuntimeError, match="非法状态转换"):
+        lifecycle._transition(inst, PluginState.TIMEOUT)
+    infra_logs = desk.get_logs(plugin_id="_infra", limit=20)
+    assert any("非法状态转换" in e["message"] for e in infra_logs)

@@ -261,6 +261,25 @@ class DeskRuntime:
                 }
             )
 
+    def infra_log(
+        self,
+        component: str,
+        level: str,
+        message: str,
+        **kwargs: Any,
+    ) -> None:
+        """基础设施事件统一采集（P2-9：双日志流割裂修复）。
+
+        transport/jsonrpc/lifecycle/server 等基础层错误此前只走模块 logger
+        (stderr)，运维 tail plugins/logs.stream 看不到——非法状态转移、
+        handler 错误、鉴权拒绝、写回失败均不可查询。经此汇集到环形缓冲
+        （plugin_id="_infra"），同时仍经 desk_logger 输出 stderr，形成
+        单一可查询流。component 记入 kwargs 供按子系统过滤。
+        """
+        self.log(
+            "_infra", level, f"[{component}] {message}", component=component, **kwargs
+        )
+
     def get_logs(
         self,
         plugin_id: str | None = None,
