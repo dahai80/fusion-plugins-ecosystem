@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-510%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-518%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 510 passed
+# → 518 passed
 ```
 
 ```python
@@ -204,7 +204,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/            ← timeout meltdown + restart
 │   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
 │   └── ex09_file_access/          ← file permission gating
-└── tests/                        ← 510 tests
+└── tests/                        ← 518 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -227,6 +227,7 @@ fusion-plugins-ecosystem/
     ├── test_metrics.py              ← observability metrics + /metrics endpoint
     ├── test_load.py                 ← load/concurrency safety (lifecycle semaphore, metrics thread-safety, sandbox spawn storm, token-meter pressure)
     ├── test_cluster_bridge.py       ← multi-node distributed state (cross-node plugin/vRAM visibility, failover evict, lifecycle sync, cluster-disabled no-op)
+    ├── test_soak.py                 ← long-run stability (token-meter cap, log buffer cap, session LRU cap, counter monotonic no-drift, lifecycle sustained execute no-residual)
     └── test_integration.py
 ```
 
@@ -363,7 +364,7 @@ and `{pong: true}`.
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **510 passed**.
+Latest run: **518 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -383,6 +384,7 @@ Latest run: **510 passed**.
 | `test_metrics.py` | 20 | observability counters/gauges / Prometheus render / label escaping / `/metrics` endpoint / path counters (lifecycle/MCP/sandbox/vram/session) |
 | `test_load.py` | 8 | load/concurrency safety: lifecycle concurrent execute + max_concurrent semaphore, metrics thread-safety (counter/gauge/render), token-meter high-freq + concurrent record, PROCESS sandbox spawn storm no-leak |
 | `test_cluster_bridge.py` | 9 | multi-node distributed state: cross-node plugin enable/disable + vRAM visibility, stale-node failover evict (clears state/vRAM), heartbeat keeps-alive, cluster_bridge singleton sync, lifecycle enable/disable cluster sync, DeskRuntime cluster query methods, cluster-disabled no-op degradation |
+| `test_soak.py` | 8 | long-run stability: token-meter cap holds under 50k records, log buffer deque cap, session _MAX_SESSIONS LRU cap + calls-list bound, counter 100k monotonic inc no-drift (labeled buckets), lifecycle 500 sustained execute no-residual, token-meter 8k record + query aggregate consistent |
 
 ## ⚠️ Technical constraints
 
