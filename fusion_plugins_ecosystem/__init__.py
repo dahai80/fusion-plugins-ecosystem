@@ -49,6 +49,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "DeskRuntime": "fusion_plugins_ecosystem.desk_runtime",
     # 可观测性指标
     "MetricsRegistry": "fusion_plugins_ecosystem.metrics",
+    # 集群分布式状态桥接（企业级多节点）
+    "cluster_bridge": "fusion_plugins_ecosystem.cluster_bridge",
     # 配置
     "EcosystemConfig": "fusion_plugins_ecosystem.config",
     # Schema
