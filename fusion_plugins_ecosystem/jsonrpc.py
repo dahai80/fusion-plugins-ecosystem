@@ -287,6 +287,9 @@ class MCPHandler:
             result = await self.lifecycle.execute(plugin_id, arguments)
             content = self._format_result(result)
             self.desk.log(plugin_id, "INFO", "MCP tools/call completed")
+            self.desk.metrics.counter(
+                "mcp_tool_calls_total", "MCP tools/call 调用总数（按结果分桶）"
+            ).inc(plugin=plugin_id, status="success")
             # C12: 记录会话
             if session_id:
                 self._touch_session(session_id, plugin_id)
@@ -305,6 +308,12 @@ class MCPHandler:
                 )
             except Exception:
                 pass
+            self.desk.metrics.counter(
+                "mcp_tool_calls_total", "MCP tools/call 调用总数（按结果分桶）"
+            ).inc(plugin=plugin_id, status="error")
+            self.desk.metrics.counter(
+                "mcp_tool_errors_total", "MCP tools/call 错误总数（按类型分桶）"
+            ).inc(plugin=plugin_id, kind=type(e).__name__)
             return {
                 "content": [
                     {
@@ -733,6 +742,9 @@ class MCPHandler:
             session["calls"].append({"plugin_id": plugin_id, "ts": time.time()})
             if len(session["calls"]) > 1000:
                 session["calls"] = session["calls"][-500:]
+        self.desk.metrics.gauge("active_sessions", "当前活跃 MCP 会话数").set(
+            len(self._sessions)
+        )
 
     def _evict_oldest_session(self) -> None:
         """淘汰最久未活跃的会话（LRU）。调用方须持 _state_lock。"""
@@ -757,6 +769,9 @@ class MCPHandler:
             for sid in stale:
                 del self._sessions[sid]
             return len(stale)
+        self.desk.metrics.gauge("active_sessions", "当前活跃 MCP 会话数").set(
+            len(self._sessions)
+        )
 
     # C13: 速率限制
     def _check_rate_limit(self, plugin_id: str) -> bool:

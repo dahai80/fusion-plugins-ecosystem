@@ -184,6 +184,10 @@ class PluginSandbox:
 
         self._processes[plugin_id] = sandbox_proc
         logger.info("sandbox: spawned %s (pid=%d)", plugin_id, proc.pid)
+        if self.desk is not None:
+            self.desk.metrics.counter(
+                "sandbox_spawns_total", "PROCESS 沙箱子进程 spawn 总数"
+            ).inc(plugin=plugin_id, status="spawned")
 
     async def call(
         self, plugin_id: str, method: str, args: dict[str, Any] | None = None

@@ -47,6 +47,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "CLAUDE_VOLCENGINE": "fusion_plugins_ecosystem.claude_gateway",
     # Desk runtime
     "DeskRuntime": "fusion_plugins_ecosystem.desk_runtime",
+    # 可观测性指标
+    "MetricsRegistry": "fusion_plugins_ecosystem.metrics",
     # 配置
     "EcosystemConfig": "fusion_plugins_ecosystem.config",
     # Schema
