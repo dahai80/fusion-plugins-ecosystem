@@ -186,6 +186,55 @@ class DeskRuntime:
             self._metrics = MetricsRegistry()
         return self._metrics
 
+    # ── 集群分布式状态桥接（企业级多节点，步骤 4）──
+    # 集群未启用（FUSION_CLUSTER_ENABLED 非 truthy）或 fusion-cowork 缺失时，
+    # 所有写操作 no-op、查询返回空——单机部署行为不变。
+
+    def cluster_node_id(self) -> str | None:
+        """本节点 id；集群未启用返回 None。"""
+        from fusion_plugins_ecosystem import cluster_bridge
+
+        return cluster_bridge.cluster_node_id()
+
+    def cluster_heartbeat(
+        self,
+        host: str = "",
+        port: int = 0,
+        role: str = "worker",
+        vram_total_mb: int = 0,
+        vram_used_mb: int = 0,
+        tags: list[str] | None = None,
+    ) -> None:
+        """向集群共享存储发送本节点心跳。集群未启用 no-op。"""
+        from fusion_plugins_ecosystem import cluster_bridge
+
+        cluster_bridge.cluster_heartbeat(
+            host=host,
+            port=port,
+            role=role,
+            vram_total_mb=vram_total_mb,
+            vram_used_mb=vram_used_mb,
+            tags=tags,
+        )
+
+    def cluster_evict_stale_nodes(self) -> list[str]:
+        """failover：移除心跳超时的失效节点，清理其插件状态与 vRAM。"""
+        from fusion_plugins_ecosystem import cluster_bridge
+
+        return cluster_bridge.cluster_evict_stale_nodes()
+
+    def is_plugin_enabled_anywhere(self, plugin_id: str) -> bool:
+        """集群内任意节点是否已启用该插件。集群未启用返回 False。"""
+        from fusion_plugins_ecosystem import cluster_bridge
+
+        return cluster_bridge.is_plugin_enabled_anywhere(plugin_id)
+
+    def plugin_state_across_cluster(self, plugin_id: str) -> list[dict[str, Any]]:
+        """该插件在集群各节点的状态列表。集群未启用返回空列表。"""
+        from fusion_plugins_ecosystem import cluster_bridge
+
+        return cluster_bridge.plugin_state_across_cluster(plugin_id)
+
     # ── 显存调度 ──
 
     def acquire_vram(self, plugin_id: str, mb: int) -> bool:
@@ -216,6 +265,10 @@ class DeskRuntime:
             self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(
                 sum(self.vram_allocations.values())
             )
+            # 步骤 4：同步 vRAM 分配到集群共享存储（跨节点可见）
+            from fusion_plugins_ecosystem import cluster_bridge
+
+            cluster_bridge.record_vram(plugin_id, mb)
             return True
 
     def release_vram(self, plugin_id: str) -> None:
@@ -227,6 +280,10 @@ class DeskRuntime:
         self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(
             sum(self.vram_allocations.values())
         )
+        # 步骤 4：同步释放到集群共享存储
+        from fusion_plugins_ecosystem import cluster_bridge
+
+        cluster_bridge.release_vram(plugin_id)
 
     def vram_usage(self) -> dict[str, int]:
         """返回当前显存台账快照。"""

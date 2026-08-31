@@ -282,6 +282,10 @@ class PluginLifecycle:
             inst.last_heartbeat = time.time()
             self.desk.log(plugin_id, "INFO", "插件已启用")
             self._update_active_gauge()
+            # 步骤 4：同步插件启用状态到集群共享存储（跨节点一致）
+            from fusion_plugins_ecosystem import cluster_bridge
+
+            cluster_bridge.record_plugin_state(plugin_id, installed=True, enabled=True)
             return inst
 
     async def disable(self, plugin_id: str) -> None:
@@ -299,6 +303,10 @@ class PluginLifecycle:
             self._transition(inst, PluginState.DISABLED)
         self.desk.log(plugin_id, "INFO", "插件已禁用")
         self._update_active_gauge()
+        # 步骤 4：同步插件禁用状态到集群共享存储（跨节点一致）
+        from fusion_plugins_ecosystem import cluster_bridge
+
+        cluster_bridge.record_plugin_state(plugin_id, installed=True, enabled=False)
 
     def _update_active_gauge(self) -> None:
         """同步活跃插件数 gauge（统计 ENABLED 态实例数）。"""
