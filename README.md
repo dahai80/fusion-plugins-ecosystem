@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-493%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-501%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.3.4-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 493 passed
+# → 501 passed
 ```
 
 ```python
@@ -203,7 +203,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/            ← timeout meltdown + restart
 │   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
 │   └── ex09_file_access/          ← file permission gating
-└── tests/                        ← 493 tests
+└── tests/                        ← 501 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -224,6 +224,7 @@ fusion-plugins-ecosystem/
     ├── test_schema.py
     ├── test_product_audit.py        ← production audit P0-P3 fix regressions
     ├── test_metrics.py              ← observability metrics + /metrics endpoint
+    ├── test_load.py                 ← load/concurrency safety (lifecycle semaphore, metrics thread-safety, sandbox spawn storm, token-meter pressure)
     └── test_integration.py
 ```
 
@@ -360,7 +361,7 @@ and `{pong: true}`.
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **493 passed**.
+Latest run: **501 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -378,6 +379,7 @@ Latest run: **493 passed**.
 | `test_transport_server.py` | 25 | SSE/HTTP/stdio transport + MCPServer start/stop lifecycle + CLI main() |
 | `test_jsonrpc_plugins.py` | 25 | Studio `plugins/*` 15-method dict envelopes + exact-key matching + config-driven wiring (E8) |
 | `test_metrics.py` | 20 | observability counters/gauges / Prometheus render / label escaping / `/metrics` endpoint / path counters (lifecycle/MCP/sandbox/vram/session) |
+| `test_load.py` | 8 | load/concurrency safety: lifecycle concurrent execute + max_concurrent semaphore, metrics thread-safety (counter/gauge/render), token-meter high-freq + concurrent record, PROCESS sandbox spawn storm no-leak |
 
 ## ⚠️ Technical constraints
 
