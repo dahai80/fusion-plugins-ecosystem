@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-536%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-584%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.4.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 536 passed
+# → 584 passed
 ```
 
 ```python
@@ -186,14 +186,16 @@ fusion-plugins-ecosystem/
 │   ├── token_meter.py            ← unified token accounting + WAL append-write persistence
 │   ├── metrics.py                ← observability: Prometheus counters/gauges + registry
 │   ├── cluster_bridge.py         ← multi-node distributed state bridge (cowork cluster sync + failover)
+│   ├── connector.py              ← external MCP connector framework (pack install, MCP client, HIGH_RISK approval gate)
+│   ├── connector_packs.py        ← first-party connector packs (Feishu/DingTalk/WeCom/Mail/Calendar/Notion)
+│   ├── marketplace.py            ← skill/connector pack marketplace (JSON index, install/uninstall)
 │   ├── logging_setup.py          ← structured JSON logging + correlation_id (P3-6)
 │   ├── config.py                 ← one-toggle config panel + observers
 │   ├── hook_adapter.py           ← Claude Code Plugin hooks adapter
 │   └
     builtin/
 │       ├── __init__.py
-│       └
-        caveman_compress.py        ← built-in token compressor
+│       └── caveman_compress.py        ← built-in token compressor
 ├── examples/                      ← 9 runnable plugin samples (ex01_echo … ex09_file_access)
 │   ├── README.md                  ← scenario index + run instructions
 │   ├── ex01_echo/                 ← minimal sync plugin
@@ -205,7 +207,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/            ← timeout meltdown + restart
 │   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
 │   └── ex09_file_access/          ← file permission gating
-└── tests/                        ← 536 tests
+└── tests/                        ← 584 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -228,9 +230,60 @@ fusion-plugins-ecosystem/
     ├── test_metrics.py              ← observability metrics + /metrics endpoint
     ├── test_load.py                 ← load/concurrency safety (lifecycle semaphore, metrics thread-safety, sandbox spawn storm, token-meter pressure)
     ├── test_cluster_bridge.py       ← multi-node distributed state (cross-node plugin/vRAM visibility, failover evict, lifecycle sync, cluster-disabled no-op)
+    ├── test_connector.py            ← connector framework: pack validation, registry bridge, HIGH_RISK approval gate, persistence, stdio/http MCP client round-trips
+    ├── test_connector_packs.py      ← first-party packs structural validation + Feishu acceptance shape + lifecycle load
+    ├── test_marketplace.py          ← marketplace: builtin catalog, JSON index load/override, install/uninstall, HTTPS-only constraint
     ├── test_soak.py                 ← long-run stability (token-meter cap, log buffer cap, session LRU cap, counter monotonic no-drift, lifecycle sustained execute no-residual)
     └── test_integration.py
 ```
+
+## 🔌 Connector framework (issue #27)
+
+External MCP connector framework: fusion acts as an **MCP client** consuming arbitrary external MCP servers, with first-party domestic connector packs and a skill/connector marketplace.
+
+```python
+import fusion_plugins_ecosystem as fpe
+from fusion_plugins_ecosystem.connector_packs import get_builtin_pack
+
+desk = fpe.DeskRuntime()
+registry = fpe.PluginRegistry(desk)
+creg = fpe.ConnectorRegistry(desk=desk, registry=registry,
+                             persist_path="~/.fusion-ecosystem/connectors.json")
+lifecycle = fpe.PluginLifecycle(registry)
+
+# 1. Install a first-party pack (Feishu / DingTalk / WeCom / Mail / Calendar / Notion)
+creg.install_pack(get_builtin_pack("feishu"))
+
+# 2. Tools are bridged into the plugin registry → exposed as MCP tools / cowork nodes
+#    e.g. plugin id "connector__feishu__im.message.send"
+
+# 3. HIGH_RISK tools need explicit approval before execution
+creg.approve_tool("feishu", "im.message.send")
+
+# 4. Execute via lifecycle (routed through the external MCP server)
+resp = await lifecycle.execute("connector__feishu__im.message.send",
+                               {"chat_id": "oc_xxx", "content": "hello"})
+```
+
+Marketplace — distribute connector packs and cowork markdown skill packages:
+
+```python
+from fusion_plugins_ecosystem.marketplace import Marketplace
+
+market = Marketplace(creg, marketplace_index="https://my-company/marketplace/index.json")  # private index
+entries, warnings = market.load_index()   # builtin catalog + remote index (index overrides builtin on id collision)
+market.install("feishu")                  # builtin pack: install directly
+market.install("demo_skill")              # skill_package: git/local source → local install dir
+market.list_installed()
+```
+
+Key properties:
+
+- **Declarative packs** — a pack is pure data (transport/command/url + credential providers + tool specs with risk levels); the external MCP server command defaults are overridable
+- **Credentials stay local** — providers resolved from `DeskRuntime.get_api_key` (Fernet-encrypted) at connect time; stdio → env vars, HTTP → `Authorization` header
+- **Approval gating** — `HIGH` risk tools raise `PermissionError` until `approve_tool()`; all read-only tools are `LOW` risk by convention (enforced by tests)
+- **INLINE-only** — connector tools run INLINE (the external MCP server is already an isolated process); `sandbox_default_mode=process` blocks installation
+- **First-party packs**: Feishu (official `lark-mcp`), DingTalk, WeCom, Mail (IMAP/SMTP), Calendar (CalDAV), Notion (official `@notionhq/notion-mcp-server`)
 
 ## 🔧 Configuration (one-click panel)
 
@@ -248,6 +301,9 @@ fusion-plugins-ecosystem/
 | `sandbox_default_mode` | Default sandbox mode | `inline` / `process` |
 | `max_token_records` | Max token meter records | pruning threshold |
 | `token_persist_path` | Token persistence file | `None` = in-memory |
+| `enable_connector_framework` | External MCP connector install/bridge | install raises `RuntimeError` |
+| `connector_persist_path` | Connector registry persistence file | `None` = in-memory |
+| `connector_marketplace_index` | Marketplace index (local JSON path or HTTPS URL) | `None` = builtin catalog only |
 | `vram_limit_mb` | Total vRAM budget (synced to `DeskRuntime.vram_total_mb`) | `0` = unlimited |
 | `max_concurrent_plugins` | Inline execution concurrency gate (`asyncio.Semaphore`) | unbounded |
 | `log_level` | Root logger level (applied on `MCPServer` init) | `INFO` |
@@ -365,7 +421,7 @@ and `{pong: true}`.
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **536 passed**.
+Latest run: **584 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -387,6 +443,9 @@ Latest run: **536 passed**.
 | `test_cluster_bridge.py` | 9 | multi-node distributed state: cross-node plugin enable/disable + vRAM visibility, stale-node failover evict (clears state/vRAM), heartbeat keeps-alive, cluster_bridge singleton sync, lifecycle enable/disable cluster sync, DeskRuntime cluster query methods, cluster-disabled no-op degradation |
 | `test_soak.py` | 8 | long-run stability: token-meter cap holds under 50k records, log buffer deque cap, session _MAX_SESSIONS LRU cap + calls-list bound, counter 100k monotonic inc no-drift (labeled buckets), lifecycle 500 sustained execute no-residual, token-meter 8k record + query aggregate consistent |
 | `test_logging_setup.py` | 10 | structured JSON logging: JsonFormatter output + correlation_id propagation (set/reset/contextvar), configure idempotent + extras + exc_info + non-serializable fallback (P3-6) |
+| `test_connector.py` | 25 | connector framework: pack validation/roundtrip, registry bridge + MCP export, HIGH_RISK approval gate, persistence roundtrip, credential resolution, real stdio MCP client subprocess round-trip, local HTTP JSON-RPC round-trip |
+| `test_connector_packs.py` | 10 | first-party packs structural validation, unique ids/tool names, schema shape, risk-level conventions (read-only=LOW, write=MEDIUM/HIGH), Feishu acceptance shape, lifecycle load of bridged tools |
+| `test_marketplace.py` | 13 | builtin catalog, JSON index load + same-id override, HTTPS-only constraint, install builtin/local-source/skill-package, uninstall, list_installed, config wiring |
 
 ## ⚠️ Technical constraints
 

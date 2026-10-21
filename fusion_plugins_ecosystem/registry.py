@@ -47,6 +47,7 @@ class PluginCategory(str, Enum):
     FILE_INDEX = "file_index"  # 本地文件检索
     QUANTIZATION = "quantization"  # 混合量化工具
     VISUAL_BACKEND = "visual_backend"  # Claude 视觉/图像生成后端
+    CONNECTOR = "connector"  # 外部 MCP 连接器工具（connector pack 桥接）
     CUSTOM = "custom"
 
 

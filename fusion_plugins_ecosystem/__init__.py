@@ -20,6 +20,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "PluginRegistry": "fusion_plugins_ecosystem.registry",
     "PluginManifest": "fusion_plugins_ecosystem.registry",
     "PluginCapability": "fusion_plugins_ecosystem.registry",
+    "PluginCategory": "fusion_plugins_ecosystem.registry",
     "PluginParam": "fusion_plugins_ecosystem.registry",
     # 生命周期
     "PluginLifecycle": "fusion_plugins_ecosystem.lifecycle",
@@ -51,6 +52,14 @@ _LAZY_IMPORTS: dict[str, str] = {
     "MetricsRegistry": "fusion_plugins_ecosystem.metrics",
     # 集群分布式状态桥接（企业级多节点）
     "cluster_bridge": "fusion_plugins_ecosystem.cluster_bridge",
+    # 外部 MCP 连接器框架 + 市场
+    "ConnectorRegistry": "fusion_plugins_ecosystem.connector",
+    "ConnectorPack": "fusion_plugins_ecosystem.connector",
+    "ConnectorToolSpec": "fusion_plugins_ecosystem.connector",
+    "ExternalMCPClient": "fusion_plugins_ecosystem.connector",
+    "RiskLevel": "fusion_plugins_ecosystem.connector",
+    "Marketplace": "fusion_plugins_ecosystem.marketplace",
+    "MarketplaceEntry": "fusion_plugins_ecosystem.marketplace",
     # 配置
     "EcosystemConfig": "fusion_plugins_ecosystem.config",
     # Schema

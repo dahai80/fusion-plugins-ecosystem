@@ -76,6 +76,14 @@ class EcosystemConfig:
     # Token 记录持久化路径（None=纯内存）
     token_persist_path: str | None = None
 
+    # ── 连接器框架 ──
+    # 启用外部 MCP 连接器框架（connector pack 安装/工具桥接）
+    enable_connector_framework: bool = True
+    # 连接器注册表持久化路径（None=纯内存）
+    connector_persist_path: str | None = None
+    # 连接器市场索引（本地 JSON 路径或 HTTPS URL，None=仅内置目录）
+    connector_marketplace_index: str | None = None
+
     # ── 变更回调 ──
     _observers: list[Callable[[str, Any, Any], None]] = field(
         default_factory=list, repr=False
@@ -103,6 +111,9 @@ class EcosystemConfig:
             "max_concurrent_plugins": self.max_concurrent_plugins,
             "max_token_records": self.max_token_records,
             "token_persist_path": self.token_persist_path,
+            "enable_connector_framework": self.enable_connector_framework,
+            "connector_persist_path": self.connector_persist_path,
+            "connector_marketplace_index": self.connector_marketplace_index,
         }
 
     @classmethod
@@ -175,6 +186,9 @@ class EcosystemConfig:
             max_concurrent_plugins=_safe_int("max_concurrent_plugins", 1, 1024),
             max_token_records=_safe_int("max_token_records", 100),
             token_persist_path=merged.get("token_persist_path"),
+            enable_connector_framework=_safe_bool("enable_connector_framework"),
+            connector_persist_path=merged.get("connector_persist_path"),
+            connector_marketplace_index=merged.get("connector_marketplace_index"),
         )
 
         for w in warnings:
