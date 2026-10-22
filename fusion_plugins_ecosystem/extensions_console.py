@@ -224,7 +224,9 @@ class _McpToolBound:
         self.tool = tool
 
     async def __call__(self, desk: Any, params: dict[str, Any]) -> Any:
-        result = await self.console.call_mcp_tool(self.server_id, self.tool, dict(params or {}))
+        result = await self.console.call_mcp_tool(
+            self.server_id, self.tool, dict(params or {})
+        )
         if not result.get("ok"):
             raise RuntimeError(result.get("error") or "MCP tools/call failed")
         return result.get("result") or {}
@@ -373,7 +375,9 @@ class ExtensionsConsole:
             "write_channels_review": writes,
         }
 
-    def save_credentials(self, credential_ref: str, credentials: dict[str, Any]) -> dict[str, Any]:
+    def save_credentials(
+        self, credential_ref: str, credentials: dict[str, Any]
+    ) -> dict[str, Any]:
         if not credential_ref or not isinstance(credentials, dict):
             return {"saved": False, "error": "missing credential_ref or credentials"}
         stored = json.dumps(credentials, ensure_ascii=False)
@@ -382,21 +386,28 @@ class ExtensionsConsole:
         # 控制台本地加密保险库（同 _encrypt_key 派生密钥）。
         if hasattr(self.desk, "set_api_key"):
             self.desk.set_api_key(credential_ref, stored)
-            if hasattr(self.desk, "get_api_key") and                     self.desk.get_api_key(credential_ref) == stored:
-                logger.info("extensions_console: 凭据 %s 已写入 Desk 加密存储",
-                            credential_ref)
+            if (
+                hasattr(self.desk, "get_api_key")
+                and self.desk.get_api_key(credential_ref) == stored
+            ):
+                logger.info(
+                    "extensions_console: 凭据 %s 已写入 Desk 加密存储", credential_ref
+                )
                 return {"saved": True, "credential_ref": credential_ref}
         try:
             from fusion_plugins_ecosystem.desk_runtime import _encrypt_key
         except ImportError:
-            return {"saved": False,
-                    "error": "vault unavailable (no Desk config center, "
-                             "no local encryption)"}
+            return {
+                "saved": False,
+                "error": "vault unavailable (no Desk config center, "
+                "no local encryption)",
+            }
         vault = _local_vault_read()
         vault[credential_ref] = _encrypt_key(stored)
         _local_vault_write(vault)
-        logger.info("extensions_console: 凭据 %s 已写入控制台本地加密保险库",
-                    credential_ref)
+        logger.info(
+            "extensions_console: 凭据 %s 已写入控制台本地加密保险库", credential_ref
+        )
         return {"saved": True, "credential_ref": credential_ref}
 
     async def enable_connector(self, connector_id: str) -> dict[str, Any]:
@@ -434,8 +445,11 @@ class ExtensionsConsole:
         """一致性 harness：静态校验 + 保险库凭据实测首个读操作。"""
         doc = get_connector(connector_id)
         if not doc:
-            return {"connector_id": connector_id, "problems": ["connector not found"],
-                    "conformant": False}
+            return {
+                "connector_id": connector_id,
+                "problems": ["connector not found"],
+                "conformant": False,
+            }
         problems = validate_connector(doc)
         reads = read_channels(doc)
         if not reads:
@@ -481,7 +495,9 @@ class ExtensionsConsole:
                     entry_point=_RestOpBound(cid, ch["id"], op),
                     default_mounted=False,
                     sandbox_mode=SandboxMode.INLINE,
-                    mcp_annotations=MCPAnnotations(readOnlyHint=True, openWorldHint=True),
+                    mcp_annotations=MCPAnnotations(
+                        readOnlyHint=True, openWorldHint=True
+                    ),
                 )
             )
             added.append(f"connector.{cid}.{ch['id']}")
@@ -519,7 +535,7 @@ class ExtensionsConsole:
     def _base_of(self, plugin_id: str) -> str:
         for prefix in ("connector__", "mcp__"):
             if plugin_id.startswith(prefix):
-                parts = plugin_id[len(prefix):].split("__", 1)
+                parts = plugin_id[len(prefix) :].split("__", 1)
                 if len(parts) == 2:
                     return parts[0]
         return plugin_id
@@ -527,7 +543,7 @@ class ExtensionsConsole:
     def _node_of(self, plugin_id: str) -> str | None:
         for prefix in ("connector__", "mcp__"):
             if plugin_id.startswith(prefix):
-                parts = plugin_id[len(prefix):].split("__", 1)
+                parts = plugin_id[len(prefix) :].split("__", 1)
                 if len(parts) == 2:
                     return parts[1]
         return None
@@ -569,8 +585,7 @@ class ExtensionsConsole:
 
     async def tick_nodes(self, plugin_base: str, nodes: list[str]) -> dict[str, Any]:
         """Apply ticks：勾选集合对账 —— 勾选的 enable，未勾的 disable。"""
-        target = [m for m in self.registry.list()
-                  if self._base_of(m.id) == plugin_base]
+        target = [m for m in self.registry.list() if self._base_of(m.id) == plugin_base]
         if not target:
             return {"ticked": [], "errors": [f"plugin '{plugin_base}' not found"]}
         wanted = set(nodes)
@@ -616,7 +631,9 @@ class ExtensionsConsole:
         custom = _extensions_dir() / _PLUGINS_KEY / f"{plugin_base}.json"
         if custom.exists():
             custom.unlink()
-        self.desk.log(plugin_base, "INFO", f"插件 {plugin_base} 已移除（{len(removed)} 能力）")
+        self.desk.log(
+            plugin_base, "INFO", f"插件 {plugin_base} 已移除（{len(removed)} 能力）"
+        )
         return {"removed": bool(removed), "capabilities_removed": removed}
 
     def install_plugin(self, source: str) -> dict[str, Any]:
@@ -683,44 +700,65 @@ class ExtensionsConsole:
         if not server_id or "/" in server_id or server_id.startswith("."):
             return {"registered": False, "error": "missing/invalid server id"}
         if not (url.startswith("http://") or url.startswith("https://")):
-            return {"registered": False,
-                    "error": "url must be http(s) — no stdio from the console"}
+            return {
+                "registered": False,
+                "error": "url must be http(s) — no stdio from the console",
+            }
         try:
             auth_headers = _vault_headers(self.desk, credential_ref)
         except RuntimeError as exc:
             return {"registered": False, "error": str(exc)}
         try:
-            _mcp_rpc(url, "initialize", {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "fusion-plugins-ecosystem-console",
-                               "version": "1.0"},
-            }, headers=auth_headers)
+            _mcp_rpc(
+                url,
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "fusion-plugins-ecosystem-console",
+                        "version": "1.0",
+                    },
+                },
+                headers=auth_headers,
+            )
             tools = _mcp_rpc(url, "tools/list", headers=auth_headers).get("tools") or []
         except Exception as exc:  # noqa: BLE001 — 诚实 probe envelope
-            return {"registered": False,
-                    "error": f"probe failed: {type(exc).__name__}: {exc}"[:300]}
+            return {
+                "registered": False,
+                "error": f"probe failed: {type(exc).__name__}: {exc}"[:300],
+            }
         data = self._read_json(_MCP_KEY, {"servers": [], "ticks": {}})
         servers = [s for s in data.get("servers") or [] if s.get("id") != server_id]
-        servers.append({
-            "id": server_id,
-            "url": url,
-            "credential_ref": credential_ref,
-            "tools": [{"name": t.get("name"),
-                       "description": str(t.get("description") or "")}
-                      for t in tools],
-            "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        })
+        servers.append(
+            {
+                "id": server_id,
+                "url": url,
+                "credential_ref": credential_ref,
+                "tools": [
+                    {
+                        "name": t.get("name"),
+                        "description": str(t.get("description") or ""),
+                    }
+                    for t in tools
+                ],
+                "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+        )
         data["servers"] = servers
         self._write_json(_MCP_KEY, data)
         self._persist_mcp_ticks(server_id, [])
-        return {"registered": True, "server": server_id,
-                "candidate_tools": [t["name"] for t in servers[-1]["tools"]]}
+        return {
+            "registered": True,
+            "server": server_id,
+            "candidate_tools": [t["name"] for t in servers[-1]["tools"]],
+        }
 
     def remove_mcp_server(self, server_id: str) -> dict[str, Any]:
         data = self._read_json(_MCP_KEY, {"servers": [], "ticks": {}})
-        data["servers"] = [s for s in data.get("servers") or []
-                           if s.get("id") != server_id]
+        data["servers"] = [
+            s for s in data.get("servers") or [] if s.get("id") != server_id
+        ]
         ticks = data.get("ticks") or {}
         ticks.pop(server_id, None)
         data["ticks"] = ticks
@@ -731,13 +769,13 @@ class ExtensionsConsole:
             if m.id.startswith(prefix):
                 self.registry.unregister(m.id)
                 removed.append(m.id)
-        return {"removed": True, "server": server_id,
-                "capabilities_removed": removed}
+        return {"removed": True, "server": server_id, "capabilities_removed": removed}
 
     async def tick_mcp_tools(self, server_id: str, tools: list[str]) -> dict[str, Any]:
         """tick 工具 → 桥接为 mcp__<server>__<tool> 能力插件（重 tick 全量对账）。"""
-        server = next((s for s in self.list_mcp_servers()
-                       if s.get("id") == server_id), None)
+        server = next(
+            (s for s in self.list_mcp_servers() if s.get("id") == server_id), None
+        )
         if not server:
             return {"ticked": [], "errors": [f"server '{server_id}' unknown"]}
         known = {t.get("name"): t for t in server.get("tools", [])}
@@ -750,8 +788,9 @@ class ExtensionsConsole:
         bridged = await self._bridge_mcp_tools(server, valid)
         ticked.extend(bridged)
         if errors:
-            logger.warning("extensions_console: MCP tick 部分失败 %s: %s",
-                           server_id, errors)
+            logger.warning(
+                "extensions_console: MCP tick 部分失败 %s: %s", server_id, errors
+            )
         return {"ticked": ticked, "errors": errors}
 
     def _persist_mcp_ticks(self, server_id: str, tools: list[str]) -> None:
@@ -765,7 +804,9 @@ class ExtensionsConsole:
         data["ticks"] = ticks
         self._write_json(_MCP_KEY, data)
 
-    async def _bridge_mcp_tools(self, server: dict[str, Any], tools: list[str]) -> list[str]:
+    async def _bridge_mcp_tools(
+        self, server: dict[str, Any], tools: list[str]
+    ) -> list[str]:
         from fusion_plugins_ecosystem.connector import _schema_to_params
         from fusion_plugins_ecosystem.registry import (
             PluginCapability,
@@ -803,36 +844,45 @@ class ExtensionsConsole:
                     default_mounted=False,
                     sandbox_mode=SandboxMode.INLINE,
                     mcp_annotations=MCPAnnotations(
-                        readOnlyHint=read_only, openWorldHint=True),
+                        readOnlyHint=read_only, openWorldHint=True
+                    ),
                 )
             )
             bridged.append(f"mcp.{sid}.{name}")
         await self._enable_all(prefix)
-        logger.info("extensions_console: MCP server %s 桥接 %d 个工具", sid, len(bridged))
+        logger.info(
+            "extensions_console: MCP server %s 桥接 %d 个工具", sid, len(bridged)
+        )
         return bridged
 
     async def call_mcp_tool(
         self, server_id: str, tool: str, args: dict[str, Any]
     ) -> dict[str, Any]:
         """门侧执行：tools/call 派发到注册 URL，认证头服务端解析。"""
-        server = next((s for s in self.list_mcp_servers()
-                       if s.get("id") == server_id), None)
+        server = next(
+            (s for s in self.list_mcp_servers() if s.get("id") == server_id), None
+        )
         if not server:
             return {"ok": False, "error": f"MCP server '{server_id}' not registered"}
         try:
             auth_headers = _vault_headers(
-                self.desk, str(server.get("credential_ref") or ""))
+                self.desk, str(server.get("credential_ref") or "")
+            )
         except RuntimeError as exc:
             return {"ok": False, "error": str(exc)}
         try:
             result = await asyncio.to_thread(
-                _mcp_rpc, server["url"], "tools/call",
+                _mcp_rpc,
+                server["url"],
+                "tools/call",
                 {"name": tool, "arguments": args or {}},
                 headers=auth_headers,
             )
         except Exception as exc:  # noqa: BLE001 — 诚实 envelope
-            return {"ok": False,
-                    "error": f"tools/call failed: {type(exc).__name__}: {exc}"[:300]}
+            return {
+                "ok": False,
+                "error": f"tools/call failed: {type(exc).__name__}: {exc}"[:300],
+            }
         return {"ok": True, "result": result}
 
     # ── 启动 resync（磁盘事实重建运行时桥接）──
@@ -858,10 +908,12 @@ class ExtensionsConsole:
                 try:
                     self.registry.register(
                         _manifest_from_decl(
-                            json.loads(path.read_text(encoding="utf-8")))
+                            json.loads(path.read_text(encoding="utf-8"))
+                        )
                     )
                 except (ValueError, KeyError, TypeError) as exc:
-                    logger.warning("extensions_console: 跳过损坏插件清单 %s: %s",
-                                   path.name, exc)
+                    logger.warning(
+                        "extensions_console: 跳过损坏插件清单 %s: %s", path.name, exc
+                    )
         logger.info("extensions_console: resync 重建 %d 个能力", len(relisted))
         return {"relisted": relisted}

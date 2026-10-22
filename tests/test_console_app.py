@@ -42,17 +42,34 @@ class _McpHandler(BaseHTTPRequestHandler):
         req = json.loads(self.rfile.read(length) or b"{}")
         method = req.get("method")
         if method == "initialize":
-            self._json({"jsonrpc": "2.0", "id": req["id"],
-                        "result": {"serverInfo": {"name": "mock"}}})
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": req["id"],
+                    "result": {"serverInfo": {"name": "mock"}},
+                }
+            )
         elif method == "tools/list":
-            self._json({"jsonrpc": "2.0", "id": req["id"],
-                        "result": {"tools": [
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": req["id"],
+                    "result": {
+                        "tools": [
                             {"name": "t1", "description": "tool one"},
                             {"name": "t2", "description": "tool two"},
-                        ]}})
+                        ]
+                    },
+                }
+            )
         else:
-            self._json({"jsonrpc": "2.0", "id": req.get("id"),
-                        "error": {"code": -32601, "message": "no method"}})
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": req.get("id"),
+                    "error": {"code": -32601, "message": "no method"},
+                }
+            )
 
 
 @pytest.fixture()
@@ -69,8 +86,7 @@ def client():
     desk = FakeDesk()
     registry = PluginRegistry(desk)
     lifecycle = PluginLifecycle(registry)
-    return TestClient(create_app(desk=desk, registry=registry,
-                                 lifecycle=lifecycle))
+    return TestClient(create_app(desk=desk, registry=registry, lifecycle=lifecycle))
 
 
 CONN_DOC = {
@@ -80,8 +96,11 @@ CONN_DOC = {
     "credential_ref": "erp-json",
     "auth": {"type": "bearer", "credential_fields": ["api_key"]},
     "operations": {
-        "erp.stock.fetch": {"method": "GET", "path": "/stock",
-                            "response": {"rows": "$.rows"}},
+        "erp.stock.fetch": {
+            "method": "GET",
+            "path": "/stock",
+            "response": {"rows": "$.rows"},
+        },
         "erp.order.push": {"method": "POST", "path": "/orders"},
     },
 }
@@ -97,45 +116,42 @@ def test_whoami_and_capabilities(client):
 def test_connector_full_flow(client):
     out = client.post("/api/extensions/connectors", json=CONN_DOC).json()
     assert out["installed"] is True
-    bad = client.post("/api/extensions/connectors",
-                      json={"id": "x"}).json()
+    bad = client.post("/api/extensions/connectors", json={"id": "x"}).json()
     assert bad["installed"] is False
     listing = client.get("/api/extensions/connectors").json()
     assert listing["connectors"][0]["id"] == "erp-json"
 
-    creds = client.put("/api/adapters/erp-json",
-                       json={"credentials": {"api_key": "k"}})
+    creds = client.put("/api/adapters/erp-json", json={"credentials": {"api_key": "k"}})
     assert creds.json() == {"saved": True, "credential_ref": "erp-json"}
     bad_creds = client.put("/api/adapters/erp-json", json={"nope": 1})
     assert bad_creds.status_code == 422
 
-    enable = client.post(
-        "/api/extensions/connectors/erp-json/enable").json()
+    enable = client.post("/api/extensions/connectors/erp-json/enable").json()
     assert enable["capabilities"] == ["connector.erp-json.erp.stock.fetch"]
     caps = client.get("/api/capabilities").json()["capabilities"]
     assert caps[0]["source"] == "connector"
 
-    disable = client.post(
-        "/api/extensions/connectors/erp-json/disable").json()
-    assert disable["capabilities_disabled"] == [
-        "connector__erp-json__erp.stock.fetch"]
+    disable = client.post("/api/extensions/connectors/erp-json/disable").json()
+    assert disable["capabilities_disabled"] == ["connector__erp-json__erp.stock.fetch"]
 
-    harness = client.post(
-        "/api/extensions/connectors/erp-json/harness").json()
+    harness = client.post("/api/extensions/connectors/erp-json/harness").json()
     assert harness["conformant"] is False
 
 
 def test_mcp_flow(client, mcp_server):
-    out = client.post("/api/extensions/mcp", json={
-        "id": "erp-mcp", "url": mcp_server}).json()
+    out = client.post(
+        "/api/extensions/mcp", json={"id": "erp-mcp", "url": mcp_server}
+    ).json()
     assert out["registered"] is True
     assert out["candidate_tools"] == ["t1", "t2"]
-    probe_fail = client.post("/api/extensions/mcp", json={
-        "id": "dead", "url": "http://127.0.0.1:1/mcp"}).json()
+    probe_fail = client.post(
+        "/api/extensions/mcp", json={"id": "dead", "url": "http://127.0.0.1:1/mcp"}
+    ).json()
     assert probe_fail["registered"] is False
 
-    tick = client.post("/api/extensions/mcp/erp-mcp/tick",
-                       json={"tools": ["t1"]}).json()
+    tick = client.post(
+        "/api/extensions/mcp/erp-mcp/tick", json={"tools": ["t1"]}
+    ).json()
     assert tick["ticked"] == ["mcp.erp-mcp.t1"]
     servers = client.get("/api/extensions/mcp").json()["servers"]
     assert servers[0]["ticked"] == ["t1"]
@@ -147,8 +163,7 @@ def test_mcp_flow(client, mcp_server):
 def test_plugins_flow(client):
     plugins = client.get("/api/extensions/plugins").json()
     assert plugins == {"plugins": [], "require_signing": False}
-    out = client.post("/api/extensions/plugins",
-                      json={"source": "/nonexistent"}).json()
+    out = client.post("/api/extensions/plugins", json={"source": "/nonexistent"}).json()
     assert out["installed"] is False
 
 

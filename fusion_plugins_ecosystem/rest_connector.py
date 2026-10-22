@@ -105,8 +105,7 @@ def list_connectors() -> list[dict[str, Any]]:
 
 def connector_report() -> list[dict[str, Any]]:
     return [
-        {**entry, "problems": validate_connector(
-            get_connector(entry["id"]) or {})}
+        {**entry, "problems": validate_connector(get_connector(entry["id"]) or {})}
         for entry in list_connectors()
     ]
 
@@ -158,8 +157,7 @@ def read_channels(doc: dict[str, Any]) -> list[dict[str, Any]]:
                 {
                     "id": op_name,
                     "title": op_name,
-                    "description": f"{op_name} via connector "
-                    f"{doc.get('id', '?')}",
+                    "description": f"{op_name} via connector {doc.get('id', '?')}",
                 }
             )
     return channels
@@ -211,9 +209,7 @@ def _apply_auth(
     if auth_type == "bearer":
         headers["Authorization"] = f"Bearer {credentials[cred_fields[0]]}"
     elif auth_type == "api_key_header":
-        headers[str(auth.get("header", "X-API-Key"))] = str(
-            credentials[cred_fields[0]]
-        )
+        headers[str(auth.get("header", "X-API-Key"))] = str(credentials[cred_fields[0]])
     return None
 
 
@@ -296,7 +292,9 @@ async def _exec_rest(
     }
     body = None if method == "GET" else (payload or {})
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.request(method, url, headers=headers, params=params, json=body)
+        resp = await client.request(
+            method, url, headers=headers, params=params, json=body
+        )
     if resp.status_code >= 400:
         error_code = f"http_{resp.status_code}"
         reason = resp.text[:200]
@@ -319,7 +317,12 @@ async def _exec_rest(
         value = _extract(data, dotted)
         if value is not None:
             extracted[key] = value
-    return {"ok": True, "status": resp.status_code, "data": data, "extracted": extracted}
+    return {
+        "ok": True,
+        "status": resp.status_code,
+        "data": data,
+        "extracted": extracted,
+    }
 
 
 async def _exec_webhook(

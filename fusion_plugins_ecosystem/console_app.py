@@ -62,8 +62,7 @@ def create_app(
             "user": "local",
             "role": "admin",
             "menus": [
-                {"id": "extensions", "label": "Extensions",
-                 "href": "extensions.html"},
+                {"id": "extensions", "label": "Extensions", "href": "extensions.html"},
             ],
         }
 
@@ -96,17 +95,17 @@ def create_app(
     # ── 凭据保险库（Desk Fernet 存储）──
 
     @app.put("/api/adapters/{credential_ref}")
-    async def adapters_put(
-        credential_ref: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def adapters_put(credential_ref: str, body: dict[str, Any]) -> dict[str, Any]:
         creds = body.get("credentials")
         if not isinstance(creds, dict):
-            raise HTTPException(status_code=422,
-                                detail="body.credentials must be an object")
+            raise HTTPException(
+                status_code=422, detail="body.credentials must be an object"
+            )
         out = console.save_credentials(credential_ref, creds)
         if not out.get("saved"):
-            raise HTTPException(status_code=400,
-                                detail=out.get("error") or "credential save failed")
+            raise HTTPException(
+                status_code=400, detail=out.get("error") or "credential save failed"
+            )
         return out
 
     # ── plugins ──
@@ -120,9 +119,7 @@ def create_app(
         return console.install_plugin(str(body.get("source") or ""))
 
     @app.post("/api/extensions/plugins/{plugin_name}/tick")
-    async def plugins_tick(
-        plugin_name: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def plugins_tick(plugin_name: str, body: dict[str, Any]) -> dict[str, Any]:
         return await console.tick_nodes(
             plugin_name, [str(n) for n in (body.get("nodes") or [])]
         )
@@ -146,9 +143,7 @@ def create_app(
         )
 
     @app.post("/api/extensions/mcp/{server_id}/tick")
-    async def mcp_tick(
-        server_id: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def mcp_tick(server_id: str, body: dict[str, Any]) -> dict[str, Any]:
         return await console.tick_mcp_tools(
             server_id, [str(t) for t in (body.get("tools") or [])]
         )
@@ -173,8 +168,9 @@ def create_app(
 
         @app.get("/shell.js")
         async def shell_js() -> FileResponse:
-            return FileResponse(WEB_DIR / "shell.js",
-                                media_type="application/javascript")
+            return FileResponse(
+                WEB_DIR / "shell.js", media_type="application/javascript"
+            )
 
         @app.get("/extensions.html")
         async def extensions_html() -> FileResponse:
@@ -193,8 +189,9 @@ def main() -> None:
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--log-level", default="INFO",
-                        choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument(
+        "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
+    )
     args = parser.parse_args()
 
     logging.basicConfig(

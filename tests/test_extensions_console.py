@@ -86,13 +86,22 @@ def server():
 
 # ── mock MCP server（streamable-http JSON-RPC）──
 
+
 class _McpHandler(BaseHTTPRequestHandler):
-    server_state = {"tools": [
-        {"name": "erp.query", "description": "query erp",
-         "input_schema": {"type": "object", "properties": {"q": {"type": "string"}},
-                          "required": ["q"]}},
-        {"name": "erp.push", "description": "push data"},
-    ]}
+    server_state = {
+        "tools": [
+            {
+                "name": "erp.query",
+                "description": "query erp",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"],
+                },
+            },
+            {"name": "erp.push", "description": "push data"},
+        ]
+    }
 
     def log_message(self, *a):
         pass
@@ -111,25 +120,57 @@ class _McpHandler(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") == "Bearer good":
             method = req.get("method")
             if method == "initialize":
-                self._json({"jsonrpc": "2.0", "id": req["id"],
-                            "result": {"serverInfo": {"name": "mock-mcp"}}})
+                self._json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req["id"],
+                        "result": {"serverInfo": {"name": "mock-mcp"}},
+                    }
+                )
             elif method == "tools/list":
-                self._json({"jsonrpc": "2.0", "id": req["id"],
-                            "result": {"tools": self.server_state["tools"]}})
+                self._json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req["id"],
+                        "result": {"tools": self.server_state["tools"]},
+                    }
+                )
             elif method == "tools/call":
                 if req["params"]["name"] == "erp.query":
-                    self._json({"jsonrpc": "2.0", "id": req["id"],
-                                "result": {"content": [{"type": "text", "text": "42"}],
-                                           "isError": False}})
+                    self._json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": req["id"],
+                            "result": {
+                                "content": [{"type": "text", "text": "42"}],
+                                "isError": False,
+                            },
+                        }
+                    )
                 else:
-                    self._json({"jsonrpc": "2.0", "id": req["id"],
-                                "result": {"content": [], "isError": True}})
+                    self._json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": req["id"],
+                            "result": {"content": [], "isError": True},
+                        }
+                    )
             else:
-                self._json({"jsonrpc": "2.0", "id": req["id"],
-                            "error": {"code": -32601, "message": "no method"}})
+                self._json(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": req["id"],
+                        "error": {"code": -32601, "message": "no method"},
+                    }
+                )
         else:
-            self._json({"jsonrpc": "2.0", "id": req.get("id"),
-                        "error": {"code": -32001, "message": "unauthorized"}})
+            self._json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": req.get("id"),
+                    "error": {"code": -32001, "message": "unauthorized"},
+                }
+            )
 
 
 @pytest.fixture()
@@ -157,14 +198,18 @@ def _conn_doc(base_url="https://erp.example.com/api"):
         "credential_ref": "erp-json",
         "auth": {"type": "bearer", "credential_fields": ["token"]},
         "operations": {
-            "erp.stock.fetch": {"method": "GET", "path": "/stock",
-                                "response": {"rows": "$.rows"}},
+            "erp.stock.fetch": {
+                "method": "GET",
+                "path": "/stock",
+                "response": {"rows": "$.rows"},
+            },
             "erp.order.push": {"method": "POST", "path": "/orders"},
         },
     }
 
 
 # ── 连接器 ──
+
 
 def test_install_connector_invalid(console):
     out = console.install_connector({"id": "x"})
@@ -203,7 +248,9 @@ async def test_enable_disable_connector(console):
 
 async def test_enable_missing_connector(console):
     assert await console.enable_connector("ghost") == {
-        "enabled": False, "error": "connector not found"}
+        "enabled": False,
+        "error": "connector not found",
+    }
 
 
 def test_save_credentials(console):
@@ -246,6 +293,7 @@ def test_save_credentials_local_vault_fallback(tmp_path):
 
 # ── harness ──
 
+
 async def test_harness_static_problems(console):
     console.install_connector({"id": "x"})
     out = await console.harness("x")
@@ -262,19 +310,20 @@ async def test_harness_live_check_no_creds(console, server):
     console.install_connector(_conn_doc(server))
     out = await console.harness("erp-json")
     assert out["conformant"] is False
-    assert any("missing credential" in p or "live check failed" in p
-               for p in out["problems"])
+    assert any(
+        "missing credential" in p or "live check failed" in p for p in out["problems"]
+    )
 
 
 async def test_harness_live_check_ok(console, server):
     console.install_connector(_conn_doc(server))
     console.save_credentials("erp-json", {"token": "tok-1"})
     out = await console.harness("erp-json")
-    assert out == {"connector_id": "erp-json", "problems": [],
-                   "conformant": True}
+    assert out == {"connector_id": "erp-json", "problems": [], "conformant": True}
 
 
 # ── 保险库头解析 ──
+
 
 def test_vault_headers_shapes():
     desk = FakeDesk()
@@ -292,6 +341,7 @@ def test_vault_headers_shapes():
 
 # ── REST 读操作执行（经桥接插件）──
 
+
 async def test_bridged_rest_op_execution(console, server):
     console.install_connector(_conn_doc(server))
     console.save_credentials("erp-json", {"token": "tok-1"})
@@ -304,13 +354,13 @@ async def test_bridged_rest_op_execution(console, server):
 
 # ── MCP intake ──
 
+
 def test_register_mcp_bad_inputs(console):
     assert console.register_mcp_server("", "http://x")["registered"] is False
     assert console.register_mcp_server("a/b", "http://x")["registered"] is False
     out = console.register_mcp_server("ok", "stdio://x")
     assert "url must be http(s)" in out["error"]
-    out = console.register_mcp_server("ok", "http://127.0.0.1:1/mcp",
-                                      "no-such-cred")
+    out = console.register_mcp_server("ok", "http://127.0.0.1:1/mcp", "no-such-cred")
     assert "no vault credentials" in out["error"]
 
 
@@ -371,6 +421,7 @@ async def test_remove_mcp_server(console, mcp_server):
 
 # ── 插件 tick / remove / install ──
 
+
 async def test_list_plugins_groups(console, mcp_server):
     console.save_credentials("mcp-cred", {"api_key": "good"})
     console.register_mcp_server("erp-mcp", mcp_server, "mcp-cred")
@@ -410,12 +461,20 @@ async def test_remove_plugin(console, mcp_server):
 async def test_install_plugin_declarative(console, tmp_path):
     pdir = tmp_path / "myplugin"
     pdir.mkdir()
-    (pdir / "plugin.json").write_text(json.dumps({
-        "id": "myplugin", "name": "My Plugin", "version": "1.2.0",
-        "description": "demo", "category": "custom",
-        "capabilities": ["mcp_tool"],
-        "entry_point": "json:dump",
-    }), encoding="utf-8")
+    (pdir / "plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "myplugin",
+                "name": "My Plugin",
+                "version": "1.2.0",
+                "description": "demo",
+                "category": "custom",
+                "capabilities": ["mcp_tool"],
+                "entry_point": "json:dump",
+            }
+        ),
+        encoding="utf-8",
+    )
     out = console.install_plugin(str(pdir))
     assert out["installed"] is True
     assert out["plugin"] == "myplugin"
@@ -441,6 +500,7 @@ def test_install_plugin_bad_source(console, tmp_path):
 
 # ── resync ──
 
+
 async def test_resync_rebuilds(console, mcp_server):
     console.save_credentials("mcp-cred", {"api_key": "good"})
     console.install_connector(_conn_doc())
@@ -465,6 +525,7 @@ async def test_resync_rebuilds(console, mcp_server):
 
 
 # ── spine 派生 ──
+
 
 async def test_spine_counts_by_source(console, mcp_server):
     console.save_credentials("mcp-cred", {"api_key": "good"})
