@@ -4,7 +4,9 @@
 
 const shell = {
   async init() {
-    const me = await fetch("/api/whoami").then(r => r.json());
+    // shell 模块化 (#30): 经 /shell/<id>/ 代理时 API 走同前缀
+    const BASE = location.pathname.replace(/[^/]*$/, "");
+    const me = await fetch(BASE + "api/whoami").then(r => r.json());
     const role = me.role || "admin";
     const page = document.body.dataset.page || "";
     const menus = Array.isArray(me.menus) && me.menus.length ? me.menus : [];

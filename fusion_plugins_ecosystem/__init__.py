@@ -10,7 +10,7 @@ Lazy Import 机制（与 fusion-cowork 一致）：
 
 from __future__ import annotations
 
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 __app_name__ = "Fusion-Plugins-Ecosystem"
 
 # ── Lazy Import 注册表 ──
@@ -61,6 +61,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     # Extensions 控制台（issue #30 E3：声明式连接器 + MCP intake + 插件 tick）
     "ExtensionsConsole": "fusion_plugins_ecosystem.extensions_console",
     "rest_connector": "fusion_plugins_ecosystem.rest_connector",
+    # shell 模块注册（issue #30 验收补充：fusion-gateway 侧边栏入口）
+    "shell_registry": "fusion_plugins_ecosystem.shell_registry",
     "Marketplace": "fusion_plugins_ecosystem.marketplace",
     "MarketplaceEntry": "fusion_plugins_ecosystem.marketplace",
     # 配置

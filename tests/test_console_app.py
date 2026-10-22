@@ -23,6 +23,12 @@ from test_extensions_console import FakeDesk  # noqa: E402
 def _env(tmp_path, monkeypatch):
     monkeypatch.setenv("FUSION_PLUGIN_CONNECTOR_DIR", str(tmp_path / "connectors"))
     monkeypatch.setenv("FUSION_PLUGIN_EXTENSIONS_DIR", str(tmp_path / "extensions"))
+    # 密钥隔离: 真实部署可能存在 ~/.fusion-plugins-ecosystem/web_module_key
+    # (fm- 签发密钥), 不能让本机部署凭据影响测试的 /api/* 鉴权行为。
+    monkeypatch.delenv("FUSION_PLUGINS_CONSOLE_API_KEY", raising=False)
+    from fusion_plugins_ecosystem import shell_registry
+
+    monkeypatch.setattr(shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key")
 
 
 class _McpHandler(BaseHTTPRequestHandler):
@@ -177,3 +183,77 @@ def test_static_console_served(client):
     assert client.get("/app.css").status_code == 200
     assert client.get("/shell.js").status_code == 200
     assert client.get("/extensions.html").status_code == 200
+
+
+class TestApiAuth:
+    """issue #30 验收补充 — /api/* 鉴权 (静态 env key + 签发 fm- key 双活)。"""
+
+    def test_no_keys_configured_api_open(self, client):
+        assert client.get("/api/whoami").status_code == 200
+
+    def test_static_key_enforced(self, client, monkeypatch):
+        monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_API_KEY", "static-secret")
+        assert client.get("/api/whoami").status_code == 401
+        assert (
+            client.get(
+                "/api/whoami", headers={"Authorization": "Bearer static-secret"}
+            ).status_code
+            == 200
+        )
+
+    def test_x_api_key_header_accepted(self, client, monkeypatch):
+        monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_API_KEY", "static-secret")
+        assert (
+            client.get(
+                "/api/whoami", headers={"x-api-key": "static-secret"}
+            ).status_code
+            == 200
+        )
+
+    def test_module_key_accepted(self, client, monkeypatch, tmp_path):
+        from fusion_plugins_ecosystem import shell_registry
+
+        monkeypatch.setattr(
+            shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key"
+        )
+        shell_registry.save_module_key("fm-issued-key-0001")
+        assert client.get("/api/whoami").status_code == 401
+        assert (
+            client.get(
+                "/api/whoami", headers={"Authorization": "Bearer fm-issued-key-0001"}
+            ).status_code
+            == 200
+        )
+
+    def test_static_and_module_key_dual_active(self, client, monkeypatch, tmp_path):
+        from fusion_plugins_ecosystem import shell_registry
+
+        monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_API_KEY", "static-secret")
+        monkeypatch.setattr(
+            shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key"
+        )
+        shell_registry.save_module_key("fm-issued-key-0002")
+        assert (
+            client.get(
+                "/api/whoami", headers={"Authorization": "Bearer static-secret"}
+            ).status_code
+            == 200
+        )
+        assert (
+            client.get(
+                "/api/whoami", headers={"Authorization": "Bearer fm-issued-key-0002"}
+            ).status_code
+            == 200
+        )
+
+    def test_static_page_not_gated(self, client, monkeypatch):
+        monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_API_KEY", "static-secret")
+        assert client.get("/").status_code == 200
+        assert client.get("/extensions.html").status_code == 200
+
+
+class TestHealthEndpoint:
+    def test_health_returns_ok(self, client):
+        r = client.get("/health")
+        assert r.status_code == 200
+        assert r.json() == {"status": "ok", "service": "fusion-plugins-console"}
