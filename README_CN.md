@@ -11,8 +11,8 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-449%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.3.4-blue" alt="Version">
+  <img src="https://img.shields.io/badge/tests-634%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.4.3-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -76,7 +76,7 @@ python3 -m venv .venv
 
 # 运行测试
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 449 passed
+# → 634 passed
 ```
 
 ### 最小用法
@@ -199,7 +199,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/           ← 超时熔断 + 重启
 │   ├── ex08_process_sandbox/     ← 进程沙箱隔离
 │   └── ex09_file_access/         ← 文件权限校验
-└── tests/                        ← 449 测试
+└── tests/                        ← 634 测试
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -220,6 +220,32 @@ fusion-plugins-ecosystem/
     ├── test_schema.py
     └── test_integration.py
 ```
+
+## 🖥️ Extensions 控制台（issue #30）
+
+独立 FastAPI 控制台（`fusion-plugin-console`，端口 8795），从 f-ecommerce 原样迁移两个页签
+（issue #30，E3）：**Connectors** 与 **Plugins·MCP**。业务逻辑已通用化，不含电商语义。
+
+```bash
+pip install -e ".[console]"
+fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
+```
+
+- **Connectors 页签** — 声明式 JSON 连接器包（`rest_connector.py`）：install = 全量静态校验 +
+  落盘；enable = 运行时桥接 READ 通道（GET）为 `connector__<id>__<op>` 能力插件（自动列出并
+  ENABLED）；WRITE 通道（POST/PUT/PATCH/DELETE）进入人工审核队列，不自动列出；凭据加密保险库
+  （Desk Fernet 存储，Desk config_center 缺失时回退控制台本地 `vault.json` chmod 600）；
+  harness = 静态校验 + 用保险库凭据实测首个读操作。
+- **Plugins·MCP 页签** — 声明式插件安装（plugin.json 清单，不落地任意代码）、tick/untick
+  经 lifecycle enable/disable 对账、删除；远端 MCP server probe & register（initialize +
+  tools/list，上报候选工具）；tick 后工具桥接为 `mcp__<server>__<tool>` 能力插件，经 JSON-RPC
+  `tools/call` 派发。
+- **能力脊柱** — 由磁盘事实派生（连接器文档 + MCP ticks），启动 `resync()` 重建，进程内无
+  第二真相源。
+- **端点** — `/api/whoami`、`/api/capabilities`、`/api/extensions/connectors[/{id}/enable|disable|harness]`、
+  `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`。
+- **环境变量** — `FUSION_PLUGIN_CONNECTOR_DIR`（默认 `~/.fusion-plugins-ecosystem/connectors`）、
+  `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）。
 
 ## 🔧 配置面板（一键开关）
 
@@ -303,7 +329,7 @@ SIGTERM——此前 sse/http 会立即返回、进程随之退出。已验证：
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-最新结果：**449 passed**。
+最新结果：**634 passed**。
 
 | 测试文件 | 用例数 | 覆盖范围 |
 |---------|-------|---------|
