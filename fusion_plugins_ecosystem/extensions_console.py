@@ -28,8 +28,6 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from fusion_plugins_ecosystem.rest_connector import (
     connector_report,
     execute_operation,
@@ -143,6 +141,8 @@ def _mcp_rpc(
     payload: dict[str, Any] = {"jsonrpc": "2.0", "id": 1, "method": method}
     if params is not None:
         payload["params"] = params
+    import httpx  # console extra — 函数级导入，base 环境无 httpx 也可 import 本模块
+
     resp = httpx.post(
         url,
         json=payload,

@@ -16,7 +16,7 @@ from fusion_plugins_ecosystem.lifecycle import PluginLifecycle  # noqa: E402
 from fusion_plugins_ecosystem.registry import PluginRegistry  # noqa: E402
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent))
-from test_extensions_console import FakeDesk, FakeMetrics  # noqa: E402
+from test_extensions_console import FakeDesk  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
