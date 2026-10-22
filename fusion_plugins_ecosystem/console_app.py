@@ -5,11 +5,18 @@ FastAPI 应用：静态控制台（web/）+ REST API，端点契约与 f-ecommer
 
 独立于 fusion-plugin-server（MCP wire）运行：
     fusion-plugin-console --port 8795
+
+issue #30 验收补充 — shell 模块化：
+- /api/* 鉴权：FUSION_PLUGINS_CONSOLE_API_KEY 静态密钥 + 网关签发 fm- 模块密钥
+  双活（gateway /shell/ 代理注入 Bearer）；两者皆未配置时放行（默认仅本机绑定）。
+- FUSION_SHELL_GATEWAY_URL + FUSION_GATEWAY_ADMIN_KEY 配置时启动后台注册循环
+  （shell_registry），侧边栏出现扩展控制台入口，console 停止后入口置灰。
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +24,23 @@ logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 DEFAULT_PORT = 8795
+
+
+def _accepted_keys() -> list[str]:
+    # 双活窗口: env 静态密钥与网关签发 fm- 密钥同时有效 (对齐 gateway K1 grace)。
+    keys = []
+    static = os.environ.get("FUSION_PLUGINS_CONSOLE_API_KEY", "").strip()
+    if static:
+        keys.append(static)
+    try:
+        from fusion_plugins_ecosystem.shell_registry import load_module_key
+
+        module = load_module_key()
+        if module:
+            keys.append(module)
+    except Exception:
+        pass
+    return list(dict.fromkeys(keys))
 
 
 def create_app(
@@ -27,7 +51,7 @@ def create_app(
     """构建 FastAPI 控制台应用（fastapi 为 console 可选依赖）。"""
     try:
         from fastapi import FastAPI, HTTPException
-        from fastapi.responses import FileResponse
+        from fastapi.responses import FileResponse, JSONResponse
         from fastapi.staticfiles import StaticFiles
     except ImportError as exc:  # pragma: no cover — 环境缺依赖
         raise RuntimeError(
@@ -49,12 +73,33 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.4.3",
+        version="0.4.4",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)
     console_holder["console"] = console
     app.state.console = console
+
+    @app.middleware("http")
+    async def _api_auth(request, call_next):
+        # gateway /shell/ 代理注入 Bearer <fm- key | static key>; 未配置密钥时
+        # 放行 (默认仅 127.0.0.1 绑定, 本地优先)。静态面不鉴权 — 会话在网关侧。
+        if request.url.path.startswith("/api/"):
+            keys = _accepted_keys()
+            if keys:
+                auth = (request.headers.get("authorization") or "").strip()
+                token = (
+                    auth[7:].strip()
+                    if auth.lower().startswith("bearer ")
+                    else (request.headers.get("x-api-key") or "").strip()
+                )
+                if token not in keys:
+                    return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        return await call_next(request)
+
+    @app.get("/health")
+    async def health() -> dict[str, Any]:
+        return {"status": "ok", "service": "fusion-plugins-console"}
 
     @app.get("/api/whoami")
     async def whoami() -> dict[str, Any]:
@@ -205,9 +250,39 @@ def main() -> None:
             "console 需要 uvicorn：pip install 'fusion-plugins-ecosystem[console]'"
         ) from exc
 
+    import asyncio
+
+    from fusion_plugins_ecosystem.shell_registry import (
+        shell_registration_enabled,
+        shell_registry_loop,
+    )
+
     app = create_app()
-    logger.info("console: 监听 http://%s:%s", args.host, args.port)
-    uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level.lower())
+    register_enabled = shell_registration_enabled()
+    logger.info(
+        "console: 监听 http://%s:%s (shell 注册 %s)",
+        args.host,
+        args.port,
+        "启用"
+        if register_enabled
+        else "未启用 — 缺 FUSION_SHELL_GATEWAY_URL / FUSION_GATEWAY_ADMIN_KEY",
+    )
+
+    async def _serve():
+        registry_task = (
+            asyncio.create_task(shell_registry_loop()) if register_enabled else None
+        )
+        config = uvicorn.Config(
+            app, host=args.host, port=args.port, log_level=args.log_level.lower()
+        )
+        server = uvicorn.Server(config)
+        try:
+            await server.serve()
+        finally:
+            if registry_task:
+                registry_task.cancel()
+
+    asyncio.run(_serve())
 
 
 if __name__ == "__main__":

@@ -192,6 +192,7 @@ fusion-plugins-ecosystem/
 │   ├── rest_connector.py         ← declarative REST/webhook connector docs (validation, read/write channels, execution contract)
 │   ├── extensions_console.py     ← Extensions console backend (issue #30): Connectors + Plugins·MCP tabs, spine derivation, resync
 │   ├── console_app.py            ← FastAPI console app + `fusion-plugin-console` CLI (port 8795)
+│   ├── shell_registry.py         ← fusion-gateway shell module registration + fm- key persistence (#30)
 │   ├── logging_setup.py          ← structured JSON logging + correlation_id (P3-6)
 │   ├── config.py                 ← one-toggle config panel + observers
 │   ├── hook_adapter.py           ← Claude Code Plugin hooks adapter
@@ -319,9 +320,35 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **Capability spine** — derived from disk facts (connector docs + MCP ticks), rebuilt at boot
   via `resync()`; in-process registry holds no second source of truth.
 - **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/extensions/connectors[/{id}/enable|disable|harness]`,
-  `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`.
+  `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`, `/health`.
 - **Env vars** — `FUSION_PLUGIN_CONNECTOR_DIR` (default `~/.fusion-plugins-ecosystem/connectors`),
   `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`).
+
+### Shell module (gateway registration, issue #30 follow-up)
+
+The console registers itself as a fusion-gateway shell module — the shell sidebar shows an
+**Extensions Console** entry at `/shell/fusion-plugins-ecosystem/`; stopping the console greys
+the entry (heartbeat expiry), restarting re-registers it. Same pattern as fusion-cowork #97/#168.
+
+```bash
+FUSION_SHELL_GATEWAY_URL=http://127.0.0.1:11432 \
+FUSION_GATEWAY_ADMIN_KEY=<web_shell.admin_key> \
+fusion-plugin-console --port 8795
+```
+
+- **Registration** — `shell_registry.py` POSTs `web/manifest.json` (id `fusion-plugins-ecosystem`,
+  upstream `http://127.0.0.1:8795`) then heartbeats every 15s; gateway restart (404) or key
+  rotation (401) triggers transparent re-registration. Registration is OFF unless both env vars are set.
+- **fm- module key (K1/K4)** — with no static api_key in the registration body the gateway issues
+  an `fm-` service key (returned exactly once), persisted 0600 at
+  `~/.fusion-plugins-ecosystem/web_module_key`; heartbeats authenticate with it.
+- **API auth** — when a key exists (static `FUSION_PLUGINS_CONSOLE_API_KEY` and/or issued `fm-` key,
+  dual-active), `/api/*` requires `Authorization: Bearer` / `x-api-key` (the gateway proxy injects
+  the module key); with no keys configured the API stays open for loopback-only use. Static pages
+  are session-gated at the gateway, not upstream.
+- **Path-prefix aware GUI** — `extensions.html`/`shell.js` resolve the API base from
+  `location.pathname`, so the same build works standalone (`/`) and behind the gateway
+  (`/shell/fusion-plugins-ecosystem/`).
 
 ## 🔧 Configuration (one-click panel)
 

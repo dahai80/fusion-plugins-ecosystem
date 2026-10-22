@@ -243,9 +243,32 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **能力脊柱** — 由磁盘事实派生（连接器文档 + MCP ticks），启动 `resync()` 重建，进程内无
   第二真相源。
 - **端点** — `/api/whoami`、`/api/capabilities`、`/api/extensions/connectors[/{id}/enable|disable|harness]`、
-  `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`。
+  `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、`/health`。
 - **环境变量** — `FUSION_PLUGIN_CONNECTOR_DIR`（默认 `~/.fusion-plugins-ecosystem/connectors`）、
   `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）。
+
+### Shell 模块（网关注册，issue #30 验收补充）
+
+控制台向 fusion-gateway 注册为 shell 模块 — 侧边栏出现**扩展控制台**入口
+（`/shell/fusion-plugins-ecosystem/`）；停止控制台入口置灰（心跳过期），重启自动重注册。
+与 fusion-cowork #97/#168 同一模式。
+
+```bash
+FUSION_SHELL_GATEWAY_URL=http://127.0.0.1:11432 \
+FUSION_GATEWAY_ADMIN_KEY=<web_shell.admin_key> \
+fusion-plugin-console --port 8795
+```
+
+- **注册** — `shell_registry.py` POST `web/manifest.json`（id `fusion-plugins-ecosystem`，
+  upstream `http://127.0.0.1:8795`），每 15s 心跳；网关重启（404）或密钥轮换（401）透明重注册。
+  两个 env 均未配置时注册默认 OFF。
+- **fm- 模块密钥（K1/K4）** — 注册体不带 api_key 时网关签发 `fm-` 服务密钥（明文仅返回一次），
+  0600 落盘 `~/.fusion-plugins-ecosystem/web_module_key`；心跳用它鉴权。
+- **API 鉴权** — 存在密钥（静态 `FUSION_PLUGINS_CONSOLE_API_KEY` 与/或签发 `fm-` key，双活）时
+  `/api/*` 要求 `Authorization: Bearer` / `x-api-key`（网关代理注入模块密钥）；无密钥时放行
+  （仅本机绑定场景）。静态页面在网关侧会话门控，上游不重复鉴权。
+- **前缀自适应 GUI** — `extensions.html`/`shell.js` 从 `location.pathname` 推导 API 基路径，
+  同一构建独立访问（`/`）与经网关（`/shell/fusion-plugins-ecosystem/`）皆可用。
 
 ## 🔧 配置面板（一键开关）
 
