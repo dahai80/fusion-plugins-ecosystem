@@ -10,7 +10,7 @@ Lazy Import 机制（与 fusion-cowork 一致）：
 
 from __future__ import annotations
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 __app_name__ = "Fusion-Plugins-Ecosystem"
 
 # ── Lazy Import 注册表 ──
@@ -58,6 +58,9 @@ _LAZY_IMPORTS: dict[str, str] = {
     "ConnectorToolSpec": "fusion_plugins_ecosystem.connector",
     "ExternalMCPClient": "fusion_plugins_ecosystem.connector",
     "RiskLevel": "fusion_plugins_ecosystem.connector",
+    # Extensions 控制台（issue #30 E3：声明式连接器 + MCP intake + 插件 tick）
+    "ExtensionsConsole": "fusion_plugins_ecosystem.extensions_console",
+    "rest_connector": "fusion_plugins_ecosystem.rest_connector",
     "Marketplace": "fusion_plugins_ecosystem.marketplace",
     "MarketplaceEntry": "fusion_plugins_ecosystem.marketplace",
     # 配置
@@ -93,7 +96,14 @@ def __getattr__(name: str) -> object:
         mod_name = _LAZY_IMPORTS[name]
         try:
             mod = importlib.import_module(mod_name)
-            obj = getattr(mod, name)
+            try:
+                obj = getattr(mod, name)
+            except AttributeError:
+                # 模块自身导出（如 cluster_bridge / rest_connector）
+                if mod_name.endswith("." + name):
+                    _lazy_cache[name] = mod
+                    return mod
+                raise
             _lazy_cache[name] = obj
             return obj
         except (ImportError, AttributeError) as exc:

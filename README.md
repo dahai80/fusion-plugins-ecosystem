@@ -11,8 +11,8 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-584%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/tests-634%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.4.3-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -78,7 +78,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 584 passed
+# → 634 passed
 ```
 
 ```python
@@ -189,13 +189,19 @@ fusion-plugins-ecosystem/
 │   ├── connector.py              ← external MCP connector framework (pack install, MCP client, HIGH_RISK approval gate)
 │   ├── connector_packs.py        ← first-party connector packs (Feishu/DingTalk/WeCom/Mail/Calendar/Notion)
 │   ├── marketplace.py            ← skill/connector pack marketplace (JSON index, install/uninstall)
+│   ├── rest_connector.py         ← declarative REST/webhook connector docs (validation, read/write channels, execution contract)
+│   ├── extensions_console.py     ← Extensions console backend (issue #30): Connectors + Plugins·MCP tabs, spine derivation, resync
+│   ├── console_app.py            ← FastAPI console app + `fusion-plugin-console` CLI (port 8795)
 │   ├── logging_setup.py          ← structured JSON logging + correlation_id (P3-6)
 │   ├── config.py                 ← one-toggle config panel + observers
 │   ├── hook_adapter.py           ← Claude Code Plugin hooks adapter
-│   └
-    builtin/
+│   └── builtin/
 │       ├── __init__.py
 │       └── caveman_compress.py        ← built-in token compressor
+├── web/
+│   ├── extensions.html            ← console GUI (Connectors + Plugins·MCP tabs, verbatim layout from f-ecommerce)
+│   ├── app.css                    ← fs-* design tokens (verbatim)
+│   └── shell.js                   ← sidebar injector (brand "Fusion Plugins")
 ├── examples/                      ← 9 runnable plugin samples (ex01_echo … ex09_file_access)
 │   ├── README.md                  ← scenario index + run instructions
 │   ├── ex01_echo/                 ← minimal sync plugin
@@ -207,7 +213,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/            ← timeout meltdown + restart
 │   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
 │   └── ex09_file_access/          ← file permission gating
-└── tests/                        ← 584 tests
+└── tests/                        ← 634 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -233,6 +239,9 @@ fusion-plugins-ecosystem/
     ├── test_connector.py            ← connector framework: pack validation, registry bridge, HIGH_RISK approval gate, persistence, stdio/http MCP client round-trips
     ├── test_connector_packs.py      ← first-party packs structural validation + Feishu acceptance shape + lifecycle load
     ├── test_marketplace.py          ← marketplace: builtin catalog, JSON index load/override, install/uninstall, HTTPS-only constraint
+    ├── test_rest_connector.py       ← declarative connector docs: validation, read/write channel split, persistence, execution contract vs local HTTP server
+    ├── test_extensions_console.py   ← console backend: connector install/enable/harness, vault (Desk + local Fernet fallback), MCP intake probe/register/tick/call, plugin tick/remove/install, resync, spine derivation
+    ├── test_console_app.py          ← FastAPI console: endpoint contract vs GUI, connector/MCP/plugin full flows, static serving
     ├── test_soak.py                 ← long-run stability (token-meter cap, log buffer cap, session LRU cap, counter monotonic no-drift, lifecycle sustained execute no-residual)
     └── test_integration.py
 ```
@@ -284,6 +293,35 @@ Key properties:
 - **Approval gating** — `HIGH` risk tools raise `PermissionError` until `approve_tool()`; all read-only tools are `LOW` risk by convention (enforced by tests)
 - **INLINE-only** — connector tools run INLINE (the external MCP server is already an isolated process); `sandbox_default_mode=process` blocks installation
 - **First-party packs**: Feishu (official `lark-mcp`), DingTalk, WeCom, Mail (IMAP/SMTP), Calendar (CalDAV), Notion (official `@notionhq/notion-mcp-server`)
+
+## 🖥️ Extensions console (issue #30)
+
+Standalone FastAPI console (`fusion-plugin-console`, port 8795) hosting the two tabs migrated
+verbatim from f-ecommerce (issue #30, E3): **Connectors** and **Plugins·MCP**. Business logic
+generalized — no e-commerce semantics remain.
+
+```bash
+pip install -e ".[console]"
+fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
+```
+
+- **Connectors tab** — declarative JSON connector packages (`rest_connector.py`): install =
+  full static validation + disk persistence; enable = runtime bridging of READ channels (GET)
+  as `connector__<id>__<op>` capability plugins (auto-listed, lifecycle ENABLED); WRITE
+  channels (POST/PUT/PATCH/DELETE) enter a human review queue and are never auto-listed;
+  encrypted credential vault (Desk Fernet store, falls back to console-local `vault.json`
+  chmod 600 when Desk config_center is absent); harness = static validation + live check of
+  the first read operation using vault credentials.
+- **Plugins·MCP tab** — declarative plugin install (plugin.json manifest, no arbitrary code),
+  tick/untick reconcile via lifecycle enable/disable, delete; remote MCP server probe & register
+  (initialize + tools/list, candidate tools reported); per-tool tick bridges
+  `mcp__<server>__<tool>` capability plugins dispatched over JSON-RPC `tools/call`.
+- **Capability spine** — derived from disk facts (connector docs + MCP ticks), rebuilt at boot
+  via `resync()`; in-process registry holds no second source of truth.
+- **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/extensions/connectors[/{id}/enable|disable|harness]`,
+  `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`.
+- **Env vars** — `FUSION_PLUGIN_CONNECTOR_DIR` (default `~/.fusion-plugins-ecosystem/connectors`),
+  `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`).
 
 ## 🔧 Configuration (one-click panel)
 
@@ -421,7 +459,7 @@ and `{pong: true}`.
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **584 passed**.
+Latest run: **634 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|
@@ -446,6 +484,9 @@ Latest run: **584 passed**.
 | `test_connector.py` | 25 | connector framework: pack validation/roundtrip, registry bridge + MCP export, HIGH_RISK approval gate, persistence roundtrip, credential resolution, real stdio MCP client subprocess round-trip, local HTTP JSON-RPC round-trip |
 | `test_connector_packs.py` | 10 | first-party packs structural validation, unique ids/tool names, schema shape, risk-level conventions (read-only=LOW, write=MEDIUM/HIGH), Feishu acceptance shape, lifecycle load of bridged tools |
 | `test_marketplace.py` | 13 | builtin catalog, JSON index load + same-id override, HTTPS-only constraint, install builtin/local-source/skill-package, uninstall, list_installed, config wiring |
+| `test_rest_connector.py` | 15 | declarative connector docs: validation, read/write channel split, persistence roundtrip, execution contract vs local HTTP server, JSONPath-lite extraction, `{var}` rendering |
+| `test_extensions_console.py` | 26 | console backend: connector install/enable/disable/harness, credential vault (Desk round-trip + local Fernet fallback), bridged op execution, MCP intake probe/register/tick/call, plugin tick/remove/install, resync rebuild, spine derivation, standalone lifecycle bootstrap |
+| `test_console_app.py` | 6 | FastAPI console: whoami/capabilities, connector full flow (install→vault→enable→disable→harness), MCP flow, plugins flow, static serving |
 
 ## ⚠️ Technical constraints
 

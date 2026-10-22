@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Extensions — Fusion Plugins</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .spine-strip { border: 1px solid var(--fs-border); border-radius: 8px;
+    padding: 12px 14px; margin: 10px 0 18px; font-size: 13px; }
+  .spine-strip .flow { font-family: ui-monospace, monospace; font-size: 12px;
+    margin: 6px 0 10px; color: var(--fs-text-2); }
+  .spine-strip .counts { display: flex; gap: 18px; flex-wrap: wrap; }
+  .spine-strip .counts a { font-weight: 600; }
+  .tabbar { display: flex; gap: 4px; margin: 14px 0; }
+  .tabbar button { padding: 5px 16px; }
+  .tabbar button.active { background: var(--fs-brand); color: #fff; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--fs-border); font-size: 13px; }
+  .muted { color: var(--fs-text-2); }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+  .chip.ok { background: var(--fs-bg-muted); color: var(--fs-success); }
+  .chip.off { background: var(--fs-bg-muted); color: var(--fs-text-2); }
+  .chip.warn { background: var(--fs-bg-muted); color: var(--fs-warning); }
+  .hidden { display: none; }
+  textarea { width: 100%; font-family: ui-monospace, monospace; }
+  #connector-doc { min-height: 260px; }
+  .install-row { display: flex; gap: 10px; align-items: center; margin: 8px 0; }
+  .diag { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; margin: 8px 0; }
+  .diag.ok { color: var(--fs-success); } .diag.err { color: var(--fs-error); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+         margin-right: 6px; vertical-align: middle; }
+  .dot.ok { background: var(--fs-success); }
+  .dot.bad { background: var(--fs-error); }
+  .panel { border: 1px solid var(--fs-border); border-radius: 8px; padding: 12px; margin: 10px 0; }
+  .test-row { display: flex; gap: 8px; margin: 6px 0 2px; }
+  .test-row input { flex: 1; }
+</style>
+</head>
+<body data-page="extensions">
+<h1>Extensions</h1>
+<p class="muted">Install connectors and plugins once — they surface in every
+agent's tool checklist automatically. One registry, one audited dispatch
+door, one audit chain. Contract: fusion-plugins-ecosystem issue #30 (E3).</p>
+
+<div class="spine-strip" id="spine">
+  <b>How things connect</b>
+  <div class="flow">Connectors ─┐ reads auto-list ──────┐
+MCP intake ────┼─ list as capabilities ─┼─► CAPABILITY REGISTRY
+Plugin nodes ──┘ admin ticks ───────────┘    (every agent picks from this)
+          all dispatched via ONE audited door → audit chain</div>
+  <div class="counts" id="spine-counts"></div>
+</div>
+
+<div class="tabbar">
+  <button data-tab="connectors" class="active">Connectors</button>
+  <button data-tab="plugins">Plugins · MCP</button>
+</div>
+
+<div id="tab-connectors">
+  <table>
+    <thead><tr><th>Connector</th><th>State</th><th>Read channels (spine)</th><th>Writes (review queue)</th><th>Actions</th></tr></thead>
+    <tbody id="connector-rows"></tbody>
+  </table>
+
+  <div class="panel">
+    <b>Install a connector package</b>
+    <p class="muted" style="font-size:12px">Declarative JSON connector:
+    id / kind=rest / base_url / credential_ref / operations
+    ({name: {method, path, response…}}). Read (GET) operations auto-list as
+    agent capabilities on enable; write operations enter the reviewed
+    capability list instead (issue #30 §Connectors).</p>
+    <textarea id="connector-doc" spellcheck="false"></textarea>
+    <div class="install-row">
+      <button id="btn-conn-install" class="primary">Validate &amp; install</button>
+      <span class="muted">static validation → saved → enable registers it live</span>
+    </div>
+    <p class="diag" id="conn-diag"></p>
+  </div>
+
+  <div class="panel" id="conn-enable-panel" style="display:none">
+    <b>Enable: <span id="conn-enable-name"></span></b>
+    <p class="muted" style="font-size:12px">Enable registers the connector
+    into the live registry and lists its read channels as capabilities.
+    Vault credentials (<span id="conn-cred-ref"></span>) are resolved
+    server-side at call time — never exposed to agents.</p>
+    <div class="install-row">
+      <input id="conn-cred-json" placeholder='{"api_key": "…"} — stored encrypted'
+             style="flex:1">
+      <button id="btn-conn-enable" class="primary">Save credentials &amp; enable</button>
+    </div>
+    <p class="diag" id="conn-enable-out"></p>
+  </div>
+</div>
+
+<div id="tab-plugins" class="hidden">
+  <div class="panel">
+    <b>Plugin packages</b>
+    <p class="muted" style="font-size:12px" id="plugin-policy-note">
+      Declarative plugin packages only (plugin.json manifest, module:attr
+      entry points — no customer code lands on this machine). Installing
+      surfaces the plugin as a <b>candidate</b> only — tick it below to
+      expose it to agents. Admin-only.</p>
+    <div class="install-row">
+      <input id="plugin-source" placeholder="/path/to/plugin-dir or plugin.zip (with plugin.json)" style="flex:1">
+      <button id="btn-plugin-install" class="primary">Install</button>
+    </div>
+    <p class="diag" id="plugin-diag"></p>
+    <table>
+      <thead><tr><th>Plugin</th><th>Sandbox</th><th>Candidate nodes</th><th>Actions</th></tr></thead>
+      <tbody id="plugin-rows"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <b>Remote MCP servers</b>
+    <p class="muted" style="font-size:12px">Register a streamable-http MCP
+    endpoint; the console probes it (initialize + tools/list) before
+    anything is listed. Ticked tools become
+    <code>mcp.&lt;server&gt;.&lt;tool&gt;</code> capabilities dispatched as
+    MCP tools/call through the audited door. Admin-only.</p>
+    <div class="install-row">
+      <input id="mcp-id" placeholder="server id (e.g. erp-mcp)" style="flex:1">
+      <input id="mcp-url" placeholder="http(s)://host/mcp" style="flex:1">
+      <input id="mcp-credref" placeholder="credential_ref (optional, for auth headers)" style="flex:1">
+      <button id="btn-mcp-register" class="primary">Probe &amp; register</button>
+    </div>
+    <p class="diag" id="mcp-diag"></p>
+    <table>
+      <thead><tr><th>Server</th><th>Tools (tick to expose)</th><th>Actions</th></tr></thead>
+      <tbody id="mcp-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<p class="muted" id="msg"></p>
+
+<script src="shell.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const API = "/api/extensions";
+
+async function api(method, path, body) {
+  const opt = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const r = await fetch(`${API}${path}`, opt);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || r.statusText);
+  return data;
+}
+
+const state = { enableConn: null };
+
+// ── spine strip ────────────────────────────────────────────────────────
+async function loadSpine() {
+  try {
+    const [conns, caps] = await Promise.all([
+      api("GET", "/connectors"),
+      fetch("/api/capabilities").then(r => r.json()),
+    ]);
+    const cs = caps.capabilities || [];
+    const active = cs.filter(c => c.status === "active").length;
+    const disabled = cs.length - active;
+    const bySrc = {};
+    for (const c of cs) bySrc[c.source] = (bySrc[c.source] || 0) + 1;
+    $("spine-counts").innerHTML =
+      `<span><a href="#">${(conns.connectors || []).length} connectors</a></span>` +
+      `<span>${cs.length} capabilities (${active} active` +
+      (disabled ? `, ${disabled} disabled` : "") + `)</span>` +
+      `<span class="muted">${esc(JSON.stringify(bySrc))}</span>`;
+  } catch (e) { $("msg").textContent = e.message; }
+}
+
+// ── connectors ─────────────────────────────────────────────────────────
+async function loadConnectors() {
+  try {
+    const { connectors } = await api("GET", "/connectors");
+    $("connector-rows").innerHTML = (connectors || []).map(c => {
+      const id = esc(c.id || "");
+      const problems = c.problems || [];
+      const state = problems.length
+        ? `<span class="chip warn" title="${esc(problems.join("; "))}">invalid</span>`
+        : (c.spine_capabilities || []).length
+          ? `<span class="chip ok">enabled</span>`
+          : `<span class="chip off">installed</span>`;
+      return `<tr><td><b>${id}</b>` +
+        `<div class="muted" style="font-size:12px">${esc(c.kind || "")}</div></td>` +
+        `<td>${state}</td>` +
+        `<td class="muted">${esc((c.spine_capabilities || []).join(", ") || "—")}</td>` +
+        `<td class="muted">${esc((c.write_channels_review || []).join(", ") || "—")}</td>` +
+        `<td><button class="link" data-enable="${id}">Enable…</button>` +
+        ` <button class="link" data-disable="${id}">Disable</button>` +
+        ` <button class="link" data-harness="${id}">Harness</button></td></tr>`;
+    }).join("") || `<tr><td colspan="5" class="muted">No connectors installed — paste a package below.</td></tr>`;
+  } catch (e) { $("msg").textContent = e.message; }
+}
+
+async function installConnector() {
+  const diag = $("conn-diag");
+  try {
+    const doc = JSON.parse($("connector-doc").value);
+    const out = await api("POST", "/connectors", doc);
+    if (!out.installed) {
+      diag.className = "diag err";
+      diag.textContent = "✗ " + (out.problems || []).join(" | ");
+      return;
+    }
+    diag.className = "diag ok";
+    diag.textContent = `✓ installed. Reads auto-list on enable: ` +
+      `${(out.read_channels || []).join(", ") || "(none)"}. ` +
+      `Writes for review: ${(out.write_channels_review || []).join(", ") || "(none)"}.`;
+    loadConnectors(); loadSpine();
+  } catch (e) { diag.className = "diag err"; diag.textContent = "✗ " + e.message; }
+}
+
+function openConnEnable(id) {
+  state.enableConn = id;
+  $("conn-enable-name").textContent = id;
+  $("conn-cred-ref").textContent = id;
+  $("conn-enable-panel").style.display = "";
+  $("conn-enable-out").textContent = "";
+  $("conn-enable-out").className = "diag";
+}
+async function enableConn() {
+  const out = $("conn-enable-out");
+  try {
+    const creds = JSON.parse($("conn-cred-json").value || "{}");
+    if (Object.keys(creds).length) {
+      // store into the encrypted vault (Desk Fernet-backed storage)
+      const r = await fetch(`/api/adapters/${state.enableConn}`,
+        { method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credentials: creds }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail
+        || "credential save failed");
+    }
+    const res = await api("POST",
+      `/connectors/${encodeURIComponent(state.enableConn)}/enable`, {});
+    out.className = "diag ok";
+    out.textContent = "✓ enabled — capabilities auto-listed: " +
+      (res.capabilities || []).join(", ");
+    loadConnectors(); loadSpine();
+  } catch (e) { out.className = "diag err"; out.textContent = "✗ " + e.message; }
+}
+
+// ── wiring (delegated — no inline onclick) ─────────────────────────────
+document.querySelector(".tabbar").addEventListener("click", e => {
+  if (!e.target.dataset.tab) return;
+  document.querySelectorAll(".tabbar button").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === e.target.dataset.tab));
+  ["connectors", "plugins"].forEach(t =>
+    $("tab-" + t).classList.toggle("hidden",
+      e.target.dataset.tab !== t));
+  if (e.target.dataset.tab === "plugins") loadPlugins(), loadMcp();
+});
+
+$("connector-rows").addEventListener("click", async e => {
+  const t = e.target;
+  if (t.dataset.enable) openConnEnable(t.dataset.enable);
+  else if (t.dataset.disable) {
+    if (!confirm(`Disable connector "${t.dataset.disable}"? Its capabilities flip to disabled and dependent agents are flagged.`)) return;
+    try {
+      const r = await api("POST",
+        `/connectors/${encodeURIComponent(t.dataset.disable)}/disable`, {});
+      $("msg").textContent =
+        `Disabled — ${r.capabilities_disabled.length} capabilities flipped.`;
+      loadConnectors(); loadSpine();
+    } catch (err) { $("msg").textContent = err.message; }
+  } else if (t.dataset.harness) {
+    $("msg").textContent = "running conformance harness…";
+    try {
+      const r = await api("POST",
+        `/connectors/${encodeURIComponent(t.dataset.harness)}/harness`, {});
+      $("msg").textContent = r.conformant
+        ? "✓ harness: conformant"
+        : `✗ harness problems: ${r.problems.join(" | ")}`;
+    } catch (err) { $("msg").textContent = err.message; }
+  }
+});
+$("btn-conn-install").addEventListener("click", installConnector);
+$("btn-conn-enable").addEventListener("click", enableConn);
+
+// ── plugins + MCP ──────────────────────────────────────────────────────
+async function loadPlugins() {
+  try {
+    const data = await api("GET", "/plugins");
+    const plugins = data.plugins || [];
+    $("plugin-policy-note").innerHTML =
+      `Declarative plugin packages only (plugin.json manifest, module:attr ` +
+      `entry points — no customer code lands on this machine). Installing ` +
+      `surfaces the plugin as a <b>candidate</b> only — tick it below to ` +
+      `expose it to agents. Admin-only. ` +
+      (data.require_signing
+        ? `<span style="color:var(--fs-warning)">Signature enforcement is ON — unsigned installs are refused by the loader.</span>`
+        : `<span style="color:var(--fs-text-2)">Signature enforcement is OFF (opt-in via cowork config plugins.require_signing).</span>`);
+    $("plugin-rows").innerHTML = (plugins || []).map(p => {
+      const nodes = (p.nodes || []).map(n => {
+        const ticked = (p.ticked || []).includes(n);
+        return `<label style="margin-right:10px"><input type="checkbox" data-node="${esc(n)}" ${ticked ? "checked" : ""}> ${esc(n)}</label>`;
+      }).join("") || '<span class="muted">no nodes</span>';
+      return `<tr><td><b>${esc(p.name)}</b>` +
+        `<div class="muted" style="font-size:12px">v${esc(p.version)}` +
+        (p.signature ? " · signed" : "") + `</div></td>` +
+        `<td>${p.sandbox ? '<span class="chip ok">sandboxed</span>' : '<span class="chip warn">in-process (trusted)</span>'}</td>` +
+        `<td>${nodes}</td>` +
+        `<td><button class="link" data-tick="${esc(p.name)}">Apply ticks</button>` +
+        ` <button class="link" data-uninstall="${esc(p.name)}">Remove</button></td></tr>`;
+    }).join("") || `<tr><td colspan="4" class="muted">No plugins installed.</td></tr>`;
+  } catch (e) {
+    $("plugin-rows").innerHTML =
+      `<tr><td colspan="4" class="muted">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function installPlugin() {
+  const diag = $("plugin-diag");
+  try {
+    const out = await api("POST", "/plugins",
+      { source: $("plugin-source").value.trim() });
+    if (!out.installed) { diag.className = "diag err";
+      diag.textContent = "✗ " + out.error; return; }
+    diag.className = "diag ok";
+    diag.textContent = `✓ installed "${out.plugin}" — candidates: ` +
+      (out.candidate_nodes || []).join(", ") + ` (${out.note})`;
+    loadPlugins(); loadSpine();
+  } catch (e) { diag.className = "diag err"; diag.textContent = "✗ " + e.message; }
+}
+
+async function loadMcp() {
+  try {
+    const { servers } = await api("GET", "/mcp");
+    $("mcp-rows").innerHTML = (servers || []).map(s => {
+      const tools = (s.tools || []).map(t => {
+        const ticked = (s.ticked || []).includes(t.name);
+        return `<label style="margin-right:10px" title="${esc(t.description)}"><input type="checkbox" data-tool="${esc(t.name)}" ${ticked ? "checked" : ""}> ${esc(t.name)}</label>`;
+      }).join("") || '<span class="muted">no tools</span>';
+      return `<tr><td><b>${esc(s.id)}</b>` +
+        `<div class="muted" style="font-size:12px">${esc(s.url)}</div></td>` +
+        `<td>${tools}</td>` +
+        `<td><button class="link" data-mcptick="${esc(s.id)}">Apply ticks</button>` +
+        ` <button class="link" data-mcprm="${esc(s.id)}">Remove</button></td></tr>`;
+    }).join("") || `<tr><td colspan="3" class="muted">No MCP servers registered.</td></tr>`;
+  } catch (e) {
+    $("mcp-rows").innerHTML =
+      `<tr><td colspan="3" class="muted">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function registerMcp() {
+  const diag = $("mcp-diag");
+  try {
+    const out = await api("POST", "/mcp",
+      { id: $("mcp-id").value.trim(), url: $("mcp-url").value.trim(),
+        credential_ref: $("mcp-credref").value.trim() });
+    if (!out.registered) { diag.className = "diag err";
+      diag.textContent = "✗ " + out.error; return; }
+    diag.className = "diag ok";
+    diag.textContent = `✓ registered — candidate tools (${(out.candidate_tools || []).length}): ` +
+      (out.candidate_tools || []).join(", ");
+    loadMcp(); loadSpine();
+  } catch (e) { diag.className = "diag err"; diag.textContent = "✗ " + e.message; }
+}
+
+$("plugin-rows").addEventListener("click", async e => {
+  const t = e.target;
+  if (t.dataset.tick) {
+    const nodes = [...document.querySelectorAll(
+      `#plugin-rows input[data-node]:checked`)].map(i => i.dataset.node);
+    try {
+      const r = await api("POST",
+        `/plugins/${encodeURIComponent(t.dataset.tick)}/tick`, { nodes });
+      $("msg").textContent = r.errors && r.errors.length
+        ? r.errors.join(" | ")
+        : `Ticked: ${(r.ticked || []).join(", ") || "(none)"}`;
+      loadPlugins(); loadSpine();
+    } catch (err) { $("msg").textContent = err.message; }
+  } else if (t.dataset.uninstall) {
+    if (!confirm(`Remove plugin "${t.dataset.uninstall}"? Its ticked capabilities flip to disabled and dependent agents are flagged.`)) return;
+    try {
+      await api("DELETE", `/plugins/${encodeURIComponent(t.dataset.uninstall)}`);
+      loadPlugins(); loadSpine();
+    } catch (err) { $("msg").textContent = err.message; }
+  }
+});
+$("mcp-rows").addEventListener("click", async e => {
+  const t = e.target;
+  if (t.dataset.mcptick) {
+    const tools = [...document.querySelectorAll(
+      `#mcp-rows input[data-tool]:checked`)].map(i => i.dataset.tool);
+    try {
+      const r = await api("POST",
+        `/mcp/${encodeURIComponent(t.dataset.mcptick)}/tick`, { tools });
+      $("msg").textContent = r.errors && r.errors.length
+        ? r.errors.join(" | ")
+        : `Ticked: ${(r.ticked || []).join(", ") || "(none)"}`;
+      loadMcp(); loadSpine();
+    } catch (err) { $("msg").textContent = err.message; }
+  } else if (t.dataset.mcprm) {
+    if (!confirm(`Remove MCP server "${t.dataset.mcprm}" and its ticked capabilities?`)) return;
+    try {
+      await api("DELETE", `/mcp/${encodeURIComponent(t.dataset.mcprm)}`);
+      loadMcp(); loadSpine();
+    } catch (err) { $("msg").textContent = err.message; }
+  }
+});
+$("btn-plugin-install").addEventListener("click", installPlugin);
+$("btn-mcp-register").addEventListener("click", registerMcp);
+
+(async function init() {
+  $("connector-doc").value = JSON.stringify({
+    id: "erp-json", kind: "rest",
+    base_url: "https://erp.example.com/api",
+    credential_ref: "erp-json",
+    operations: {
+      "erp.stock.fetch": { method: "GET", path: "/stock",
+        response: { list_path: "$.rows" } },
+    },
+  }, null, 2);
+  await Promise.all([loadConnectors(), loadSpine()]);
+})();
+shell.init();
+</script>
+</body>
+</html>
