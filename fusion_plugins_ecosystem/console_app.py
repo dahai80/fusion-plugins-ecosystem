@@ -73,7 +73,7 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.4.4",
+        version="0.4.5",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)

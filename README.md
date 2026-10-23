@@ -347,6 +347,7 @@ fusion-plugin-console --port 8795
   the module key); with no keys configured the API stays open for loopback-only use. Static pages
   are session-gated at the gateway, not upstream.
 - **Path-prefix aware GUI** — `extensions.html`/`shell.js` resolve the API base from
+- **Theme follow (#33)** — embedded in the shell the iframe follows the host theme push (`postMessage` `{type:"event", event:"theme"}`, same-origin only); standalone reads the initial mode from `localStorage["fusion.shell.theme"]` (legacy `fs_theme` cookie + `prefers-color-scheme` fallbacks) and the sidebar toggle persists to both.
   `location.pathname`, so the same build works standalone (`/`) and behind the gateway
   (`/shell/fusion-plugins-ecosystem/`).
 

@@ -185,6 +185,23 @@ def test_static_console_served(client):
     assert client.get("/extensions.html").status_code == 200
 
 
+def test_theme_follows_shell_host(client):
+    """issue #33 — 嵌入跟随宿主主题推送, standalone 读 shell localStorage。"""
+    js = client.get("/shell.js").text
+    # 嵌入: 监听宿主 {type:"event", event:"theme"} postMessage (同源校验)
+    assert '"event"' in js and '"theme"' in js
+    assert "e.origin !== location.origin" in js
+    assert 'msg.payload === "light" || msg.payload === "dark"' in js
+    # 类主题: html.light / html.dark 双类切换
+    assert 'classList.toggle("light"' in js
+    assert 'classList.toggle("dark"' in js
+    # standalone: 初始主题读 shell 同键 localStorage, 兼容旧 cookie
+    assert 'localStorage.getItem("fusion.shell.theme")' in js
+    assert "fs_theme" in js
+    # prefers-color-scheme 初始默认
+    assert "prefers-color-scheme: light" in js
+
+
 class TestApiAuth:
     """issue #30 验收补充 — /api/* 鉴权 (静态 env key + 签发 fm- key 双活)。"""
 
