@@ -268,6 +268,7 @@ fusion-plugin-console --port 8795
   `/api/*` 要求 `Authorization: Bearer` / `x-api-key`（网关代理注入模块密钥）；无密钥时放行
   （仅本机绑定场景）。静态页面在网关侧会话门控，上游不重复鉴权。
 - **前缀自适应 GUI** — `extensions.html`/`shell.js` 从 `location.pathname` 推导 API 基路径，
+- **主题跟随（#33）** — 嵌入 shell 时 iframe 跟随宿主主题推送（`postMessage` `{type:"event", event:"theme"}`，仅同源）；standalone 初始主题读 `localStorage["fusion.shell.theme"]`（回退旧 `fs_theme` cookie + `prefers-color-scheme`），侧边栏切换双写持久化。
   同一构建独立访问（`/`）与经网关（`/shell/fusion-plugins-ecosystem/`）皆可用。
 
 ## 🔧 配置面板（一键开关）
