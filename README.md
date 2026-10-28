@@ -11,8 +11,8 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-634%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/tests-675%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.4.6-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -322,7 +322,17 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/extensions/connectors[/{id}/enable|disable|harness]`,
   `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`, `/health`.
 - **Env vars** — `FUSION_PLUGIN_CONNECTOR_DIR` (default `~/.fusion-plugins-ecosystem/connectors`),
-  `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`).
+  `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`),
+  `FUSION_PLUGIN_KEY_SALT` (key-derivation salt; unset = empty in dev with a warning,
+  fail-fast under `FUSION_PROFILE=prod` — no default literal, see
+  `architecture/config-conventions.md` §3).
+
+### Process titles (issue #35)
+
+Long-running entry points set their process title via `setproctitle` (base dependency,
+silent no-op fallback if unavailable): `fusion-plugin-server stdio`,
+`fusion-plugin-server sse :8765`, `fusion-plugin-console :8795` — `ps`/Activity Monitor
+show the product name and role instead of a bare `Python`.
 
 ### Shell module (gateway registration, issue #30 follow-up)
 

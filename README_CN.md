@@ -11,8 +11,8 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-634%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.3-blue" alt="Version">
+  <img src="https://img.shields.io/badge/tests-675%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.4.6-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -245,7 +245,15 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **端点** — `/api/whoami`、`/api/capabilities`、`/api/extensions/connectors[/{id}/enable|disable|harness]`、
   `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、`/health`。
 - **环境变量** — `FUSION_PLUGIN_CONNECTOR_DIR`（默认 `~/.fusion-plugins-ecosystem/connectors`）、
-  `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）。
+  `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）、
+  `FUSION_PLUGIN_KEY_SALT`（密钥派生盐；未设置时 dev 空盐放行并告警，`FUSION_PROFILE=prod`
+  下 fail-fast——无默认字面量，见 `architecture/config-conventions.md` §3）。
+
+### 进程标题（issue #35）
+
+长驻入口经 `setproctitle`（基础依赖，缺失时静默降级）设置进程标题：
+`fusion-plugin-server stdio`、`fusion-plugin-server sse :8765`、`fusion-plugin-console :8795`
+——ps/活动监视器显示产品名 + 角色，不再是裸 `Python`。
 
 ### Shell 模块（网关注册，issue #30 验收补充）
 
