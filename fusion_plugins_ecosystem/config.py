@@ -9,9 +9,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
+from fusion_core.config import service_data_dir
+
 logger = logging.getLogger(__name__)
+
+# issue #38：数据目录单点解析（fusion-core #31, config-conventions §1）。
+# env 覆盖：FUSION_PLUGINS_ECOSYSTEM_DATA_DIR；default 锁定既有部署路径
+# ~/.fusion-plugins-ecosystem（fm- key / key_salt / vault 已落盘于此，不迁移）。
+DATA_DIR = service_data_dir(
+    "plugins-ecosystem",
+    default=Path.home() / ".fusion-plugins-ecosystem",
+)
 
 
 @dataclass

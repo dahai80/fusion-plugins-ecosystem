@@ -11,8 +11,8 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-675%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.6-blue" alt="Version">
+  <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.4.7-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -325,7 +325,11 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`),
   `FUSION_PLUGIN_KEY_SALT` (key-derivation salt; unset = empty in dev with a warning,
   fail-fast under `FUSION_PROFILE=prod` — no default literal, see
-  `architecture/config-conventions.md` §3).
+  `architecture/config-conventions.md` §3),
+  `FUSION_PLUGINS_ECOSYSTEM_DATA_DIR` (issue #38 single-point data dir via
+  `fusion_core.config.service_data_dir`; default `~/.fusion-plugins-ecosystem`),
+  `FUSION_PLUGINS_ECOSYSTEM_PORT` / `FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT`
+  (issue #38 port resolution via `fusion_core.config.service_port`).
 
 ### Process titles (issue #35)
 
@@ -341,14 +345,16 @@ The console registers itself as a fusion-gateway shell module — the shell side
 the entry (heartbeat expiry), restarting re-registers it. Same pattern as fusion-cowork #97/#168.
 
 ```bash
-FUSION_SHELL_GATEWAY_URL=http://127.0.0.1:11432 \
-FUSION_GATEWAY_ADMIN_KEY=<web_shell.admin_key> \
+FUSION_ADMIN_KEY=<web_shell.admin_key> \
 fusion-plugin-console --port 8795
 ```
 
 - **Registration** — `shell_registry.py` POSTs `web/manifest.json` (id `fusion-plugins-ecosystem`,
   upstream `http://127.0.0.1:8795`) then heartbeats every 15s; gateway restart (404) or key
-  rotation (401) triggers transparent re-registration. Registration is OFF unless both env vars are set.
+  rotation (401) triggers transparent re-registration. Registration is OFF unless `FUSION_ADMIN_KEY`
+  resolves (dev: missing key = empty + warning; prod: missing key = `RuntimeError` fail-fast).
+  The gateway address resolves via `fusion_core.config.gateway_base_url()`
+  (`FUSION_GATEWAY_BASE_URL`, default `http://127.0.0.1:11432`) — issue #38 single-point resolution.
 - **fm- module key (K1/K4)** — with no static api_key in the registration body the gateway issues
   an `fm-` service key (returned exactly once), persisted 0600 at
   `~/.fusion-plugins-ecosystem/web_module_key`; heartbeats authenticate with it.

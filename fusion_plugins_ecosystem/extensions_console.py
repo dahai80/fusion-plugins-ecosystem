@@ -28,6 +28,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from fusion_plugins_ecosystem.config import DATA_DIR
 from fusion_plugins_ecosystem.rest_connector import (
     connector_report,
     execute_operation,
@@ -40,7 +41,7 @@ from fusion_plugins_ecosystem.rest_connector import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EXTENSIONS_DIR = "~/.fusion-plugins-ecosystem/extensions"
+DEFAULT_EXTENSIONS_DIR = str(DATA_DIR / "extensions")  # issue #38：数据目录单点解析
 _MCP_KEY = "mcp_servers.json"
 _TICKS_KEY = "plugin_ticks.json"
 _PLUGINS_KEY = "plugins"

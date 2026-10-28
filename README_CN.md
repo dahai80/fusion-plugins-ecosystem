@@ -11,8 +11,8 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-675%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.6-blue" alt="Version">
+  <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/version-0.4.7-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -247,7 +247,11 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **环境变量** — `FUSION_PLUGIN_CONNECTOR_DIR`（默认 `~/.fusion-plugins-ecosystem/connectors`）、
   `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）、
   `FUSION_PLUGIN_KEY_SALT`（密钥派生盐；未设置时 dev 空盐放行并告警，`FUSION_PROFILE=prod`
-  下 fail-fast——无默认字面量，见 `architecture/config-conventions.md` §3）。
+  下 fail-fast——无默认字面量，见 `architecture/config-conventions.md` §3）、
+  `FUSION_PLUGINS_ECOSYSTEM_DATA_DIR`（issue #38 数据目录单点解析，
+  `fusion_core.config.service_data_dir`；默认 `~/.fusion-plugins-ecosystem`）、
+  `FUSION_PLUGINS_ECOSYSTEM_PORT` / `FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT`
+  （issue #38 端口单点解析，`fusion_core.config.service_port`）。
 
 ### 进程标题（issue #35）
 
@@ -262,14 +266,15 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 与 fusion-cowork #97/#168 同一模式。
 
 ```bash
-FUSION_SHELL_GATEWAY_URL=http://127.0.0.1:11432 \
-FUSION_GATEWAY_ADMIN_KEY=<web_shell.admin_key> \
+FUSION_ADMIN_KEY=<web_shell.admin_key> \
 fusion-plugin-console --port 8795
 ```
 
 - **注册** — `shell_registry.py` POST `web/manifest.json`（id `fusion-plugins-ecosystem`，
   upstream `http://127.0.0.1:8795`），每 15s 心跳；网关重启（404）或密钥轮换（401）透明重注册。
-  两个 env 均未配置时注册默认 OFF。
+  门控 = `FUSION_ADMIN_KEY` 是否解析到（dev 缺失 = 空串 + 告警；prod 缺失 = `RuntimeError`
+  fail-fast）。网关地址经 `fusion_core.config.gateway_base_url()` 单点解析
+  （`FUSION_GATEWAY_BASE_URL`，默认 `http://127.0.0.1:11432`）— issue #38。
 - **fm- 模块密钥（K1/K4）** — 注册体不带 api_key 时网关签发 `fm-` 服务密钥（明文仅返回一次），
   0600 落盘 `~/.fusion-plugins-ecosystem/web_module_key`；心跳用它鉴权。
 - **API 鉴权** — 存在密钥（静态 `FUSION_PLUGINS_CONSOLE_API_KEY` 与/或签发 `fm-` key，双活）时
