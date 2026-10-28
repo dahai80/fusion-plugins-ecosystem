@@ -35,9 +35,11 @@ import time
 from pathlib import Path
 from typing import Any
 
+from fusion_plugins_ecosystem.config import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_CONNECTOR_DIR = "~/.fusion-plugins-ecosystem/connectors"
+DEFAULT_CONNECTOR_DIR = str(DATA_DIR / "connectors")  # issue #38：数据目录单点解析
 
 _READ_METHODS = ("GET",)
 _VALID_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")

@@ -21,11 +21,12 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from fusion_plugins_ecosystem.config import DATA_DIR
 from fusion_plugins_ecosystem.connector import ConnectorPack, ConnectorRegistry
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_INSTALL_ROOT = "~/.fusion-plugins-ecosystem/marketplace"
+DEFAULT_INSTALL_ROOT = str(DATA_DIR / "marketplace")  # issue #38：数据目录单点解析
 PACKAGE_KINDS = ("connector_pack", "skill_package")
 
 

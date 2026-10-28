@@ -9,8 +9,8 @@ FastAPI 应用：静态控制台（web/）+ REST API，端点契约与 f-ecommer
 issue #30 验收补充 — shell 模块化：
 - /api/* 鉴权：FUSION_PLUGINS_CONSOLE_API_KEY 静态密钥 + 网关签发 fm- 模块密钥
   双活（gateway /shell/ 代理注入 Bearer）；两者皆未配置时放行（默认仅本机绑定）。
-- FUSION_SHELL_GATEWAY_URL + FUSION_GATEWAY_ADMIN_KEY 配置时启动后台注册循环
-  （shell_registry），侧边栏出现扩展控制台入口，console 停止后入口置灰。
+- FUSION_ADMIN_KEY 配置时启动后台注册循环（shell_registry，issue #38 单点解析），
+  侧边栏出现扩展控制台入口，console 停止后入口置灰。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
-DEFAULT_PORT = 8795
+DEFAULT_PORT = 8795  # port-registry: fusion-plugins-ecosystem-console
 
 
 def _accepted_keys() -> list[str]:
@@ -73,7 +73,7 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.4.6",
+        version="0.4.7",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)
@@ -228,12 +228,19 @@ def main() -> None:
     """fusion-plugin-console CLI 入口。"""
     import argparse
 
+    from fusion_core.config import service_port
+
     parser = argparse.ArgumentParser(
         prog="fusion-plugin-console",
         description="Fusion Plugins — Extensions Console (Connectors + Plugins·MCP)",
     )
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    # issue #38：端口单点解析 — env FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT 可覆盖
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=service_port("plugins-ecosystem-console", default=DEFAULT_PORT),
+    )
     parser.add_argument(
         "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
     )
@@ -268,9 +275,7 @@ def main() -> None:
         "console: 监听 http://%s:%s (shell 注册 %s)",
         args.host,
         args.port,
-        "启用"
-        if register_enabled
-        else "未启用 — 缺 FUSION_SHELL_GATEWAY_URL / FUSION_GATEWAY_ADMIN_KEY",
+        "启用" if register_enabled else "未启用 — 缺 FUSION_ADMIN_KEY",
     )
 
     async def _serve():

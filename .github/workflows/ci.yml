@@ -11,9 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13"]  # fusion-core requires >=3.12 (issue #38)
     steps:
       - uses: actions/checkout@v4
+      # issue #38：依赖 in-tree fusion-core（单点配置解析），CI 需先装
+      - uses: actions/checkout@v4
+        with:
+          repository: dahai80/fusion-core
+          path: fusion-core
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -21,6 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install -e ./fusion-core
           pip install -e ".[test]"
       - name: Run tests
         run: pytest tests/ -v --tb=short --timeout=120

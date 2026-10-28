@@ -259,6 +259,8 @@ class MCPServer:
 
 def main() -> None:
     """CLI 入口：fusion-plugin-server 命令。"""
+    from fusion_core.config import service_port
+
     parser = argparse.ArgumentParser(
         prog="fusion-plugin-server",
         description="Fusion Plugins Ecosystem MCP Server",
@@ -279,7 +281,9 @@ def main() -> None:
         "--port",
         "-p",
         type=int,
-        default=0,
+        # issue #38：端口单点解析 — env FUSION_PLUGINS_ECOSYSTEM_PORT 可固定
+        # (port-registry: 8765)；默认 0 保持 auto。
+        default=service_port("plugins-ecosystem", default=0),
         help="Port for SSE/HTTP transport (0=auto)",
     )
     parser.add_argument(

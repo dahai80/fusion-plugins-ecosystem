@@ -2,13 +2,17 @@
 
 console 启动时向 fusion-gateway shell 注册表注册 web/manifest.json
 (POST /api/v1/shell/manifests, admin-key auth) 并周期心跳保活
-(心跳过期后网关将侧边栏入口置灰)。env 门控 — 需同时配置:
-- FUSION_SHELL_GATEWAY_URL + FUSION_GATEWAY_ADMIN_KEY
+(心跳过期后网关将侧边栏入口置灰)。env 门控 — FUSION_ADMIN_KEY 配置时启用
+(config-conventions §1: admin key 即 shell 注册凭证)。
+网关地址走 FUSION_GATEWAY_BASE_URL (fusion-core 单点解析, dev 默认本机 11432)。
 可选 FUSION_SHELL_MANIFEST 覆盖 manifest 路径。未配置则静默跳过 (默认 OFF)。
 /shell/fusion-plugins-ecosystem/ 动态代理由 manifest.upstream 驱动 (#232 契约)。
 
 K4: 注册响应携带网关签发 fm- 模块密钥 (仅返回一次明文), 0600 落盘;
 后续心跳用签发密钥鉴权, 失效 (401) 或网关重启 (404) 时用 admin key 重注册。
+
+issue #38: key/URL 解析迁移 fusion_core.config (admin_key / gateway_base_url,
+prod 缺 key fail-fast, dev 告警放行) — 本模块不再手写 env 解析。
 """
 
 from __future__ import annotations
@@ -20,10 +24,12 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
+from fusion_core.config import admin_key, gateway_base_url
+
+from fusion_plugins_ecosystem.config import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
-GATEWAY_URL_ENV = "FUSION_SHELL_GATEWAY_URL"
-ADMIN_KEY_ENV = "FUSION_GATEWAY_ADMIN_KEY"
 MANIFEST_PATH_ENV = "FUSION_SHELL_MANIFEST"
 UPSTREAM_OVERRIDE_ENV = "FUSION_PLUGINS_CONSOLE_UPSTREAM"
 STATIC_KEY_ENV = "FUSION_PLUGINS_CONSOLE_API_KEY"
@@ -32,7 +38,7 @@ HTTP_TIMEOUT_SECONDS = 5.0
 
 # 网关签发 fm- 模块密钥落盘路径 (0600)。静态 env 密钥继续作为覆盖路径
 # 向后兼容; 网关签发后文件覆盖 env 值 (双活窗口内两者皆可)。
-MODULE_KEY_PATH = Path.home() / ".fusion-plugins-ecosystem" / "web_module_key"
+MODULE_KEY_PATH = DATA_DIR / "web_module_key"
 
 
 def load_module_key() -> str:
@@ -82,10 +88,9 @@ def _default_manifest_path() -> Path:
 
 
 def shell_registration_enabled() -> bool:
-    return bool(
-        os.environ.get(GATEWAY_URL_ENV, "").strip()
-        and os.environ.get(ADMIN_KEY_ENV, "").strip()
-    )
+    # issue #38：门控 = admin key 是否解析到 (dev 缺失 → 空串 + 告警 → OFF;
+    # prod 缺失 → RuntimeError, 启动路径 fail-fast)。
+    return bool(admin_key())
 
 
 def load_manifest() -> Dict[str, Any]:
@@ -123,10 +128,10 @@ async def _registry_loop_body(
     client: Any, manifest: Dict[str, Any], interval: float
 ) -> None:
     module_id = str(manifest["id"])
-    gateway = os.environ.get(GATEWAY_URL_ENV, "").strip().rstrip("/")
-    admin_key = os.environ.get(ADMIN_KEY_ENV, "").strip()
+    gateway = gateway_base_url().rstrip("/")
+    adm = admin_key()
     admin_headers = {
-        "Authorization": f"Bearer {admin_key}",
+        "Authorization": f"Bearer {adm}",
         "Content-Type": "application/json",
     }
     registered = False
@@ -154,7 +159,7 @@ async def _registry_loop_body(
                     )
             else:
                 module_key = load_module_key()
-                beat_key = module_key or admin_key
+                beat_key = module_key or adm
                 headers = {
                     "Authorization": f"Bearer {beat_key}",
                     "Content-Type": "application/json",
