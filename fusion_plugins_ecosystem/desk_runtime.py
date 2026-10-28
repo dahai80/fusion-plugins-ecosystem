@@ -38,12 +38,19 @@ def _derive_key() -> bytes:
     密钥源 = 主机名 + 当前用户 + 环境盐 FUSION_PLUGIN_KEY_SALT。
     单机本机威胁模型下防止配置文件明文泄露密钥；跨机/跨用户不可解密。
     """
-    salt = os.environ.get("FUSION_PLUGIN_KEY_SALT", "fusion-plugins-default-salt")
-    if salt == "fusion-plugins-default-salt":
-        # P2-3：默认盐下任何本机同 uid 进程可派生密钥解密 config_center 密钥。
-        # 生产应设置 FUSION_PLUGIN_KEY_SALT；严格模式下默认盐视为弱派生并告警。
+    # issue #36：默认盐字面量已移除（config-conventions §3）——unset 即空，不再静默
+    # 落回可猜测常量。prod 缺盐 fail-fast；dev 空盐宽松放行但醒目告警。
+    salt = os.environ.get("FUSION_PLUGIN_KEY_SALT", "")
+    if not salt:
+        if os.environ.get("FUSION_PROFILE", "dev") == "prod":
+            raise RuntimeError(
+                "FUSION_PLUGIN_KEY_SALT not set — refusing default salt in prod. "
+                "Generate one via `openssl rand -hex 32` and export it for the "
+                "service user. See architecture/config-conventions.md §3."
+            )
         logger.warning(
-            "desk_runtime: 使用默认 API 密钥盐，生产环境应设置 FUSION_PLUGIN_KEY_SALT"
+            "desk_runtime: FUSION_PLUGIN_KEY_SALT 未设置，密钥派生使用空盐（dev 宽松）；"
+            "生产环境必须设置（architecture/config-conventions.md §3）"
         )
     material = f"{salt}|{socket.gethostname()}|{os.getuid()}"
     digest = hashlib.sha256(material.encode("utf-8")).digest()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -299,3 +300,55 @@ def test_gateway_info_no_port() -> None:
     rt = DeskRuntime()
     info = rt.gateway_info()
     assert info["port"] is None
+
+
+# ── 密钥盐治理（issue #36：默认盐字面量移除，prod fail-fast / dev 宽松告警）──
+
+
+class TestKeySaltGovernance:
+    def _clean_env(self, monkeypatch):
+        monkeypatch.delenv("FUSION_PLUGIN_KEY_SALT", raising=False)
+        monkeypatch.delenv("FUSION_PROFILE", raising=False)
+
+    def test_prod_missing_salt_fail_fast(self, monkeypatch):
+        from fusion_plugins_ecosystem.desk_runtime import _derive_key
+
+        self._clean_env(monkeypatch)
+        monkeypatch.setenv("FUSION_PROFILE", "prod")
+        with pytest.raises(RuntimeError, match="FUSION_PLUGIN_KEY_SALT"):
+            _derive_key()
+
+    def test_dev_missing_salt_empty_with_warning(self, monkeypatch, caplog):
+        from fusion_plugins_ecosystem.desk_runtime import _derive_key
+
+        self._clean_env(monkeypatch)
+        with caplog.at_level(logging.WARNING):
+            key = _derive_key()
+        assert key  # 空盐也能派生（dev 宽松），但必须告警
+        assert "FUSION_PLUGIN_KEY_SALT" in caplog.text
+
+    def test_set_salt_no_warning(self, monkeypatch, caplog):
+        from fusion_plugins_ecosystem.desk_runtime import _derive_key
+
+        self._clean_env(monkeypatch)
+        monkeypatch.setenv("FUSION_PLUGIN_KEY_SALT", "unit-test-salt")
+        with caplog.at_level(logging.WARNING):
+            key = _derive_key()
+        assert key
+        assert "FUSION_PLUGIN_KEY_SALT" not in caplog.text
+
+    def test_prod_with_salt_ok(self, monkeypatch):
+        from fusion_plugins_ecosystem.desk_runtime import _derive_key
+
+        self._clean_env(monkeypatch)
+        monkeypatch.setenv("FUSION_PROFILE", "prod")
+        monkeypatch.setenv("FUSION_PLUGIN_KEY_SALT", "prod-salt")
+        assert _derive_key()
+
+    def test_no_default_salt_literal_left(self):
+        # check-env 规则 1 回归：源码不得再含默认盐字面量
+        import fusion_plugins_ecosystem.desk_runtime as dr
+
+        assert "fusion-plugins-default-salt" not in Path(dr.__file__).read_text(
+            encoding="utf-8"
+        )

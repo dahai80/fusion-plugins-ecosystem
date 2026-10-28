@@ -73,7 +73,7 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.4.5",
+        version="0.4.6",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)
@@ -238,6 +238,11 @@ def main() -> None:
         "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
     )
     args = parser.parse_args()
+
+    # issue #35：进程标题带产品名 + 端口，ps 可区分实例
+    from fusion_plugins_ecosystem.proctitle import console_title, set_process_title
+
+    set_process_title(console_title(args.port))
 
     logging.basicConfig(
         level=getattr(logging, args.log_level),

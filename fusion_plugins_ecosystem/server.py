@@ -290,6 +290,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # issue #35：进程标题带产品名 + 传输/端口，ps 可区分实例
+    from fusion_plugins_ecosystem.proctitle import (
+        plugin_server_title,
+        set_process_title,
+    )
+
+    set_process_title(plugin_server_title(args.transport, args.port))
+
     # P3-6：结构化 JSON 日志 + correlation_id（见 logging_setup）。
     # 替代旧 plain-text basicConfig，便于 ELK/Loki 聚合与请求关联。
     from fusion_plugins_ecosystem.logging_setup import configure_structured_logging

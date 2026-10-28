@@ -4,7 +4,7 @@
     "title_en": "Extensions Console",
     "description": "插件/连接器/MCP 管理: 连接器安装启用、远程 MCP 接入、插件生命周期。",
     "description_en": "Plugin/connector/MCP management: connector install & enable, remote MCP intake, plugin lifecycle.",
-    "version": "0.4.5",
+    "version": "0.4.6",
     "path": "/plugins",
     "icon": "Puzzle",
     "entry": "/shell/fusion-plugins-ecosystem/",
