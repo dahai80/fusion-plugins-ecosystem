@@ -6,7 +6,7 @@ authors = [
     { name = "Fusion-MLX Team" },
 ]
 license = "Apache-2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fusion-core",
     "pydantic>=2.0.0",

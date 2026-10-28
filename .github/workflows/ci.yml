@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13"]  # fusion-core requires >=3.12 (issue #38)
     steps:
       - uses: actions/checkout@v4
       # issue #38：依赖 in-tree fusion-core（单点配置解析），CI 需先装
