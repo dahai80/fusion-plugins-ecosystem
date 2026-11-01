@@ -114,6 +114,18 @@ class TestSearch:
         hub = console.list_hub("CAVEMAN")
         assert any(i["id"] == "caveman_compress" for i in hub["tabs"]["skills"])
 
+    def test_search_hits_recommended_connector_pack(self, console):
+        # 未装连接器时搜索也能命中连接器类型 — 推荐位市场条目入搜索面
+        hub = console.list_hub("notion")
+        hits = hub["tabs"]["connectors"]
+        assert any(i["id"] == "notion" and i["recommended"] for i in hits)
+        assert all(not i.get("recommended") or i["enabled"] is False for i in hits)
+        # 空查询不把推荐位混进 tab（counts 保持纯已装口径）
+        full = console.list_hub()
+        assert all(
+            not i.get("recommended") for tab in full["tabs"].values() for i in tab
+        )
+
     def test_empty_query_returns_all(self, console):
         full = console.list_hub()
         hub = console.list_hub("")
