@@ -1882,5 +1882,30 @@ class ExtensionsConsole:
                     logger.warning(
                         "extensions_console: 跳过损坏插件清单 %s: %s", path.name, exc
                     )
+        # issue #44：已装 bundle 的 enabled 项跨重启重建（连接器包桥接/技能启用
+        # 是运行时态，不重建则消费方下次拉取即"消失"）
+        for bundle in self.list_bundles()["bundles"]:
+            for item in bundle.get("items", []):
+                if item.get("state") != "enabled":
+                    continue
+                itype = str(item.get("type"))
+                ref = str(item.get("ref"))
+                try:
+                    if itype == "connector_pack":
+                        if self._pack_plugin_ids(ref):
+                            continue  # 桥接已存在（重复 resync）— 不重装
+                        out = await self._install_bundle_item(itype, ref, {})
+                        relisted.extend(out.get("plugin_ids", []))
+                    elif itype in ("skill", "subagent") and self.registry.get(ref):
+                        if not self._plugin_enabled(ref):
+                            await self.lifecycle.enable(ref)
+                        relisted.append(ref)
+                except Exception as exc:  # noqa: BLE001 — 单项失败不拖垮 resync
+                    logger.warning(
+                        "extensions_console: resync 重建 bundle 项 %s:%s 失败: %s",
+                        bundle.get("id"),
+                        ref,
+                        exc,
+                    )
         logger.info("extensions_console: resync 重建 %d 个能力", len(relisted))
         return {"relisted": relisted}
