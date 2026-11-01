@@ -164,6 +164,11 @@ class TestRevoke:
         assert "hub.connector.remove" in _actions(console, resource_id="bank-api")
         out = await console.remove_connector("bank-api")
         assert out["removed"] is False
+        # _scope_policy 元数据键不混入 bundle 列表
+        listed = console.list_bundles()["bundles"]
+        assert all(b.get("id") == "finance-kit" for b in listed)
+        await console.uninstall_bundle("finance-kit")
+        assert console.list_bundles() == {"bundles": []}
 
 
 class TestUsedBy:
