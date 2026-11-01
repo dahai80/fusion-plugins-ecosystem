@@ -74,7 +74,7 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.4.9",
+        version="0.5.0",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)
@@ -121,6 +121,69 @@ def create_app(
     @app.get("/api/hub")
     async def hub(q: str = "") -> dict[str, Any]:
         return console.list_hub(q)
+
+    # ── 安装/授权/更新/卸载流（issue #42 PC-2）──
+
+    @app.get("/api/hub/bundles")
+    async def bundles_list() -> dict[str, Any]:
+        return console.list_bundles()
+
+    @app.post("/api/hub/bundles/{bundle_id}/install")
+    async def bundles_install(bundle_id: str) -> dict[str, Any]:
+        try:
+            return await console.install_bundle(bundle_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/hub/bundles/{bundle_id}/items/{ref}/tick")
+    async def bundle_item_tick(
+        bundle_id: str, ref: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await console.tick_bundle_item(bundle_id, ref, bool(body.get("enabled")))
+
+    @app.get("/api/hub/bundles/{bundle_id}/update")
+    async def bundle_update_preview(bundle_id: str) -> dict[str, Any]:
+        try:
+            return console.bundle_update_preview(bundle_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/hub/bundles/{bundle_id}/update")
+    async def bundle_update_apply(
+        bundle_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        try:
+            return await console.bundle_update_apply(
+                bundle_id, [str(r) for r in (body.get("opt_in") or [])]
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/hub/bundles/{bundle_id}/uninstall-preview")
+    async def bundle_uninstall_preview(bundle_id: str) -> dict[str, Any]:
+        return console.uninstall_preview(bundle_id)
+
+    @app.delete("/api/hub/bundles/{bundle_id}")
+    async def bundle_uninstall(bundle_id: str) -> dict[str, Any]:
+        return await console.uninstall_bundle(bundle_id)
+
+    @app.get("/api/hub/connectors/{connector_id}/oauth")
+    async def connector_oauth_scopes(connector_id: str) -> dict[str, Any]:
+        return console.oauth_scopes(connector_id)
+
+    @app.post("/api/hub/connectors/{connector_id}/oauth")
+    async def connector_oauth_complete(
+        connector_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await console.oauth_complete(
+            connector_id,
+            [str(s) for s in (body.get("scopes") or [])],
+            body.get("credentials") or {},
+        )
+
+    @app.get("/api/hub/connectors/{connector_id}/policy")
+    async def connector_scope_policy(connector_id: str) -> dict[str, Any]:
+        return console.scope_policy(connector_id)
 
     # ── connectors ──
 

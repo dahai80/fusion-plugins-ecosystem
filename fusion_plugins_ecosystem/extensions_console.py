@@ -31,6 +31,7 @@ from typing import Any
 from fusion_plugins_ecosystem.config import DATA_DIR
 from fusion_plugins_ecosystem.rest_connector import (
     connector_report,
+    delete_connector,
     execute_operation,
     get_connector,
     read_channels,
@@ -516,6 +517,444 @@ class ExtensionsConsole:
             },
         }
 
+    # ── 安装/授权/更新/卸载流（issue #42 PC-2）──
+
+    _BUNDLES_KEY = "bundles.json"
+
+    def _bundles_state(self) -> dict[str, Any]:
+        return self._read_json(self._BUNDLES_KEY, {})
+
+    def _save_bundles_state(self, state: dict[str, Any]) -> None:
+        self._write_json(self._BUNDLES_KEY, state)
+
+    def _market_entry(self, entry_id: str) -> Any:
+        from fusion_plugins_ecosystem.marketplace import Marketplace
+
+        # 索引来源：FUSION_PLUGIN_MARKETPLACE_INDEX（本地 JSON / HTTPS），
+        # 未设置时仅内置第一方目录
+        mp = Marketplace(
+            connector_registry=None,
+            marketplace_index=os.environ.get("FUSION_PLUGIN_MARKETPLACE_INDEX") or None,
+        )
+        entries, _ = mp.load_index()
+        entry = next((e for e in entries if e.id == entry_id), None)
+        if entry is None:
+            raise KeyError(f"市场索引中无条目 {entry_id!r}")
+        return entry
+
+    @staticmethod
+    def _entry_items(entry: Any) -> list[dict[str, Any]]:
+        """市场条目 → bundle items：bundle 展开声明 items；其余包单条目化。"""
+        if entry.kind == "bundle":
+            return list(entry.items or [])
+        if entry.kind == "connector_pack":
+            return [{"type": "connector_pack", "ref": entry.id}]
+        return [{"type": "skill_package", "ref": entry.id}]
+
+    def _connector_registry(self) -> Any:
+        """bundle 安装 connector_pack 项用的 inline 连接器注册中心（惰性构建）。"""
+        from fusion_plugins_ecosystem.connector import ConnectorRegistry
+
+        return ConnectorRegistry(
+            desk=self.desk,
+            registry=self.registry,
+            sandbox_default_mode="inline",
+        )
+
+    async def install_bundle(self, entry_id: str) -> dict[str, Any]:
+        """一键安装市场包（issue #42）：skills 启用、子代理注册启用、
+        连接器落盘并置 pending_auth（OAuth 后暴露）、connector_pack/skill_package
+        走既有安装路径。逐项状态持久化，安装后可逐项停用。
+        """
+        entry = self._market_entry(entry_id)
+        state = self._bundles_state()
+        items_out: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for item in self._entry_items(entry):
+            itype = str(item.get("type"))
+            ref = str(item.get("ref"))
+            try:
+                item_state = await self._install_bundle_item(itype, ref, item)
+                items_out.append({"type": itype, "ref": ref, **item_state})
+            except Exception as exc:  # noqa: BLE001 — 逐项报错不打断整包
+                errors.append(f"{itype}:{ref}: {exc}")
+                items_out.append(
+                    {"type": itype, "ref": ref, "state": "error", "error": str(exc)}
+                )
+        state[entry.id] = {
+            "id": entry.id,
+            "name": entry.name,
+            "version": entry.version,
+            "changelog": entry.description,
+            "kind": entry.kind,
+            "items": items_out,
+        }
+        self._save_bundles_state(state)
+        self.desk.log(
+            entry.id,
+            "INFO",
+            f"bundle {entry.id} v{entry.version} 安装完成"
+            f"（{len(items_out)} 项, {len(errors)} 错误）",
+        )
+        return {
+            "installed": True,
+            "bundle_id": entry.id,
+            "version": entry.version,
+            "items": items_out,
+            "errors": errors,
+        }
+
+    async def _install_bundle_item(
+        self, itype: str, ref: str, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        if itype in ("skill", "subagent"):
+            manifest = self.registry.get(ref)
+            if manifest is None:
+                raise KeyError(f"插件 {ref!r} 未注册（先 install_plugin）")
+            await self.lifecycle.enable(ref)
+            return {"state": "enabled", "name": manifest.name}
+        if itype == "connector":
+            doc = dict(item.get("doc") or {})
+            doc.setdefault("id", ref)
+            problems = validate_connector(doc)
+            if problems:
+                raise ValueError(f"连接器 {ref} 校验失败: {problems}")
+            doc.pop("_disabled", None)
+            save_connector(ref, doc)
+            creds = _vault_credentials(self.desk, str(doc.get("credential_ref") or ref))
+            if creds:
+                # 凭据已就绪 → 直接可用（等价 #30 validate → credentials → enable）
+                await self.enable_connector(ref)
+                return {"state": "enabled", "connector_id": ref}
+            return {"state": "pending_auth", "connector_id": ref}
+        if itype == "connector_pack":
+            creg = self._connector_registry()
+            pack = next((p for p in creg.list_packs() if p.id == ref), None)
+            if pack is None:
+                mp_entry = self._market_entry(ref)
+                from fusion_plugins_ecosystem.connector import ConnectorPack
+
+                pack_dict = mp_entry.pack
+                if pack_dict is None:
+                    raise ValueError(f"连接器包 {ref} 无内联 pack 定义")
+                pack = ConnectorPack.from_dict(pack_dict)
+            plugin_ids = creg.install_pack(pack)
+            self.desk.log(
+                ref, "INFO", f"连接器包 {ref} 已安装（{len(plugin_ids)} 工具）"
+            )
+            return {"state": "enabled", "plugin_ids": plugin_ids}
+        if itype == "skill_package":
+            entry = self._market_entry(ref)
+            from fusion_plugins_ecosystem.marketplace import Marketplace
+
+            mp = Marketplace(connector_registry=self._connector_registry())
+            out = mp._install_skill_package(entry)
+            return {"state": "enabled", "path": out.get("path")}
+        raise ValueError(f"未知 bundle item 类型 {itype!r}")
+
+    def list_bundles(self) -> dict[str, Any]:
+        return {"bundles": list(self._bundles_state().values())}
+
+    async def tick_bundle_item(
+        self, bundle_id: str, ref: str, enabled: bool
+    ) -> dict[str, Any]:
+        """bundle 内逐项启停（issue #42：安装后 packed item 各自可停用）。"""
+        state = self._bundles_state()
+        bundle = state.get(bundle_id)
+        if bundle is None:
+            return {"ticked": False, "error": f"bundle {bundle_id!r} 未安装"}
+        item = next((i for i in bundle.get("items", []) if i.get("ref") == ref), None)
+        if item is None:
+            return {"ticked": False, "error": f"bundle {bundle_id} 无条目 {ref!r}"}
+        if item.get("state") == "pending_auth" and enabled:
+            return {"ticked": False, "error": f"{ref} 待授权（先完成 OAuth）"}
+        try:
+            if item["type"] in ("skill", "subagent"):
+                if enabled:
+                    await self.lifecycle.enable(ref)
+                else:
+                    await self.lifecycle.disable(ref)
+            elif item["type"] == "connector":
+                if enabled:
+                    await self.enable_connector(ref)
+                else:
+                    await self.disable_connector(ref)
+            elif item["type"] == "connector_pack":
+                for pid in self._pack_plugin_ids(ref):
+                    if enabled:
+                        await self.lifecycle.enable(pid)
+                    else:
+                        await self.lifecycle.disable(pid)
+            elif item["type"] == "skill_package":
+                pass  # 目录型技能包无运行时开关 — 状态仅记账
+            item["state"] = "enabled" if enabled else "disabled"
+            self._save_bundles_state(state)
+            self.desk.log(
+                bundle_id, "INFO", f"bundle 项 {ref} → {'启用' if enabled else '停用'}"
+            )
+            return {"ticked": True, "ref": ref, "state": item["state"]}
+        except Exception as exc:  # noqa: BLE001 — 停用失败原样上报
+            return {"ticked": False, "error": str(exc)}
+
+    def _pack_plugin_ids(self, pack_id: str) -> list[str]:
+        return [
+            m.id
+            for m in self.registry.list()
+            if m.id.startswith(f"connector__{pack_id}__")
+        ]
+
+    # ── 连接器 OAuth（issue #42：hub 内完成，不跳出）──
+
+    def oauth_scopes(self, connector_id: str) -> dict[str, Any]:
+        """OAuth 首屏：读 scope（可勾选授权）+ 敏感 scope（逐用确认，不自动开）。"""
+        doc = get_connector(connector_id)
+        if not doc:
+            return {"error": "connector not found"}
+        scopes = [
+            {"id": ch["id"], "title": ch["title"], "sensitive": False}
+            for ch in read_channels(doc)
+        ]
+        sensitive = [
+            {"id": wid, "title": wid, "sensitive": True} for wid in write_channels(doc)
+        ]
+        auth = doc.get("auth") or {}
+        fields = auth.get("credential_fields") or []
+        return {
+            "connector_id": connector_id,
+            "scopes": scopes + sensitive,
+            "credential_fields": fields,
+        }
+
+    async def oauth_complete(
+        self, connector_id: str, scopes: list[str], credentials: dict[str, Any]
+    ) -> dict[str, Any]:
+        """OAuth 完成：凭据入保险库，勾选的读 scope 授权桥接，写 scope 记
+        per_use 策略（绑定 cowork 审批系统，上游 fusion-cowork#225）。
+        """
+        doc = get_connector(connector_id)
+        if not doc:
+            return {"completed": False, "error": "connector not found"}
+        if not isinstance(credentials, dict) or not credentials:
+            return {"completed": False, "error": "credentials required"}
+        valid_reads = {ch["id"] for ch in read_channels(doc)}
+        valid_writes = set(write_channels(doc))
+        unknown = [s for s in scopes if s not in valid_reads]
+        if unknown:
+            return {"completed": False, "error": f"未知读 scope: {unknown}"}
+        cred_ref = str(doc.get("credential_ref") or connector_id)
+        saved = self.save_credentials(cred_ref, credentials)
+        if not saved.get("saved"):
+            return {
+                "completed": False,
+                "error": saved.get("error") or "vault write failed",
+            }
+        granted = scopes or sorted(valid_reads)
+        doc["_scope_grants"] = list(granted)
+        doc.pop("_disabled", None)
+        save_connector(connector_id, doc)
+        # 敏感 scope 策略绑定：写通道不自动开，逐用确认（cowork #225 上游就绪前
+        # 记录在案 + 查询接口可用，执行侧 #30 审核队列兜底）
+        state = self._bundles_state()
+        policy = state.setdefault("_scope_policy", {})
+        policy[connector_id] = {wid: "per_use" for wid in sorted(valid_writes)}
+        # bundle 内对应项 pending_auth → enabled
+        for bundle in state.values():
+            for item in bundle.get("items", []):  # type: ignore[union-attr]
+                if (
+                    isinstance(item, dict)
+                    and item.get("type") == "connector"
+                    and item.get("ref") == connector_id
+                ):
+                    item["state"] = "enabled"
+        self._save_bundles_state(state)
+        added = await self.enable_connector(connector_id)
+        self.desk.log(
+            f"connector__{connector_id}",
+            "INFO",
+            f"连接器 {connector_id} OAuth 完成：授权读 {len(granted)} 通道，"
+            f"{len(valid_writes)} 写通道绑定逐用确认",
+        )
+        return {
+            "completed": True,
+            "connector_id": connector_id,
+            "granted_scopes": list(granted),
+            "sensitive_scopes_per_use": sorted(valid_writes),
+            "capabilities": added.get("capabilities", []),
+        }
+
+    def scope_policy(self, connector_id: str) -> dict[str, Any]:
+        """敏感 scope 策略查询（cowork 审批系统 / 权限引擎对接点）。"""
+        state = self._bundles_state()
+        policy = (state.get("_scope_policy") or {}).get(connector_id, {})
+        return {"connector_id": connector_id, "per_use_scopes": sorted(policy)}
+
+    # ── 更新流（issue #42：changelog 先行，新增项 opt-in）──
+
+    def bundle_update_preview(self, bundle_id: str) -> dict[str, Any]:
+        state = self._bundles_state()
+        bundle = state.get(bundle_id)
+        if bundle is None:
+            return {"error": f"bundle {bundle_id!r} 未安装"}
+        entry = self._market_entry(bundle_id)
+        installed_v = self._version_key(str(bundle.get("version") or "0"))
+        available_v = self._version_key(entry.version)
+        if available_v <= installed_v:
+            return {
+                "bundle_id": bundle_id,
+                "update_available": False,
+                "installed_version": bundle.get("version"),
+                "available_version": entry.version,
+            }
+        known_refs = {i.get("ref") for i in bundle.get("items", [])}
+        new_items = [
+            dict(item)
+            for item in self._entry_items(entry)
+            if item.get("ref") not in known_refs
+        ]
+        return {
+            "bundle_id": bundle_id,
+            "update_available": True,
+            "installed_version": bundle.get("version"),
+            "available_version": entry.version,
+            "changelog": entry.description,
+            "new_items": new_items,
+        }
+
+    async def bundle_update_apply(
+        self, bundle_id: str, opt_in: list[str]
+    ) -> dict[str, Any]:
+        """应用更新：只装 opt-in 的新增项，版本号前移。"""
+        preview = self.bundle_update_preview(bundle_id)
+        if not preview.get("update_available"):
+            return {"updated": False, "reason": "no update available"}
+        entry = self._market_entry(bundle_id)
+        state = self._bundles_state()
+        bundle = state[bundle_id]
+        opted = set(opt_in or [])
+        items_out: list[dict[str, Any]] = list(bundle.get("items", []))
+        errors: list[str] = []
+        for item in preview["new_items"]:
+            ref = str(item.get("ref"))
+            if ref not in opted:
+                continue  # 未勾选的新增项不自动开（opt-in 契约）
+            try:
+                item_state = await self._install_bundle_item(
+                    str(item.get("type")), ref, item
+                )
+                items_out.append({"type": item.get("type"), "ref": ref, **item_state})
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{item.get('type')}:{ref}: {exc}")
+        bundle["items"] = items_out
+        bundle["version"] = entry.version
+        bundle["changelog"] = entry.description
+        self._save_bundles_state(state)
+        self.desk.log(
+            bundle_id,
+            "INFO",
+            f"bundle {bundle_id} 更新至 v{entry.version}"
+            f"（opt-in {len(opted)}/{len(preview['new_items'])} 新增项）",
+        )
+        return {
+            "updated": True,
+            "bundle_id": bundle_id,
+            "version": entry.version,
+            "applied_items": list(opted),
+            "errors": errors,
+        }
+
+    # ── 卸载 + 影响面（issue #42：卸载前展示 被使用于）──
+
+    def uninstall_preview(self, bundle_id: str) -> dict[str, Any]:
+        state = self._bundles_state()
+        bundle = state.get(bundle_id)
+        if bundle is None:
+            return {"error": f"bundle {bundle_id!r} 未安装"}
+        caps: list[str] = []
+        for item in bundle.get("items", []):
+            ref = str(item.get("ref"))
+            if item.get("type") in ("skill", "subagent"):
+                caps.append(f"node.{ref}")
+                caps.append(ref)
+            elif item.get("type") == "connector":
+                doc = get_connector(ref) or {}
+                caps.extend(f"connector.{ref}.{ch['id']}" for ch in read_channels(doc))
+            elif item.get("type") == "connector_pack":
+                caps.extend(self._pack_plugin_ids(ref))
+        in_use_by = self._reverse_lookup(caps)
+        return {
+            "bundle_id": bundle_id,
+            "capabilities_affected": caps,
+            "in_use_by": in_use_by,
+            "safe_to_remove": not in_use_by,
+        }
+
+    def _reverse_lookup(self, refs: list[str]) -> list[dict[str, Any]]:
+        """注册表反向查找：哪些 cowork 节点引用了这些能力（防御式遍历）。"""
+        registry = getattr(self.desk, "node_registry", None)
+        if registry is None or not refs:
+            return []
+        wanted = {r for r in refs if r}
+        found: list[dict[str, Any]] = []
+        try:
+            nodes = registry.list()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("extensions_console: 节点注册表不可读: %s", exc)
+            return []
+        for node in nodes:
+            name = getattr(node, "name", None) or getattr(node, "__name__", "") or ""
+            desc = getattr(node, "description", "") or ""
+            hay = f"{name} {desc}"
+            hits = sorted(w for w in wanted if w in hay)
+            hit_list = sorted(hits)
+            if hit_list:
+                found.append({"node": str(name), "refs": hit_list})
+        return found
+
+    async def uninstall_bundle(self, bundle_id: str) -> dict[str, Any]:
+        state = self._bundles_state()
+        bundle = state.pop(bundle_id, None)
+        if bundle is None:
+            return {"removed": False, "error": f"bundle {bundle_id!r} 未安装"}
+        removed: list[str] = []
+        errors: list[str] = []
+        for item in bundle.get("items", []):
+            ref = str(item.get("ref"))
+            try:
+                if item.get("type") in ("skill", "subagent"):
+                    if self._plugin_enabled(ref):
+                        await self.lifecycle.disable(ref)
+                    removed.append(ref)
+                elif item.get("type") == "connector":
+                    await self.disable_connector(ref)
+                    delete_connector(ref)
+                    removed.append(ref)
+                elif item.get("type") == "connector_pack":
+                    for pid in self._pack_plugin_ids(ref):
+                        if self._plugin_enabled(pid):
+                            await self.lifecycle.disable(pid)
+                    removed.append(ref)
+                elif item.get("type") == "skill_package":
+                    from fusion_plugins_ecosystem.marketplace import Marketplace
+
+                    Marketplace(
+                        connector_registry=self._connector_registry()
+                    ).uninstall(ref)
+                    removed.append(ref)
+            except Exception as exc:  # noqa: BLE001 — 逐项报错不打断卸载
+                errors.append(f"{item.get('type')}:{ref}: {exc}")
+        self._save_bundles_state(state)
+        self.desk.log(
+            bundle_id,
+            "INFO",
+            f"bundle {bundle_id} 已卸载（{len(removed)} 项, {len(errors)} 错误）",
+        )
+        return {
+            "removed": True,
+            "bundle_id": bundle_id,
+            "items_removed": removed,
+            "errors": errors,
+        }
+
     # ── 连接器 ──
 
     def list_connectors(self) -> dict[str, Any]:
@@ -674,7 +1113,17 @@ class ExtensionsConsole:
         cid = str(doc.get("id"))
         self._unbridge_connector(cid)
         added = []
+        # issue #42：OAuth 逐 scope 授权 — 只桥接已授权读通道
+        # （doc._scope_grants 缺省 = 全量，兼容 #30 直装直启路径）
+        granted = doc.get("_scope_grants")
         for ch in read_channels(doc):
+            if isinstance(granted, list) and ch["id"] not in granted:
+                logger.info(
+                    "extensions_console: 连接器 %s 读通道 %s 未授权，跳过桥接",
+                    cid,
+                    ch["id"],
+                )
+                continue
             op = (doc.get("operations") or {}).get(ch["id"]) or {}
             plugin_id = f"connector__{cid}__{ch['id']}"
             self.registry.register(

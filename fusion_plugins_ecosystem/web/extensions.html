@@ -46,6 +46,21 @@
   .hub-chips .chip { cursor: default; }
   .group-row { margin: 10px 0; }
   .group-row .gtitle { font-weight: 600; margin-right: 8px; }
+  .bundle-box { border: 1px solid var(--fs-border); border-radius: 8px;
+    padding: 8px 12px; margin: 6px 0; }
+  .bundle-box .bitems { margin: 6px 0 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .hub-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center; z-index: 60; }
+  .hub-modal-box { background: var(--fs-bg); border: 1px solid var(--fs-border);
+    border-radius: 10px; padding: 16px 18px; max-width: 460px; width: 92%;
+    max-height: 80vh; overflow-y: auto; }
+  .hub-modal-box h3 { margin: 0 0 8px; }
+  .hub-modal-box .mrow { margin: 6px 0; font-size: 13px; }
+  .hub-modal-box .mrow label { display: block; }
+  .hub-modal-box input[type="text"], .hub-modal-box input[type="password"] {
+    width: 100%; box-sizing: border-box; margin-top: 2px; }
+  .hub-modal-box .mbtns { display: flex; gap: 8px; margin-top: 12px; }
+  .hub-modal-box .scope-off { opacity: .6; }
 </style>
 </head>
 <body data-page="extensions">
@@ -70,7 +85,12 @@ Plugin nodes ──┘ admin ticks ───────────┘    (ever
 </div>
 
 <div class="group-row" id="hub-groups"></div>
+<div class="group-row hidden" id="hub-bundles-wrap">
+  <span class="gtitle" id="hub-bundles-title">Bundles</span>
+  <div id="hub-bundles"></div>
+</div>
 <div id="hub-results" class="hidden"></div>
+<div id="hub-modal" class="hub-modal hidden"><div class="hub-modal-box" id="hub-modal-box"></div></div>
 
 <div class="tabbar">
   <button data-tab="connectors" class="active">Connectors</button>
@@ -455,8 +475,17 @@ const HUB_I18N = {
     enable: "Enable", disable: "Disable", enabled: "enabled", disabled: "disabled",
     none: "No entries.", noHits: "No matches across plugins / skills / connectors / sub-agents.",
     typeLabels: { plugin: "Plugin", skill: "Skill", connector: "Connector",
-      mcp: "MCP", subagent: "Sub-agent" },
+      mcp: "MCP", subagent: "Sub-agent", connector_pack: "Connector pack",
+      skill_package: "Skill package" },
     resultsFor: q => `Cross-type results for “${q}”`,
+    install: "Install", installedBundle: "Installed bundles",
+    authorize: "Authorize", pendingAuth: "pending auth", perUse: "sensitive · confirm per use",
+    cancel: "Cancel", confirm: "Confirm", credentials: "Credentials",
+    updateBtn: "Update", uninstall: "Uninstall", noUpdate: "No update available",
+    changelog: "Changelog", optIn: "New items (opt-in)", applyUpdate: "Apply update",
+    usedBy: "Used by", safeRemove: "Nothing references these capabilities — safe to remove.",
+    removeQ: q => `Remove bundle "${q}"?`,
+    bundlesNone: "No bundles installed yet — install from Recommended.",
   },
   zh: {
     search: "搜索 插件 / Skills / 连接器 / 子代理…",
@@ -467,8 +496,17 @@ const HUB_I18N = {
     enable: "启用", disable: "禁用", enabled: "已启用", disabled: "已停用",
     none: "暂无条目。", noHits: "插件 / Skills / 连接器 / 子代理 中无匹配。",
     typeLabels: { plugin: "插件", skill: "Skill", connector: "连接器",
-      mcp: "MCP", subagent: "子代理" },
+      mcp: "MCP", subagent: "子代理", connector_pack: "连接器包",
+      skill_package: "技能包" },
     resultsFor: q => `“${q}” 的跨类结果`,
+    install: "安装", installedBundle: "已装套件",
+    authorize: "授权", pendingAuth: "待授权", perUse: "敏感 · 每次使用需确认",
+    cancel: "取消", confirm: "确认", credentials: "凭据",
+    updateBtn: "更新", uninstall: "卸载", noUpdate: "暂无更新",
+    changelog: "更新日志", optIn: "新增项（按需勾选）", applyUpdate: "应用更新",
+    usedBy: "被使用于", safeRemove: "无节点引用这些能力 — 可安全移除。",
+    removeQ: q => `卸载套件 "${q}"？`,
+    bundlesNone: "尚未安装套件 — 从官方推荐安装。",
   },
 };
 let hubLang = "en";
@@ -511,7 +549,8 @@ async function loadHub() {
     badge.classList.toggle("hidden", !updates.length);
     badge.textContent = t.updatesBadge(updates.length);
     const recChips = (g.recommended || []).map(x =>
-      `<span class="chip off" title="${esc(x.description || "")}">${esc(x.name)} · v${esc(x.version)}</span>`).join("");
+      `<span class="chip off" title="${esc(x.description || "")}">${esc(x.name)} · v${esc(x.version)}</span>` +
+      ` <button class="link" data-binstall="${esc(x.id)}">${t.install}</button>`).join("");
     const updChips = updates.map(x =>
       `<span class="chip warn" title="${esc(x.changelog || "")}">${esc(x.name)} v${esc(x.installed_version)} → v${esc(x.available_version)}</span>`).join("");
     const instChips = (g.installed || []).map(x =>
@@ -540,6 +579,7 @@ async function loadHub() {
       box.classList.add("hidden");
       box.innerHTML = "";
     }
+    loadBundles();
   } catch (e) { $("msg").textContent = e.message; }
 }
 
@@ -559,6 +599,188 @@ async function hubToggle(id, on) {
     if (e.target.dataset.hubon) hubToggle(e.target.dataset.hubon, true);
     else if (e.target.dataset.huboff) hubToggle(e.target.dataset.huboff, false);
   }));
+
+// ── install / authorize / update / uninstall flows (issue #42 PC-2) ──
+
+function openModal(html) {
+  $("hub-modal-box").innerHTML = html;
+  $("hub-modal").classList.remove("hidden");
+}
+function closeModal() {
+  $("hub-modal").classList.add("hidden");
+  $("hub-modal-box").innerHTML = "";
+}
+$("hub-modal").addEventListener("click", e => {
+  if (e.target.id === "hub-modal") closeModal();
+  else if (e.target.dataset.mcancel) closeModal();
+});
+
+async function bundleInstall(id) {
+  try {
+    const r = await api("POST", `/hub/bundles/${encodeURIComponent(id)}/install`);
+    const errs = (r.errors || []).join(" | ");
+    $("msg").textContent = errs || `${id}: ${hubT().install} ✓`;
+    loadHub(); loadBundles(); loadSpine();
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+async function loadBundles() {
+  try {
+    const r = await api("GET", "/hub/bundles");
+    const t = hubT();
+    const bundles = (r.bundles || []).filter(b => b.items);
+    const wrap = $("hub-bundles-wrap");
+    wrap.classList.toggle("hidden", !bundles.length);
+    if (!bundles.length) return;
+    $("hub-bundles-title").textContent = t.installedBundle;
+    $("hub-bundles").innerHTML = bundles.map(b => {
+      const items = (b.items || []).map(i => {
+        const type = t.typeLabels[i.type] || i.type;
+        let ctl = "";
+        if (i.state === "pending_auth") {
+          ctl = `<button class="link" data-mauth="${esc(i.ref)}">${t.authorize}</button>`;
+        } else if (i.state === "enabled") {
+          ctl = `<button class="link" data-mtoff="${esc(b.id)}|${esc(i.ref)}">${t.disable}</button>`;
+        } else if (i.state === "disabled") {
+          ctl = `<button class="link" data-mton="${esc(b.id)}|${esc(i.ref)}">${t.enable}</button>`;
+        }
+        const stateChip = i.state === "pending_auth"
+          ? `<span class="chip warn">${t.pendingAuth}</span>`
+          : `<span class="chip ${i.state === "enabled" ? "ok" : "off"}">${esc(type)}</span>`;
+        return `<span class="chip ${i.state === "enabled" ? "ok" : "off"}" ` +
+          `title="${esc(i.state)}">${esc(i.ref)} · ${stateChip} ${ctl}</span>`;
+      }).join("");
+      return `<div class="bundle-box"><b>${esc(b.name)}</b> · v${esc(b.version)} ` +
+        `<button class="link" data-mupd="${esc(b.id)}">${t.updateBtn}</button> ` +
+        `<button class="link" data-mrm="${esc(b.id)}">${t.uninstall}</button>` +
+        `<div class="bitems">${items}</div></div>`;
+    }).join("");
+  } catch (err) { /* bundles panel optional */ }
+}
+
+async function bundleItemTick(bundleId, ref, enabled) {
+  try {
+    const r = await api("POST",
+      `/hub/bundles/${encodeURIComponent(bundleId)}/items/${encodeURIComponent(ref)}/tick`,
+      { enabled });
+    $("msg").textContent = r.error || `${ref}: ${r.state}`;
+    loadBundles(); loadHub(); loadSpine();
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+async function authorizeConnector(connectorId) {
+  try {
+    const s = await api("GET", `/hub/connectors/${encodeURIComponent(connectorId)}/oauth`);
+    if (s.error) { $("msg").textContent = s.error; return; }
+    const t = hubT();
+    const scopeRows = (s.scopes || []).map(sc => {
+      if (sc.sensitive) {
+        return `<div class="mrow scope-off"><label><input type="checkbox" disabled> ` +
+          `${esc(sc.title)} — ${t.perUse}</label></div>`;
+      }
+      return `<div class="mrow"><label><input type="checkbox" class="mscope" ` +
+        `value="${esc(sc.id)}" checked> ${esc(sc.title)}</label></div>`;
+    }).join("");
+    const credRows = (s.credential_fields || []).map(f =>
+      `<div class="mrow"><label>${esc(f)}<input type="password" class="mcred" ` +
+        `data-field="${esc(f)}"></label></div>`).join("");
+    openModal(`<h3>${t.authorize} · ${esc(connectorId)}</h3>` +
+      scopeRows + `<h3>${t.credentials}</h3>` + credRows +
+      `<div class="mbtns"><button class="link" data-moauth="${esc(connectorId)}">${t.confirm}</button>` +
+      `<button class="link" data-mcancel="1">${t.cancel}</button></div>`);
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+async function oauthSubmit(connectorId) {
+  const scopes = [...document.querySelectorAll("#hub-modal-box .mscope:checked")]
+    .map(x => x.value);
+  const credentials = {};
+  document.querySelectorAll("#hub-modal-box .mcred").forEach(x => {
+    if (x.value) credentials[x.dataset.field] = x.value;
+  });
+  try {
+    const r = await api("POST",
+      `/hub/connectors/${encodeURIComponent(connectorId)}/oauth`,
+      { scopes, credentials });
+    closeModal();
+    $("msg").textContent = r.error || `${connectorId}: ${hubT().authorize} ✓`;
+    loadBundles(); loadHub(); loadSpine();
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+async function updateBundle(bundleId) {
+  try {
+    const pv = await api("GET", `/hub/bundles/${encodeURIComponent(bundleId)}/update`);
+    const t = hubT();
+    if (pv.error) { $("msg").textContent = pv.error; return; }
+    if (!pv.update_available) { $("msg").textContent = `${bundleId}: ${t.noUpdate}`; return; }
+    const rows = (pv.new_items || []).map(i =>
+      `<div class="mrow"><label><input type="checkbox" class="mopt" ` +
+      `value="${esc(i.ref)}" checked> ${esc(i.ref)} (${t.typeLabels[i.type] || i.type})</label></div>`
+    ).join("");
+    openModal(`<h3>${t.updateBtn} · ${esc(bundleId)} v${esc(pv.installed_version)} → v${esc(pv.available_version)}</h3>` +
+      `<div class="mrow"><b>${t.changelog}:</b> ${esc(pv.changelog || "")}</div>` +
+      `<h3>${t.optIn}</h3>` + (rows || `<div class="mrow muted">${t.none}</div>`) +
+      `<div class="mbtns"><button class="link" data-mapply="${esc(bundleId)}">${t.applyUpdate}</button>` +
+      `<button class="link" data-mcancel="1">${t.cancel}</button></div>`);
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+async function updateApply(bundleId) {
+  const opt_in = [...document.querySelectorAll("#hub-modal-box .mopt:checked")]
+    .map(x => x.value);
+  try {
+    const r = await api("POST", `/hub/bundles/${encodeURIComponent(bundleId)}/update`,
+      { opt_in });
+    closeModal();
+    $("msg").textContent = `${bundleId} → v${r.version} ✓`;
+    loadBundles(); loadHub(); loadSpine();
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+async function uninstallPreview(bundleId) {
+  try {
+    const pv = await api("GET",
+      `/hub/bundles/${encodeURIComponent(bundleId)}/uninstall-preview`);
+    if (pv.error) { $("msg").textContent = pv.error; return; }
+    const t = hubT();
+    const usedRows = (pv.in_use_by || []).map(u =>
+      `<div class="mrow">⚠ ${t.usedBy}: <b>${esc(u.node)}</b> (${esc(u.refs.join(", "))})</div>`
+    ).join("");
+    openModal(`<h3>${t.uninstall} · ${esc(bundleId)}</h3>` +
+      (usedRows || `<div class="mrow">${t.safeRemove}</div>`) +
+      `<div class="mbtns"><button class="link" data-mrm2="${esc(bundleId)}">${t.confirm}</button>` +
+      `<button class="link" data-mcancel="1">${t.cancel}</button></div>`);
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+async function uninstallBundle(bundleId) {
+  try {
+    const r = await api("DELETE", `/hub/bundles/${encodeURIComponent(bundleId)}`);
+    closeModal();
+    $("msg").textContent = r.error || `${bundleId}: ${hubT().uninstall} ✓`;
+    loadBundles(); loadHub(); loadSpine();
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+$("hub-bundles").addEventListener("click", e => {
+  const d = e.target.dataset;
+  if (d.mauth) authorizeConnector(d.mauth);
+  else if (d.mton) { const [b, r] = d.mton.split("|"); bundleItemTick(b, r, true); }
+  else if (d.mtoff) { const [b, r] = d.mtoff.split("|"); bundleItemTick(b, r, false); }
+  else if (d.mupd) updateBundle(d.mupd);
+  else if (d.mrm) uninstallPreview(d.mrm);
+});
+$("hub-modal-box").addEventListener("click", e => {
+  const d = e.target.dataset;
+  if (d.moauth) oauthSubmit(d.moauth);
+  else if (d.mapply) updateApply(d.mapply);
+  else if (d.mrm2) uninstallBundle(d.mrm2);
+});
+$("hub-groups").addEventListener("click", e => {
+  if (e.target.dataset.binstall) bundleInstall(e.target.dataset.binstall);
+});
+
 
 let hubSearchTimer = null;
 $("hub-search").addEventListener("input", () => {
