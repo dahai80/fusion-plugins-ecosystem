@@ -667,6 +667,14 @@ class ExtensionsConsole:
                     raise ValueError(f"连接器包 {ref} 无内联 pack 定义")
                 pack = ConnectorPack.from_dict(pack_dict)
             plugin_ids = creg.install_pack(pack)
+            # 桥接即暴露：安装路径与 tick-on 一致，工具置 ENABLED
+            for pid in plugin_ids:
+                try:
+                    await self.lifecycle.enable(pid)
+                except Exception as exc:  # noqa: BLE001 — 单工具失败不阻断整包
+                    logger.warning(
+                        "extensions_console: 启用包工具 %s 失败: %s", pid, exc
+                    )
             self.desk.log(
                 ref, "INFO", f"连接器包 {ref} 已安装（{len(plugin_ids)} 工具）"
             )
