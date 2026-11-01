@@ -74,7 +74,7 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.5.0",
+        version="0.6.0",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)
@@ -184,6 +184,36 @@ def create_app(
     @app.get("/api/hub/connectors/{connector_id}/policy")
     async def connector_scope_policy(connector_id: str) -> dict[str, Any]:
         return console.scope_policy(connector_id)
+
+    # ── 审计视图 + scope 撤销 + 反向查找（issue #43 PC-3）──
+
+    @app.get("/api/hub/audit")
+    async def hub_audit(
+        resource_id: str = "",
+        resource_type: str = "",
+        action: str = "",
+        trace_id: str = "",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return console.audit_records(
+            resource_id=resource_id,
+            resource_type=resource_type,
+            action=action,
+            trace_id=trace_id,
+            limit=limit,
+        )
+
+    @app.post("/api/hub/connectors/{connector_id}/revoke")
+    async def connector_revoke_scopes(
+        connector_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await console.revoke_scopes(
+            connector_id, [str(s) for s in (body.get("scopes") or [])]
+        )
+
+    @app.get("/api/hub/capabilities/{capability}/used-by")
+    async def capability_used_by(capability: str) -> dict[str, Any]:
+        return console.capability_used_by(capability)
 
     # ── connectors ──
 

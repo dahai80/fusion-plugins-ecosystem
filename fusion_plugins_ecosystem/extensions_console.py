@@ -28,6 +28,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from fusion_plugins_ecosystem import audit_events
 from fusion_plugins_ecosystem.config import DATA_DIR
 from fusion_plugins_ecosystem.rest_connector import (
     connector_report,
@@ -590,6 +591,33 @@ class ExtensionsConsole:
             "items": items_out,
         }
         self._save_bundles_state(state)
+        # issue #43：安装事件入审计管道（trace_id 串整包）
+        trace = audit_events.new_trace_id()
+        audit_events.emit(
+            "hub.bundle.install",
+            resource_type="bundle",
+            resource_id=entry.id,
+            details={
+                "version": entry.version,
+                "items": [
+                    {"type": i["type"], "ref": i["ref"], "state": i["state"]}
+                    for i in items_out
+                ],
+                "errors": errors,
+            },
+            risk_level="medium",
+            trace_id=trace,
+        )
+        for item in items_out:
+            if item.get("state") != "error":
+                audit_events.emit(
+                    "hub.bundle.item.install",
+                    resource_type=item["type"],
+                    resource_id=str(item["ref"]),
+                    details={"bundle": entry.id, "state": item["state"]},
+                    risk_level="low",
+                    trace_id=trace,
+                )
         self.desk.log(
             entry.id,
             "INFO",
@@ -692,6 +720,13 @@ class ExtensionsConsole:
             self.desk.log(
                 bundle_id, "INFO", f"bundle 项 {ref} → {'启用' if enabled else '停用'}"
             )
+            audit_events.emit(
+                "hub.bundle.item.enable" if enabled else "hub.bundle.item.disable",
+                resource_type=item["type"],
+                resource_id=ref,
+                details={"bundle": bundle_id},
+                risk_level="low",
+            )
             return {"ticked": True, "ref": ref, "state": item["state"]}
         except Exception as exc:  # noqa: BLE001 — 停用失败原样上报
             return {"ticked": False, "error": str(exc)}
@@ -774,6 +809,26 @@ class ExtensionsConsole:
             f"连接器 {connector_id} OAuth 完成：授权读 {len(granted)} 通道，"
             f"{len(valid_writes)} 写通道绑定逐用确认",
         )
+        # issue #43：逐 scope 授权事件 + 敏感策略绑定事件（同一 trace_id）
+        trace = audit_events.new_trace_id()
+        for scope in sorted(granted):
+            audit_events.emit(
+                "hub.connector.oauth.grant",
+                resource_type="connector",
+                resource_id=connector_id,
+                details={"scope": scope, "sensitive": False},
+                risk_level="low",
+                trace_id=trace,
+            )
+        for scope in sorted(valid_writes):
+            audit_events.emit(
+                "hub.connector.scope.policy",
+                resource_type="connector",
+                resource_id=connector_id,
+                details={"scope": scope, "policy": "per_use", "sensitive": True},
+                risk_level="high",
+                trace_id=trace,
+            )
         return {
             "completed": True,
             "connector_id": connector_id,
@@ -853,6 +908,13 @@ class ExtensionsConsole:
             "INFO",
             f"bundle {bundle_id} 更新至 v{entry.version}"
             f"（opt-in {len(opted)}/{len(preview['new_items'])} 新增项）",
+        )
+        audit_events.emit(
+            "hub.bundle.update",
+            resource_type="bundle",
+            resource_id=bundle_id,
+            details={"version": entry.version, "opt_in": list(opted)},
+            risk_level="medium",
         )
         return {
             "updated": True,
@@ -948,12 +1010,90 @@ class ExtensionsConsole:
             "INFO",
             f"bundle {bundle_id} 已卸载（{len(removed)} 项, {len(errors)} 错误）",
         )
+        audit_events.emit(
+            "hub.bundle.uninstall",
+            resource_type="bundle",
+            resource_id=bundle_id,
+            details={"items_removed": removed, "errors": errors},
+            risk_level="medium",
+        )
         return {
             "removed": True,
             "bundle_id": bundle_id,
             "items_removed": removed,
             "errors": errors,
         }
+
+    # ── 审计视图 + scope 撤销 + 反向查找（issue #43 PC-3）──
+
+    def audit_records(
+        self,
+        resource_id: str = "",
+        resource_type: str = "",
+        action: str = "",
+        trace_id: str = "",
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """hub 内授权审计视图：谁在何时授权了什么（读 fusion-security 轨迹）。"""
+        records = audit_events.query(
+            resource_id=resource_id,
+            resource_type=resource_type,
+            action=action,
+            trace_id=trace_id,
+            limit=limit,
+        )
+        return {"records": records}
+
+    async def revoke_scopes(
+        self, connector_id: str, scopes: list[str]
+    ) -> dict[str, Any]:
+        """撤销已授权读 scope：更新 _scope_grants、重桥接、发审计事件。
+
+        security 工作台侧的撤销动作经此落回注册表（下一载入即生效 —
+        hub 每次 enable/列表都从盘上事实读取，无内存第二真相源）。
+        """
+        doc = get_connector(connector_id)
+        if not doc:
+            return {"revoked": False, "error": "connector not found"}
+        current = doc.get("_scope_grants")
+        if not isinstance(current, list):
+            current = [ch["id"] for ch in read_channels(doc)]
+        target = [s for s in scopes if s in current]
+        if not target:
+            return {"revoked": False, "error": "no granted scopes in request"}
+        remaining = [s for s in current if s not in target]
+        if remaining:
+            doc["_scope_grants"] = remaining
+            save_connector(connector_id, doc)
+            await self.enable_connector(connector_id)
+        else:
+            await self.disable_connector(connector_id)
+            doc["_scope_grants"] = []
+            save_connector(connector_id, doc)
+        for scope in target:
+            audit_events.emit(
+                "hub.connector.oauth.revoke",
+                resource_type="connector",
+                resource_id=connector_id,
+                details={"scope": scope},
+                risk_level="medium",
+            )
+        self.desk.log(
+            f"connector__{connector_id}",
+            "INFO",
+            f"连接器 {connector_id} 撤销读 scope: {target}（余 {remaining}）",
+        )
+        return {
+            "revoked": True,
+            "connector_id": connector_id,
+            "revoked_scopes": target,
+            "remaining_scopes": remaining,
+        }
+
+    def capability_used_by(self, capability: str) -> dict[str, Any]:
+        """被使用于：哪些 cowork 节点引用该能力（#42 反向查找的独立入口）。"""
+        in_use_by = self._reverse_lookup([capability])
+        return {"capability": capability, "in_use_by": in_use_by}
 
     # ── 连接器 ──
 
@@ -1111,7 +1251,7 @@ class ExtensionsConsole:
         from fusion_plugins_ecosystem.schema import MCPAnnotations, SandboxMode
 
         cid = str(doc.get("id"))
-        self._unbridge_connector(cid)
+        await self._unbridge_connector(cid)
         added = []
         # issue #42：OAuth 逐 scope 授权 — 只桥接已授权读通道
         # （doc._scope_grants 缺省 = 全量，兼容 #30 直装直启路径）

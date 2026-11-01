@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.5.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -93,13 +93,11 @@ lifecycle = fpe.PluginLifecycle(registry)
 gw = fpe.ClaudeGateway(registry, lifecycle)
 
 # Forward: expose to Claude
-skills = gw.export_skills()           # → Claude Skill dicts
-tools = gw.list_mcp_tools()           # → MCP tool descriptors
+skills = gw.export_skills()  # → Claude Skill dicts
+tools = gw.list_mcp_tools()  # → MCP tool descriptors
 
 # Forward: Claude calls via MCP
-resp = await gw.invoke_mcp_tool(
-    "caveman_compress", {"text": "# comment\ncode"}
-)
+resp = await gw.invoke_mcp_tool("caveman_compress", {"text": "# comment\ncode"})
 # → {"content": [{"type":"text","text":"{\"compressed\":\"code\",...}"}], "isError": false}
 
 # Reverse: pull Claude Code subagent
@@ -116,12 +114,17 @@ result = await gw.dispatch_subagent(task)
 
 ```python
 from fusion_plugins_ecosystem.registry import (
-    PluginCapability, PluginCategory, PluginManifest, PluginParam,
+    PluginCapability,
+    PluginCategory,
+    PluginManifest,
+    PluginParam,
 )
+
 
 def my_plugin(desk, params):
     desk.log("my_plugin", "INFO", "called", chars=len(params["text"]))
     return {"echo": params["text"].upper()}
+
 
 MY_MANIFEST = PluginManifest(
     id="my_echo",
@@ -130,8 +133,8 @@ MY_MANIFEST = PluginManifest(
     category=PluginCategory.CUSTOM,
     description="Echoes input text uppercased.",
     capabilities=[
-        PluginCapability.MCP_TOOL,        # auto-expose as MCP Tool
-        PluginCapability.CLAUDE_SKILL,    # auto-convert to Claude Skill
+        PluginCapability.MCP_TOOL,  # auto-expose as MCP Tool
+        PluginCapability.CLAUDE_SKILL,  # auto-convert to Claude Skill
     ],
     params=[
         PluginParam(name="text", type="string", description="Input", required=True),
@@ -190,7 +193,8 @@ fusion-plugins-ecosystem/
 │   ├── connector_packs.py        ← first-party connector packs (Feishu/DingTalk/WeCom/Mail/Calendar/Notion)
 │   ├── marketplace.py            ← skill/connector pack marketplace (JSON index, install/uninstall)
 │   ├── rest_connector.py         ← declarative REST/webhook connector docs (validation, read/write channels, execution contract)
-│   ├── extensions_console.py     ← Extensions console backend (issues #30/#41): Connectors + Plugins·MCP + Skills + Sub-agents tabs, capabilities hub (search, market groups), spine derivation, resync
+│   ├── extensions_console.py     ← Extensions console backend (issues #30/#41/#42/#43): Connectors + Plugins·MCP + Skills + Sub-agents tabs, capabilities hub, bundle flows, scope revoke + audit
+│   ├── audit_events.py           ← authorization audit event stream → fusion-security JSONL pipeline (issue #43)
 │   ├── console_app.py            ← FastAPI console app + `fusion-plugin-console` CLI (port 8795)
 │   ├── shell_registry.py         ← fusion-gateway shell module registration + fm- key persistence (#30)
 │   ├── logging_setup.py          ← structured JSON logging + correlation_id (P3-6)
@@ -244,6 +248,8 @@ fusion-plugins-ecosystem/
     ├── test_extensions_console.py   ← console backend: connector install/enable/harness, vault (Desk + local Fernet fallback), MCP intake probe/register/tick/call, plugin tick/remove/install, resync, spine derivation
     ├── test_console_app.py          ← FastAPI console: endpoint contract vs GUI, connector/MCP/plugin full flows, static serving
     ├── test_hub.py                  ← capabilities hub (issue #41): builtin bootstrap, four-tab classification, cross-type search, market groups, /api/hub endpoint
+    ├── test_install_flow.py         ← bundle install/OAuth/update/uninstall flows (issue #42): per-item states, scope grants, per-use policy, reverse lookup
+    ├── test_audit_flow.py           ← authorization audit events → security JSONL pipeline (issue #43): trace-id linkage, scope revoke re-bridge, used-by, HTTP endpoints
     ├── test_soak.py                 ← long-run stability (token-meter cap, log buffer cap, session LRU cap, counter monotonic no-drift, lifecycle sustained execute no-residual)
     └── test_integration.py
 ```
@@ -258,8 +264,9 @@ from fusion_plugins_ecosystem.connector_packs import get_builtin_pack
 
 desk = fpe.DeskRuntime()
 registry = fpe.PluginRegistry(desk)
-creg = fpe.ConnectorRegistry(desk=desk, registry=registry,
-                             persist_path="~/.fusion-ecosystem/connectors.json")
+creg = fpe.ConnectorRegistry(
+    desk=desk, registry=registry, persist_path="~/.fusion-ecosystem/connectors.json"
+)
 lifecycle = fpe.PluginLifecycle(registry)
 
 # 1. Install a first-party pack (Feishu / DingTalk / WeCom / Mail / Calendar / Notion)
@@ -272,8 +279,9 @@ creg.install_pack(get_builtin_pack("feishu"))
 creg.approve_tool("feishu", "im.message.send")
 
 # 4. Execute via lifecycle (routed through the external MCP server)
-resp = await lifecycle.execute("connector__feishu__im.message.send",
-                               {"chat_id": "oc_xxx", "content": "hello"})
+resp = await lifecycle.execute(
+    "connector__feishu__im.message.send", {"chat_id": "oc_xxx", "content": "hello"}
+)
 ```
 
 Marketplace — distribute connector packs and cowork markdown skill packages:
@@ -281,10 +289,14 @@ Marketplace — distribute connector packs and cowork markdown skill packages:
 ```python
 from fusion_plugins_ecosystem.marketplace import Marketplace
 
-market = Marketplace(creg, marketplace_index="https://my-company/marketplace/index.json")  # private index
-entries, warnings = market.load_index()   # builtin catalog + remote index (index overrides builtin on id collision)
-market.install("feishu")                  # builtin pack: install directly
-market.install("demo_skill")              # skill_package: git/local source → local install dir
+market = Marketplace(
+    creg, marketplace_index="https://my-company/marketplace/index.json"
+)  # private index
+entries, warnings = (
+    market.load_index()
+)  # builtin catalog + remote index (index overrides builtin on id collision)
+market.install("feishu")  # builtin pack: install directly
+market.install("demo_skill")  # skill_package: git/local source → local install dir
 market.list_installed()
 ```
 
@@ -331,7 +343,8 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   zh/en toggle and follows the shell host dark/light theme.
 - **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/hub?q=<query>` (issue #41),
   `/api/extensions/connectors[/{id}/enable|disable|harness]`,
-  `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`, `/health`.
+  `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`,
+  `/api/hub/audit`, `/api/hub/connectors/{id}/revoke`, `/api/hub/capabilities/{cap}/used-by` (issue #43), `/health`.
 - **Install / authorize / update / uninstall flows (issue #42)** — marketplace entries
   (incl. first-party packs) install as bundles from the Recommended row: skills enable,
   sub-agents register, connectors land as `pending_auth` until OAuth. Per-item
@@ -348,6 +361,26 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `items` list (`skill` / `subagent` / `connector` / `connector_pack` / `skill_package`
   refs); index source resolves from `FUSION_PLUGIN_MARKETPLACE_INDEX` (local JSON or
   HTTPS URL, unset = builtin catalog only).
+- **Authorization audit trail (issue #43)** — every hub authorization action emits an
+  audit event into the fusion-security JSONL pipeline
+  (`~/.fusion_security/audit/audit_<tenant>.jsonl`, same line shape as
+  `fusion_security.engine.tenant.audit.AuditEntry` — the security workbench
+  ([fusion-security#61](https://github.com/dahai80/fusion-security/issues/61)) reads it
+  without any code coupling; file contract only, no cross-project import). Events:
+  `hub.bundle.install` (medium) / `hub.bundle.item.install` (low) /
+  `hub.bundle.item.enable|disable` / `hub.connector.oauth.grant` (low, one per scope) /
+  `hub.connector.scope.policy` (high, per-use WRITE policy) / `hub.bundle.update` /
+  `hub.bundle.uninstall` / `hub.connector.oauth.revoke` (medium) — install/OAuth/policy
+  events under one bundle flow share a `trace_id` (format `fp-<hex16>`) for cross-service
+  correlation. The hub GUI shows the per-item audit history (audit button on each bundle
+  item) with granted-scope revoke buttons.
+- **Audit endpoints (issue #43)** — `GET /api/hub/audit` (query by `resource_id` /
+  `resource_type` / `action` / `trace_id`, read-only scan), `POST
+  /api/hub/connectors/{id}/revoke` (body `{"scopes": [...]}` — revokes granted read
+  scopes: re-bridges the connector with the remaining scopes, or disables it when none
+  remain; effect lands on next load per the issue #43 contract), `GET
+  /api/hub/capabilities/{capability}/used-by` (reverse lookup — cowork nodes referencing
+  the capability, same engine as the uninstall blast radius).
 - **Env vars** — `FUSION_PLUGIN_CONNECTOR_DIR` (default `~/.fusion-plugins-ecosystem/connectors`),
   `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`),
   `FUSION_PLUGIN_KEY_SALT` (key-derivation salt; unset = empty in dev with a warning,
@@ -358,7 +391,10 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `FUSION_PLUGINS_ECOSYSTEM_PORT` / `FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT`
   (issue #38 port resolution via `fusion_core.config.service_port`),
   `FUSION_PLUGIN_MARKETPLACE_INDEX` (issue #42: marketplace index for bundle install —
-  local JSON path or HTTPS URL; unset = builtin first-party catalog only).
+  local JSON path or HTTPS URL; unset = builtin first-party catalog only),
+  `FUSION_PLUGIN_AUDIT_DIR` (issue #43: audit JSONL sink directory, default
+  `~/.fusion_security/audit`), `FUSION_PLUGIN_AUDIT_TENANT` (default `system`),
+  `FUSION_PLUGIN_AUDIT_SINK` (`off` drops events — test/offline isolation).
 
 ### Process titles (issue #35)
 
@@ -561,6 +597,9 @@ Latest run: **634 passed**.
 | `test_rest_connector.py` | 15 | declarative connector docs: validation, read/write channel split, persistence roundtrip, execution contract vs local HTTP server, JSONPath-lite extraction, `{var}` rendering |
 | `test_extensions_console.py` | 26 | console backend: connector install/enable/disable/harness, credential vault (Desk round-trip + local Fernet fallback), bridged op execution, MCP intake probe/register/tick/call, plugin tick/remove/install, resync rebuild, spine derivation, standalone lifecycle bootstrap |
 | `test_console_app.py` | 6 | FastAPI console: whoami/capabilities, connector full flow (install→vault→enable→disable→harness), MCP flow, plugins flow, static serving |
+| `test_hub.py` | 17 | capabilities hub (issue #41): builtin bootstrap, four-tab classification, cross-type search incl. recommended facet, market groups, key isolation, /api/hub endpoint |
+| `test_install_flow.py` | 22 | bundle install/OAuth/update/uninstall flows (issue #42): per-item states, pending_auth, scope grants bridging, per-use policy, changelog-first update, uninstall blast radius |
+| `test_audit_flow.py` | 9 | authorization audit (issue #43): install/OAuth/update/uninstall events + trace-id linkage + JSONL contract, scope revoke re-bridge/disable, used-by reverse lookup, HTTP endpoints |
 
 ## ⚠️ Technical constraints
 
