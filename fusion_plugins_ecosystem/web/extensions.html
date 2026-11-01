@@ -693,7 +693,7 @@ async function authorizeConnector(connectorId) {
           `${esc(sc.title)} — ${t.perUse}</label></div>`;
       }
       return `<div class="mrow"><label><input type="checkbox" class="mscope" ` +
-        `value="${esc(sc.id)}" checked> ${esc(sc.title)}</label></div>`;
+        `value="${esc(sc.id)}"${sc.granted === false ? "" : " checked"}> ${esc(sc.title)}</label></div>`;
     }).join("");
     const credRows = (s.credential_fields || []).map(f =>
       `<div class="mrow"><label>${esc(f)}<input type="password" class="mcred" ` +
@@ -790,7 +790,7 @@ async function auditView(bundleId, ref, type) {
     let revokeRows = "";
     if (type === "connector") {
       const s = await hubApi("GET", `/connectors/${encodeURIComponent(ref)}/oauth`);
-      const grantedScopes = (s.scopes || []).filter(x => !x.sensitive);
+      const grantedScopes = (s.scopes || []).filter(x => !x.sensitive && x.granted !== false);
       if (grantedScopes.length) {
         revokeRows = `<h3>${t.granted}</h3>` + grantedScopes.map(x =>
           `<div class="mrow">${esc(x.id)} ` +
