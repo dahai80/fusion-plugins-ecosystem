@@ -150,6 +150,21 @@ class TestRevoke:
         out = await console.revoke_scopes("bank-api", ["not-granted"])
         assert out["revoked"] is False
 
+    async def test_remove_connector_clears_policy(self, console):
+        from fusion_plugins_ecosystem.rest_connector import get_connector
+
+        await console.install_bundle("finance-kit")
+        await console.oauth_complete("bank-api", ["bank.flow.fetch"], {"api_key": "k"})
+        out = await console.remove_connector("bank-api")
+        assert out["removed"] is True
+        assert get_connector("bank-api") is None
+        assert console.registry.get("connector__bank-api__bank.flow.fetch") is None
+        # per-use 策略随连接器清除
+        assert console.scope_policy("bank-api")["per_use_scopes"] == []
+        assert "hub.connector.remove" in _actions(console, resource_id="bank-api")
+        out = await console.remove_connector("bank-api")
+        assert out["removed"] is False
+
 
 class TestUsedBy:
     async def test_used_by_endpoint_data(self, console):

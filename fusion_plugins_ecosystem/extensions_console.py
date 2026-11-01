@@ -1220,6 +1220,38 @@ class ExtensionsConsole:
             "capabilities_disabled": affected,
         }
 
+    async def remove_connector(self, connector_id: str) -> dict[str, Any]:
+        """删除连接器：摘桥接 + 删文档 + 清 scope 策略（issue #43 补全生命周期）。"""
+        doc = get_connector(connector_id)
+        if not doc:
+            return {"removed": False, "error": "connector not found"}
+        affected = await self._unbridge_connector(connector_id)
+        delete_connector(connector_id)
+        state = self._bundles_state()
+        policy = state.setdefault("_scope_policy", {})
+        dropped_policy = policy.pop(connector_id, None)
+        self._save_bundles_state(state)
+        audit_events.emit(
+            "hub.connector.remove",
+            resource_type="connector",
+            resource_id=connector_id,
+            details={
+                "capabilities_removed": len(affected),
+                "policy_cleared": bool(dropped_policy),
+            },
+            risk_level="medium",
+        )
+        self.desk.log(
+            f"connector__{connector_id}",
+            "INFO",
+            f"连接器 {connector_id} 已删除，摘除 {len(affected)} 个能力",
+        )
+        return {
+            "removed": True,
+            "connector_id": connector_id,
+            "capabilities_removed": affected,
+        }
+
     async def harness(self, connector_id: str) -> dict[str, Any]:
         """一致性 harness：静态校验 + 保险库凭据实测首个读操作。"""
         doc = get_connector(connector_id)

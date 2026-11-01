@@ -233,6 +233,10 @@ def create_app(
     async def connectors_disable(connector_id: str) -> dict[str, Any]:
         return await console.disable_connector(connector_id)
 
+    @app.delete("/api/extensions/connectors/{connector_id}")
+    async def connectors_remove(connector_id: str) -> dict[str, Any]:
+        return await console.remove_connector(connector_id)
+
     @app.post("/api/extensions/connectors/{connector_id}/harness")
     async def connectors_harness(connector_id: str) -> dict[str, Any]:
         return await console.harness(connector_id)

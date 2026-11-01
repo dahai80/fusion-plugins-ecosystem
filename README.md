@@ -342,7 +342,7 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   skill marketplace catalog with semantic version comparison (`1.0` ≡ `1.0.0`). GUI ships
   zh/en toggle and follows the shell host dark/light theme.
 - **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/hub?q=<query>` (issue #41),
-  `/api/extensions/connectors[/{id}/enable|disable|harness]`,
+  `/api/extensions/connectors[/{id}/enable|disable|harness]` (DELETE removes a standalone connector — unbridge + doc + per-use policy cleanup),
   `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`,
   `/api/hub/audit`, `/api/hub/connectors/{id}/revoke`, `/api/hub/capabilities/{cap}/used-by` (issue #43), `/health`.
 - **Install / authorize / update / uninstall flows (issue #42)** — marketplace entries
