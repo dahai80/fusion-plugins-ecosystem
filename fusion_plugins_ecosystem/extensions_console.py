@@ -252,6 +252,12 @@ class ExtensionsConsole:
         # standalone console 未注入 lifecycle 时自建（tick/enable 桥接依赖它）
         self.lifecycle = lifecycle or PluginLifecycle(self.registry)
         self.installed_by = installed_by
+        # issue #41：hub 面反映真实注册表 — console 与 fusion-plugin-server
+        # 同源，自举内置插件（register 同版本幂等，注入侧已注册则 no-op）
+        try:
+            self.registry.register_builtin()
+        except ValueError as exc:
+            logger.warning("extensions_console: 内置插件注册冲突: %s", exc)
 
     # ── 持久化 ──
 
@@ -323,6 +329,173 @@ class ExtensionsConsole:
                     }
                 )
         return caps
+
+    # ── 能力中心 hub（issue #41：四 tab + 分组 + 跨类搜索）──
+
+    @staticmethod
+    def _version_key(version: str) -> tuple[int, ...]:
+        """语义版本比较键：'1.2' < '1.10'，'1.0' 与 '1.0.0' 等价，非数字段按 0。"""
+        parts = []
+        for chunk in str(version or "0").split("."):
+            digits = "".join(ch for ch in chunk if ch.isdigit())
+            parts.append(int(digits) if digits else 0)
+        while len(parts) > 1 and parts[-1] == 0:
+            parts.pop()  # 尾零归一：1.0.0 == 1.0
+        return tuple(parts) or (0,)
+
+    def _market_groups(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """市场目录 → (updates, recommended)：已装比对版本，未装进推荐位。
+
+        只读目录（Marketplace(None)）— 安装动作归 PC-2；市场不可用时 hub 降级
+        为空分组，不拖垮四 tab。
+        """
+        try:
+            from fusion_plugins_ecosystem.marketplace import Marketplace
+
+            mp = Marketplace(connector_registry=None)
+            entries, warnings = mp.load_index()
+            # 只读目录（registry=None）：list_installed 会走 connector_registry
+            # .list_packs() — None 时降级为技能包目录扫描 + 连接器文档
+            installed: dict[str, dict[str, Any]] = {}
+            if mp.connector_registry is not None:
+                installed = {i["id"]: i for i in mp.list_installed()}
+            elif os.path.isdir(mp.install_root):
+                for name in sorted(os.listdir(mp.install_root)):
+                    path = os.path.join(mp.install_root, name)
+                    if not name.startswith("_") and os.path.isdir(path):
+                        installed[name] = {"id": name}
+        except Exception as exc:  # noqa: BLE001 — 市场不可用不拖垮 hub
+            logger.warning("extensions_console: 市场目录不可用: %s", exc)
+            return [], []
+        for entry in connector_report():
+            installed.setdefault(entry["id"], entry)
+        updates: list[dict[str, Any]] = []
+        recommended: list[dict[str, Any]] = []
+        for e in entries:
+            if e.id in installed:
+                current = str(installed[e.id].get("version") or "")
+                if current and self._version_key(current) < self._version_key(
+                    e.version
+                ):
+                    updates.append(
+                        {
+                            "id": e.id,
+                            "name": e.name,
+                            "kind": e.kind,
+                            "installed_version": current,
+                            "available_version": e.version,
+                            "changelog": e.description,
+                        }
+                    )
+            else:
+                recommended.append(
+                    {
+                        "id": e.id,
+                        "name": e.name,
+                        "kind": e.kind,
+                        "version": e.version,
+                        "description": e.description,
+                    }
+                )
+        if warnings:
+            logger.info("extensions_console: 市场索引警告: %s", warnings)
+        return updates, recommended
+
+    def list_hub(self, query: str = "") -> dict[str, Any]:
+        """能力中心聚合视图：四 tab（plugins/skills/connectors/subagents）+
+        已装/更新/推荐分组 + 跨类搜索（id/name/description 子串、大小写不敏感）。
+        """
+        q = str(query or "").strip().lower()
+
+        def _match(*fields: Any) -> bool:
+            return not q or any(q in str(f or "").lower() for f in fields)
+
+        tabs: dict[str, list[dict[str, Any]]] = {
+            "plugins": [],
+            "skills": [],
+            "connectors": [],
+            "subagents": [],
+        }
+        installed: list[dict[str, Any]] = []
+        for m in self.registry.list():
+            if m.id.startswith(("connector__", "mcp__")):
+                continue  # 桥接清单由 connectors tab 覆盖，不重复计
+            caps = [c.value for c in m.capabilities]
+            enabled = self._plugin_enabled(m.id)
+            base = {
+                "id": m.id,
+                "name": m.name,
+                "version": m.version,
+                "description": m.description or "",
+                "category": m.category.value,
+                "capabilities": caps,
+                "enabled": enabled,
+            }
+            if _match(m.id, m.name, m.description):
+                tabs["plugins"].append(base)
+            if "claude_skill" in caps and _match(m.id, m.name, m.description):
+                tabs["skills"].append({**base, "type": "skill"})
+            if "subagent" in caps and _match(m.id, m.name, m.description):
+                tabs["subagents"].append({**base, "type": "subagent"})
+            installed.append(
+                {"id": m.id, "name": m.name, "type": "plugin", "enabled": enabled}
+            )
+        for entry in connector_report():
+            doc = get_connector(entry["id"]) or {}
+            disabled = bool(doc.get("_disabled"))
+            item = {
+                "id": entry["id"],
+                "name": entry["id"],
+                "version": "",
+                "description": entry.get("kind") or "",
+                "kind": entry.get("kind") or "",
+                "enabled": not disabled,
+                "channels": entry.get("operations") or [],
+            }
+            if _match(item["id"], item["description"]):
+                tabs["connectors"].append({**item, "type": "connector"})
+            installed.append(
+                {
+                    "id": entry["id"],
+                    "name": entry["id"],
+                    "type": "connector",
+                    "enabled": item["enabled"],
+                }
+            )
+        for server in self.list_mcp_servers():
+            item = {
+                "id": server["id"],
+                "name": server["id"],
+                "version": "",
+                "description": server.get("url", ""),
+                "kind": "mcp",
+                "enabled": bool(server.get("ticked")),
+                "ticked": server.get("ticked") or [],
+            }
+            if _match(item["id"], item["description"]):
+                tabs["connectors"].append({**item, "type": "mcp"})
+            installed.append(
+                {
+                    "id": server["id"],
+                    "name": server["id"],
+                    "type": "mcp",
+                    "enabled": item["enabled"],
+                }
+            )
+        updates, recommended = self._market_groups()
+        for key in tabs:
+            tabs[key].sort(key=lambda x: str(x["id"]))
+        installed.sort(key=lambda x: (x["type"], str(x["id"])))
+        return {
+            "query": str(query or ""),
+            "tabs": tabs,
+            "counts": {k: len(v) for k, v in tabs.items()},
+            "groups": {
+                "installed": installed,
+                "updates": updates,
+                "recommended": recommended,
+            },
+        }
 
     # ── 连接器 ──
 

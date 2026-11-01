@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.8-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.4.9-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -221,10 +221,11 @@ fusion-plugins-ecosystem/
     └── test_integration.py
 ```
 
-## 🖥️ Extensions 控制台（issue #30）
+## 🖥️ Extensions 控制台（issue #30，hub issue #41）
 
-独立 FastAPI 控制台（`fusion-plugin-console`，端口 8795），从 f-ecommerce 原样迁移两个页签
-（issue #30，E3）：**Connectors** 与 **Plugins·MCP**。业务逻辑已通用化，不含电商语义。
+独立 FastAPI 控制台（`fusion-plugin-console`，端口 8795），承载四个页签（issue #30 E3 从
+f-ecommerce 原样迁移两个 + issue #41 能力中心 hub 两个）：**Connectors**、**Plugins·MCP**、
+**Skills**、**子代理**。业务逻辑已通用化，不含电商语义。
 
 ```bash
 pip install -e ".[console]"
@@ -242,7 +243,14 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `tools/call` 派发。
 - **能力脊柱** — 由磁盘事实派生（连接器文档 + MCP ticks），启动 `resync()` 重建，进程内无
   第二真相源。
-- **端点** — `/api/whoami`、`/api/capabilities`、`/api/extensions/connectors[/{id}/enable|disable|harness]`、
+- **能力中心 hub（issue #41）** — Skills 与子代理页签反映真实插件注册表（console 启动自举
+  `register_builtin()`，注入侧已注册时同版本幂等）：skills = 带 `claude_skill` 能力的插件，
+  子代理 = 带 `subagent` 能力的插件；桥接 id（`connector__*`/`mcp__*`）只留在各自页签。
+  跨类搜索框按 id/name/description 大小写不敏感匹配四个页签；市场分组（已装/更新/推荐）由
+  连接器包 + 技能包市场目录派生，语义化版本比较（`1.0` ≡ `1.0.0`）。GUI 支持 zh/en 切换
+  并跟随 shell 宿主深浅主题。
+- **端点** — `/api/whoami`、`/api/capabilities`、`/api/hub?q=<query>`（issue #41）、
+  `/api/extensions/connectors[/{id}/enable|disable|harness]`、
   `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、`/health`。
 - **环境变量** — `FUSION_PLUGIN_CONNECTOR_DIR`（默认 `~/.fusion-plugins-ecosystem/connectors`）、
   `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）、

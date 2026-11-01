@@ -34,6 +34,18 @@
   .panel { border: 1px solid var(--fs-border); border-radius: 8px; padding: 12px; margin: 10px 0; }
   .test-row { display: flex; gap: 8px; margin: 6px 0 2px; }
   .test-row input { flex: 1; }
+  .hub-head { display: flex; gap: 10px; align-items: center; margin: 14px 0 0; flex-wrap: wrap; }
+  .hub-head input { flex: 1; min-width: 220px; }
+  .hub-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px; margin: 10px 0; }
+  .hub-card { border: 1px solid var(--fs-border); border-radius: 8px; padding: 10px 12px; }
+  .hub-card b { display: block; }
+  .hub-card .meta { font-size: 12px; color: var(--fs-text-2); margin: 4px 0 8px;
+    min-height: 28px; }
+  .hub-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .hub-chips .chip { cursor: default; }
+  .group-row { margin: 10px 0; }
+  .group-row .gtitle { font-weight: 600; margin-right: 8px; }
 </style>
 </head>
 <body data-page="extensions">
@@ -51,9 +63,20 @@ Plugin nodes ──┘ admin ticks ───────────┘    (ever
   <div class="counts" id="spine-counts"></div>
 </div>
 
+<div class="hub-head">
+  <input id="hub-search" placeholder="Search plugins / skills / connectors / sub-agents…">
+  <button id="hub-lang" class="link">中文</button>
+  <span class="chip warn hidden" id="hub-updates-badge"></span>
+</div>
+
+<div class="group-row" id="hub-groups"></div>
+<div id="hub-results" class="hidden"></div>
+
 <div class="tabbar">
   <button data-tab="connectors" class="active">Connectors</button>
   <button data-tab="plugins">Plugins · MCP</button>
+  <button data-tab="skills">Skills</button>
+  <button data-tab="subagents">Sub-agents</button>
 </div>
 
 <div id="tab-connectors">
@@ -130,6 +153,16 @@ Plugin nodes ──┘ admin ticks ───────────┘    (ever
       <tbody id="mcp-rows"></tbody>
     </table>
   </div>
+</div>
+
+<div id="tab-skills" class="hidden">
+  <p class="muted" id="skills-note" style="font-size:12px"></p>
+  <div class="hub-cards" id="skills-cards"></div>
+</div>
+
+<div id="tab-subagents" class="hidden">
+  <p class="muted" id="subagents-note" style="font-size:12px"></p>
+  <div class="hub-cards" id="subagents-cards"></div>
 </div>
 
 <p class="muted" id="msg"></p>
@@ -246,14 +279,17 @@ async function enableConn() {
 }
 
 // ── wiring (delegated — no inline onclick) ─────────────────────────────
+const TABS = ["connectors", "plugins", "skills", "subagents"];
 document.querySelector(".tabbar").addEventListener("click", e => {
   if (!e.target.dataset.tab) return;
   document.querySelectorAll(".tabbar button").forEach(b =>
     b.classList.toggle("active", b.dataset.tab === e.target.dataset.tab));
-  ["connectors", "plugins"].forEach(t =>
+  TABS.forEach(t =>
     $("tab-" + t).classList.toggle("hidden",
       e.target.dataset.tab !== t));
   if (e.target.dataset.tab === "plugins") loadPlugins(), loadMcp();
+  if (e.target.dataset.tab === "skills" || e.target.dataset.tab === "subagents")
+    loadHub();
 });
 
 $("connector-rows").addEventListener("click", async e => {
@@ -408,6 +444,125 @@ $("mcp-rows").addEventListener("click", async e => {
 $("btn-plugin-install").addEventListener("click", installPlugin);
 $("btn-mcp-register").addEventListener("click", registerMcp);
 
+// ── capabilities hub (issue #41: four tabs + groups + cross-type search) ─
+const HUB_I18N = {
+  en: {
+    search: "Search plugins / skills / connectors / sub-agents…",
+    installed: "Installed", updates: "Updates available", recommended: "Recommended",
+    updatesBadge: n => `Updates (${n})`,
+    skillsNote: "Skills are procedural knowledge (claude_skill capability) — enable to expose them to Claude sessions.",
+    subagentsNote: "Sub-agents are specialist agents (subagent capability) dispatched from the registry.",
+    enable: "Enable", disable: "Disable", enabled: "enabled", disabled: "disabled",
+    none: "No entries.", noHits: "No matches across plugins / skills / connectors / sub-agents.",
+    typeLabels: { plugin: "Plugin", skill: "Skill", connector: "Connector",
+      mcp: "MCP", subagent: "Sub-agent" },
+    resultsFor: q => `Cross-type results for “${q}”`,
+  },
+  zh: {
+    search: "搜索 插件 / Skills / 连接器 / 子代理…",
+    installed: "已装", updates: "更新可用", recommended: "官方推荐",
+    updatesBadge: n => `更新 (${n})`,
+    skillsNote: "Skills 是流程性知识（claude_skill 能力）— 启用后暴露给 Claude 会话。",
+    subagentsNote: "子代理是专职代理（subagent 能力），经注册表派发。",
+    enable: "启用", disable: "禁用", enabled: "已启用", disabled: "已停用",
+    none: "暂无条目。", noHits: "插件 / Skills / 连接器 / 子代理 中无匹配。",
+    typeLabels: { plugin: "插件", skill: "Skill", connector: "连接器",
+      mcp: "MCP", subagent: "子代理" },
+    resultsFor: q => `“${q}” 的跨类结果`,
+  },
+};
+let hubLang = "en";
+const hubT = () => HUB_I18N[hubLang];
+
+function hubCard(item) {
+  const t = hubT();
+  const cls = item.enabled ? "ok" : "off";
+  const label = item.enabled ? t.enabled : t.disabled;
+  const btn = item.enabled
+    ? `<button class="link" data-huboff="${esc(item.id)}">${t.disable}</button>`
+    : `<button class="link" data-hubon="${esc(item.id)}">${t.enable}</button>`;
+  const kindChip = item.type
+    ? ` <span class="chip ${cls}">${esc(t.typeLabels[item.type] || item.type)}</span>` : "";
+  return `<div class="hub-card"><b>${esc(item.name)}</b>` +
+    `<div class="meta">${esc(item.description || "")}</div>` +
+    `<span class="chip ${cls}">${label}</span>${kindChip}` +
+    `<div style="margin-top:8px">${btn}</div></div>`;
+}
+
+async function loadHub() {
+  const q = $("hub-search").value.trim();
+  try {
+    const r = await fetch(`${BASE}api/hub?q=${encodeURIComponent(q)}`);
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const t = hubT();
+    const g = data.groups || {};
+    const updates = g.updates || [];
+    const badge = $("hub-updates-badge");
+    badge.classList.toggle("hidden", !updates.length);
+    badge.textContent = t.updatesBadge(updates.length);
+    const recChips = (g.recommended || []).map(x =>
+      `<span class="chip off" title="${esc(x.description || "")}">${esc(x.name)} · v${esc(x.version)}</span>`).join("");
+    const updChips = updates.map(x =>
+      `<span class="chip warn" title="${esc(x.changelog || "")}">${esc(x.name)} v${esc(x.installed_version)} → v${esc(x.available_version)}</span>`).join("");
+    const instChips = (g.installed || []).map(x =>
+      `<span class="chip ${x.enabled ? "ok" : "off"}" title="${esc(x.id)}">${esc(x.name)}</span>`).join("");
+    $("hub-groups").innerHTML =
+      `<span class="gtitle">${t.installed} (${(g.installed || []).length})</span>${instChips || `<span class="muted">${t.none}</span>`}` +
+      (updChips ? `<br><span class="gtitle">${t.updates}</span>${updChips}` : "") +
+      (recChips ? `<br><span class="gtitle">${t.recommended}</span>${recChips}` : "");
+    $("skills-note").textContent = t.skillsNote;
+    $("subagents-note").textContent = t.subagentsNote;
+    const tabs = data.tabs || {};
+    $("skills-cards").innerHTML = (tabs.skills || []).map(hubCard).join("") ||
+      `<span class="muted">${t.none}</span>`;
+    $("subagents-cards").innerHTML = (tabs.subagents || []).map(hubCard).join("") ||
+      `<span class="muted">${t.none}</span>`;
+    // 跨类搜索：命中面（含 connectors/plugins）平铺展示
+    const box = $("hub-results");
+    if (q) {
+      const hits = [].concat(tabs.plugins || [], tabs.skills || [],
+        tabs.connectors || [], tabs.subagents || []);
+      box.classList.remove("hidden");
+      box.innerHTML = `<p class="muted">${esc(t.resultsFor(q))} — ${hits.length}</p>` +
+        `<div class="hub-cards">${hits.map(hubCard).join("") ||
+          `<span class="muted">${esc(t.noHits)}</span>`}</div>`;
+    } else {
+      box.classList.add("hidden");
+      box.innerHTML = "";
+    }
+  } catch (e) { $("msg").textContent = e.message; }
+}
+
+// hub 卡片启用/禁用 → 复用 plugin tick 对账（node = 插件 id 本身）
+async function hubToggle(id, on) {
+  try {
+    const r = await api("POST",
+      `/plugins/${encodeURIComponent(id)}/tick`, { nodes: on ? [id] : [] });
+    $("msg").textContent = r.errors && r.errors.length
+      ? r.errors.join(" | ")
+      : `${id}: ${on ? hubT().enabled : hubT().disabled}`;
+    loadHub(); loadSpine();
+  } catch (err) { $("msg").textContent = err.message; }
+}
+["hub-groups", "hub-results", "skills-cards", "subagents-cards"].forEach(sel =>
+  $(sel).addEventListener("click", e => {
+    if (e.target.dataset.hubon) hubToggle(e.target.dataset.hubon, true);
+    else if (e.target.dataset.huboff) hubToggle(e.target.dataset.huboff, false);
+  }));
+
+let hubSearchTimer = null;
+$("hub-search").addEventListener("input", () => {
+  clearTimeout(hubSearchTimer);
+  hubSearchTimer = setTimeout(loadHub, 250);
+});
+$("hub-lang").addEventListener("click", () => {
+  hubLang = hubLang === "en" ? "zh" : "en";
+  $("hub-lang").textContent = hubLang === "en" ? "中文" : "EN";
+  $("hub-search").placeholder = hubT().search;
+  loadHub();
+});
+
 (async function init() {
   $("connector-doc").value = JSON.stringify({
     id: "erp-json", kind: "rest",
@@ -418,7 +573,7 @@ $("btn-mcp-register").addEventListener("click", registerMcp);
         response: { list_path: "$.rows" } },
     },
   }, null, 2);
-  await Promise.all([loadConnectors(), loadSpine()]);
+  await Promise.all([loadConnectors(), loadSpine(), loadHub()]);
 })();
 shell.init();
 </script>
