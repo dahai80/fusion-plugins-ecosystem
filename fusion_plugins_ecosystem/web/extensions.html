@@ -476,6 +476,15 @@ const hubT = () => HUB_I18N[hubLang];
 
 function hubCard(item) {
   const t = hubT();
+  if (item.recommended) {
+    // 推荐位条目（未装）: 只展示，不渲染启停按钮
+    const kindChip = item.type
+      ? ` <span class="chip off">${esc(t.typeLabels[item.type] || item.type)}</span>` : "";
+    return `<div class="hub-card"><b>${esc(item.name)}</b>` +
+      `<div class="meta">${esc(item.description || "")}</div>` +
+      `<span class="chip warn">${t.recommended}</span>${kindChip}` +
+      `<div class="meta">${esc(item.id)} · v${esc(item.version || "")}</div></div>`;
+  }
   const cls = item.enabled ? "ok" : "off";
   const label = item.enabled ? t.enabled : t.disabled;
   const btn = item.enabled

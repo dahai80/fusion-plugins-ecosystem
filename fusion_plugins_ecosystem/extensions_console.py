@@ -483,6 +483,25 @@ class ExtensionsConsole:
                 }
             )
         updates, recommended = self._market_groups()
+        if q:
+            # 跨类搜索覆盖推荐位: 未装市场条目也命中（连接器包 →
+            # connectors tab，技能包 → skills tab），打 recommended 标。
+            for e in recommended:
+                if not _match(e.get("id"), e.get("name"), e.get("description")):
+                    continue
+                item = {
+                    "id": e["id"],
+                    "name": e["name"],
+                    "version": e.get("version") or "",
+                    "description": e.get("description") or "",
+                    "kind": e.get("kind") or "",
+                    "enabled": False,
+                    "recommended": True,
+                }
+                if e.get("kind") == "skill":
+                    tabs["skills"].append({**item, "type": "skill"})
+                else:
+                    tabs["connectors"].append({**item, "type": "connector"})
         for key in tabs:
             tabs[key].sort(key=lambda x: str(x["id"]))
         installed.sort(key=lambda x: (x["type"], str(x["id"])))
