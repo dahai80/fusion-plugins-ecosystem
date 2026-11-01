@@ -70,6 +70,41 @@ class TestContract:
         assert cap["auth"]["state"] == "granted"
         assert cap["auth"]["all_scopes_granted"] is True
 
+    async def test_resync_rebuilds_bundle_items(self, console):
+        # issue #44：重启后 enabled bundle 项重建 — 消费方拉取不"消失"
+        from fusion_plugins_ecosystem.connector_packs import NOTION_PACK
+
+        pack_ids = [f"connector__notion__{t.name}" for t in NOTION_PACK.tools]
+        await console.install_bundle("finance-kit")
+        # 模拟重启：新 console 共享磁盘状态，registry 清空
+        fresh = ExtensionsConsole(
+            desk=console.desk,
+            registry=PluginRegistry(console.desk),
+            lifecycle=PluginLifecycle(console.registry),
+        )
+        assert not any(
+            m.id.startswith("connector__bank-api__") for m in fresh.registry.list()
+        )
+        # 重启后清单来源（内置/自定义声明）重新注册 — 测试里手工补
+        fresh.registry.register(_manifest("excel-skill", ["claude_skill"]))
+        out = await fresh.resync()
+        assert "excel-skill" in out["relisted"]
+        assert fresh._plugin_enabled("excel-skill")
+        # rest 连接器（pending_auth 未授权）按 resync 既有路径桥接
+        assert any(
+            m.id.startswith("connector__bank-api__") for m in fresh.registry.list()
+        )
+        # 连接器包：enabled 项重装（用 finance-kit 无 pack，补一个 pack bundle 验证路径）
+        state = fresh._bundles_state()
+        state["pack-bundle"] = {
+            "id": "pack-bundle",
+            "items": [{"type": "connector_pack", "ref": "notion", "state": "enabled"}],
+        }
+        fresh._save_bundles_state(state)
+        await fresh.resync()
+        ids = {m.id for m in fresh.registry.list()}
+        assert any(pid in ids for pid in pack_ids)
+
     async def test_connector_auth_state_single_source(self, console):
         await console.install_bundle("finance-kit")
         # pending_auth：通道可见但未授权暴露
