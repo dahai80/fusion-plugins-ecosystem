@@ -681,7 +681,9 @@ class ExtensionsConsole:
         raise ValueError(f"未知 bundle item 类型 {itype!r}")
 
     def list_bundles(self) -> dict[str, Any]:
-        return {"bundles": list(self._bundles_state().values())}
+        state = self._bundles_state()
+        # _scope_policy 是元数据键，不是 bundle — 不进列表
+        return {"bundles": [v for k, v in state.items() if k != "_scope_policy"]}
 
     async def tick_bundle_item(
         self, bundle_id: str, ref: str, enabled: bool
