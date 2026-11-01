@@ -745,8 +745,15 @@ class ExtensionsConsole:
         doc = get_connector(connector_id)
         if not doc:
             return {"error": "connector not found"}
+        # issue #43：标注实际授权状态（_scope_grants 缺省 = 全量，兼容 #30 直装路径）
+        grants = doc.get("_scope_grants")
         scopes = [
-            {"id": ch["id"], "title": ch["title"], "sensitive": False}
+            {
+                "id": ch["id"],
+                "title": ch["title"],
+                "sensitive": False,
+                "granted": not isinstance(grants, list) or ch["id"] in grants,
+            }
             for ch in read_channels(doc)
         ]
         sensitive = [

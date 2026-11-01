@@ -129,6 +129,13 @@ class TestRevoke:
         assert console.registry.get("connector__bank-api__bank.account.fetch") is None
         assert console.registry.get("connector__bank-api__bank.flow.fetch")
         assert "hub.connector.oauth.revoke" in _actions(console, resource_id="bank-api")
+        # oauth_scopes 反映实际授权状态（GUI 撤销列表/OAuth 预勾选用）
+        flags = {
+            s["id"]: s["granted"]
+            for s in console.oauth_scopes("bank-api")["scopes"]
+            if not s["sensitive"]
+        }
+        assert flags == {"bank.flow.fetch": True, "bank.account.fetch": False}
 
     async def test_revoke_all_disables(self, console):
         await console.install_bundle("finance-kit")
