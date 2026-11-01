@@ -80,7 +80,7 @@ class TestContract:
         fresh = ExtensionsConsole(
             desk=console.desk,
             registry=PluginRegistry(console.desk),
-            lifecycle=PluginLifecycle(console.registry),
+            lifecycle=None,
         )
         assert not any(
             m.id.startswith("connector__bank-api__") for m in fresh.registry.list()
@@ -104,6 +104,14 @@ class TestContract:
         await fresh.resync()
         ids = {m.id for m in fresh.registry.list()}
         assert any(pid in ids for pid in pack_ids)
+        # 重建后工具处于 ENABLED（安装路径与 tick-on 一致）
+        assert any(fresh._plugin_enabled(pid) for pid in pack_ids)
+
+    async def test_pack_install_enables_tools(self, console):
+        # 安装路径即启用：bundle 项 state=enabled 与工具生命周期态一致
+        out = await console._install_bundle_item("connector_pack", "notion", {})
+        assert out["state"] == "enabled"
+        assert console._plugin_enabled(out["plugin_ids"][0])
 
     async def test_connector_auth_state_single_source(self, console):
         await console.install_bundle("finance-kit")
