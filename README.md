@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.9-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -332,6 +332,22 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/hub?q=<query>` (issue #41),
   `/api/extensions/connectors[/{id}/enable|disable|harness]`,
   `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`, `/health`.
+- **Install / authorize / update / uninstall flows (issue #42)** — marketplace entries
+  (incl. first-party packs) install as bundles from the Recommended row: skills enable,
+  sub-agents register, connectors land as `pending_auth` until OAuth. Per-item
+  enable/disable after install. Connector OAuth completes in the hub (modal): per-read-scope
+  checkboxes (ungranted read channels are never bridged), credentials go to the encrypted
+  vault, WRITE channels bind to a per-use confirmation policy (`GET
+  /api/hub/connectors/{id}/policy` — the integration point for the cowork approval system,
+  upstream [fusion-cowork#225](https://github.com/dahai80/fusion-cowork/issues/225); until
+  it ships, execution stays blocked by the #30 write review queue). Updates are
+  changelog-first with opt-in new items; uninstall shows the blast radius (reverse lookup of
+  cowork nodes referencing the bundle's capabilities) before confirmation. Bundle state
+  persists at `~/.fusion-plugins-ecosystem/extensions/bundles.json`.
+- **Marketplace bundle kind (issue #42)** — index entries with `kind: "bundle"` carry an
+  `items` list (`skill` / `subagent` / `connector` / `connector_pack` / `skill_package`
+  refs); index source resolves from `FUSION_PLUGIN_MARKETPLACE_INDEX` (local JSON or
+  HTTPS URL, unset = builtin catalog only).
 - **Env vars** — `FUSION_PLUGIN_CONNECTOR_DIR` (default `~/.fusion-plugins-ecosystem/connectors`),
   `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`),
   `FUSION_PLUGIN_KEY_SALT` (key-derivation salt; unset = empty in dev with a warning,
@@ -340,7 +356,9 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `FUSION_PLUGINS_ECOSYSTEM_DATA_DIR` (issue #38 single-point data dir via
   `fusion_core.config.service_data_dir`; default `~/.fusion-plugins-ecosystem`),
   `FUSION_PLUGINS_ECOSYSTEM_PORT` / `FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT`
-  (issue #38 port resolution via `fusion_core.config.service_port`).
+  (issue #38 port resolution via `fusion_core.config.service_port`),
+  `FUSION_PLUGIN_MARKETPLACE_INDEX` (issue #42: marketplace index for bundle install —
+  local JSON path or HTTPS URL; unset = builtin first-party catalog only).
 
 ### Process titles (issue #35)
 

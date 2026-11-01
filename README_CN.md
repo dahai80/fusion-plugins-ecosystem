@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.9-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.5.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -252,6 +252,18 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **端点** — `/api/whoami`、`/api/capabilities`、`/api/hub?q=<query>`（issue #41）、
   `/api/extensions/connectors[/{id}/enable|disable|harness]`、
   `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、`/health`。
+- **安装/授权/更新/卸载流（issue #42）** — 推荐位市场条目（含第一方连接器包）一键安装为
+  bundle：skills 启用、子代理注册启用、连接器落盘置 `pending_auth`（OAuth 后暴露），
+  安装后逐项可停用。连接器 OAuth 在 hub 内完成（弹层）：读 scope 逐项勾选授权（未勾选的
+  读通道不桥接）、凭据入加密保险库、写通道绑定逐用确认策略（`GET
+  /api/hub/connectors/{id}/policy` — cowork 审批系统对接点，上游
+  [fusion-cowork#225](https://github.com/dahai80/fusion-cowork/issues/225)；上游就绪前
+  执行侧由 #30 写通道审核队列兜底）。更新流 changelog 先行、新增项按需勾选；卸载前展示
+  影响面（反向查找引用这些能力的 cowork 节点）再确认。bundle 状态落盘于
+  `~/.fusion-plugins-ecosystem/extensions/bundles.json`。
+- **市场 bundle 类型（issue #42）** — 索引条目 `kind: "bundle"` 携带 `items` 列表
+  （`skill` / `subagent` / `connector` / `connector_pack` / `skill_package` 引用）；
+  索引来源 `FUSION_PLUGIN_MARKETPLACE_INDEX`（本地 JSON 或 HTTPS URL，未设置仅内置目录）。
 - **环境变量** — `FUSION_PLUGIN_CONNECTOR_DIR`（默认 `~/.fusion-plugins-ecosystem/connectors`）、
   `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）、
   `FUSION_PLUGIN_KEY_SALT`（密钥派生盐；未设置时 dev 空盐放行并告警，`FUSION_PROFILE=prod`
@@ -259,7 +271,9 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `FUSION_PLUGINS_ECOSYSTEM_DATA_DIR`（issue #38 数据目录单点解析，
   `fusion_core.config.service_data_dir`；默认 `~/.fusion-plugins-ecosystem`）、
   `FUSION_PLUGINS_ECOSYSTEM_PORT` / `FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT`
-  （issue #38 端口单点解析，`fusion_core.config.service_port`）。
+  （issue #38 端口单点解析，`fusion_core.config.service_port`）、
+  `FUSION_PLUGIN_MARKETPLACE_INDEX`（issue #42：bundle 安装市场索引 — 本地 JSON 路径或
+  HTTPS URL；未设置仅内置第一方目录）。
 
 ### 进程标题（issue #35）
 

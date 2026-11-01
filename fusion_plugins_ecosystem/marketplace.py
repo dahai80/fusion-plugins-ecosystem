@@ -27,7 +27,14 @@ from fusion_plugins_ecosystem.connector import ConnectorPack, ConnectorRegistry
 logger = logging.getLogger(__name__)
 
 DEFAULT_INSTALL_ROOT = str(DATA_DIR / "marketplace")  # issue #38：数据目录单点解析
-PACKAGE_KINDS = ("connector_pack", "skill_package")
+PACKAGE_KINDS = ("connector_pack", "skill_package", "bundle")
+BUNDLE_ITEM_TYPES = (
+    "skill",
+    "subagent",
+    "connector",
+    "connector_pack",
+    "skill_package",
+)
 
 
 @dataclass(frozen=True)
@@ -35,12 +42,13 @@ class MarketplaceEntry:
     """市场条目（索引中的一行）。"""
 
     id: str
-    kind: str  # connector_pack | skill_package
+    kind: str  # connector_pack | skill_package | bundle（issue #42）
     name: str
     version: str
     description: str = ""
     source: str | None = None  # git URL / 本地路径（内置包为 None）
     pack: dict[str, Any] | None = None  # connector_pack 内联定义（内置包）
+    items: list[dict[str, Any]] | None = None  # bundle 条目（issue #42 PC-2）
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +58,7 @@ class MarketplaceEntry:
             "version": self.version,
             "description": self.description,
             "source": self.source,
+            "items": self.items,
         }
 
 
@@ -148,9 +157,17 @@ class Marketplace:
             description=item.get("description", ""),
             source=item.get("source"),
             pack=item.get("pack"),
+            items=item.get("items"),
         )
         if entry.kind == "connector_pack" and entry.pack is None and not entry.source:
             return None, f"marketplace: {pid} 既无内联 pack 也无 source"
+        if entry.kind == "bundle":
+            items = entry.items
+            if not isinstance(items, list) or not items:
+                return None, f"marketplace: {pid} bundle 缺少 items"
+            for it in items:
+                if not isinstance(it, dict) or it.get("type") not in BUNDLE_ITEM_TYPES:
+                    return None, f"marketplace: {pid} 非法 bundle item {it!r}"
         return entry, None
 
     # ── 安装 / 卸载 ──
@@ -163,6 +180,11 @@ class Marketplace:
             raise KeyError(f"marketplace: 索引中无条目 {entry_id!r}")
         if entry.kind == "connector_pack":
             return self._install_connector_pack(entry)
+        if entry.kind == "bundle":
+            raise ValueError(
+                f"marketplace: bundle {entry.id!r} 安装走 ExtensionsConsole "
+                "install_bundle（跨注册表编排，issue #42）"
+            )
         return self._install_skill_package(entry)
 
     def _install_connector_pack(self, entry: MarketplaceEntry) -> dict[str, Any]:
