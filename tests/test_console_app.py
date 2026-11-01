@@ -168,7 +168,10 @@ def test_mcp_flow(client, mcp_server):
 
 def test_plugins_flow(client):
     plugins = client.get("/api/extensions/plugins").json()
-    assert plugins == {"plugins": [], "require_signing": False}
+    # issue #41：console 自举内置插件（hub 面反映真实注册表）
+    names = [p["name"] for p in plugins["plugins"]]
+    assert "caveman_compress" in names
+    assert plugins["require_signing"] is False
     out = client.post("/api/extensions/plugins", json={"source": "/nonexistent"}).json()
     assert out["installed"] is False
 

@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.8-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.4.9-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -190,7 +190,7 @@ fusion-plugins-ecosystem/
 │   ├── connector_packs.py        ← first-party connector packs (Feishu/DingTalk/WeCom/Mail/Calendar/Notion)
 │   ├── marketplace.py            ← skill/connector pack marketplace (JSON index, install/uninstall)
 │   ├── rest_connector.py         ← declarative REST/webhook connector docs (validation, read/write channels, execution contract)
-│   ├── extensions_console.py     ← Extensions console backend (issue #30): Connectors + Plugins·MCP tabs, spine derivation, resync
+│   ├── extensions_console.py     ← Extensions console backend (issues #30/#41): Connectors + Plugins·MCP + Skills + Sub-agents tabs, capabilities hub (search, market groups), spine derivation, resync
 │   ├── console_app.py            ← FastAPI console app + `fusion-plugin-console` CLI (port 8795)
 │   ├── shell_registry.py         ← fusion-gateway shell module registration + fm- key persistence (#30)
 │   ├── logging_setup.py          ← structured JSON logging + correlation_id (P3-6)
@@ -200,7 +200,7 @@ fusion-plugins-ecosystem/
 │       ├── __init__.py
 │       └── caveman_compress.py        ← built-in token compressor
 ├── web/
-│   ├── extensions.html            ← console GUI (Connectors + Plugins·MCP tabs, verbatim layout from f-ecommerce)
+│   ├── extensions.html            ← console GUI (Connectors + Plugins·MCP + Skills + Sub-agents tabs, hub search + market groups)
 │   ├── app.css                    ← fs-* design tokens (verbatim)
 │   └── shell.js                   ← sidebar injector (brand "Fusion Plugins")
 ├── examples/                      ← 9 runnable plugin samples (ex01_echo … ex09_file_access)
@@ -243,6 +243,7 @@ fusion-plugins-ecosystem/
     ├── test_rest_connector.py       ← declarative connector docs: validation, read/write channel split, persistence, execution contract vs local HTTP server
     ├── test_extensions_console.py   ← console backend: connector install/enable/harness, vault (Desk + local Fernet fallback), MCP intake probe/register/tick/call, plugin tick/remove/install, resync, spine derivation
     ├── test_console_app.py          ← FastAPI console: endpoint contract vs GUI, connector/MCP/plugin full flows, static serving
+    ├── test_hub.py                  ← capabilities hub (issue #41): builtin bootstrap, four-tab classification, cross-type search, market groups, /api/hub endpoint
     ├── test_soak.py                 ← long-run stability (token-meter cap, log buffer cap, session LRU cap, counter monotonic no-drift, lifecycle sustained execute no-residual)
     └── test_integration.py
 ```
@@ -295,11 +296,12 @@ Key properties:
 - **INLINE-only** — connector tools run INLINE (the external MCP server is already an isolated process); `sandbox_default_mode=process` blocks installation
 - **First-party packs**: Feishu (official `lark-mcp`), DingTalk, WeCom, Mail (IMAP/SMTP), Calendar (CalDAV), Notion (official `@notionhq/notion-mcp-server`)
 
-## 🖥️ Extensions console (issue #30)
+## 🖥️ Extensions console (issue #30, hub issue #41)
 
-Standalone FastAPI console (`fusion-plugin-console`, port 8795) hosting the two tabs migrated
-verbatim from f-ecommerce (issue #30, E3): **Connectors** and **Plugins·MCP**. Business logic
-generalized — no e-commerce semantics remain.
+Standalone FastAPI console (`fusion-plugin-console`, port 8795) hosting four tabs
+(the two migrated verbatim from f-ecommerce, issue #30 E3, plus the capabilities hub
+tabs, issue #41): **Connectors**, **Plugins·MCP**, **Skills**, and **Sub-agents**.
+Business logic generalized — no e-commerce semantics remain.
 
 ```bash
 pip install -e ".[console]"
@@ -319,7 +321,16 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `mcp__<server>__<tool>` capability plugins dispatched over JSON-RPC `tools/call`.
 - **Capability spine** — derived from disk facts (connector docs + MCP ticks), rebuilt at boot
   via `resync()`; in-process registry holds no second source of truth.
-- **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/extensions/connectors[/{id}/enable|disable|harness]`,
+- **Capabilities hub (issue #41)** — the Skills and Sub-agents tabs surface the real plugin
+  registry (console bootstraps built-ins via `register_builtin()`, idempotent when the inject
+  side already registered them): skills = plugins with `claude_skill` capability, sub-agents =
+  plugins with `subagent` capability; bridge ids (`connector__*`/`mcp__*`) stay on their own
+  tabs. A cross-type search box matches id/name/description (case-insensitive) across all four
+  tabs, and market groups (installed / updates / recommended) derive from the connector pack +
+  skill marketplace catalog with semantic version comparison (`1.0` ≡ `1.0.0`). GUI ships
+  zh/en toggle and follows the shell host dark/light theme.
+- **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/hub?q=<query>` (issue #41),
+  `/api/extensions/connectors[/{id}/enable|disable|harness]`,
   `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`, `/health`.
 - **Env vars** — `FUSION_PLUGIN_CONNECTOR_DIR` (default `~/.fusion-plugins-ecosystem/connectors`),
   `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`),

@@ -1,7 +1,8 @@
 """Extensions 控制台 HTTP 服务（issue #30 E3）。
 
 FastAPI 应用：静态控制台（web/）+ REST API，端点契约与 f-ecommerce
-控制台一致（仅去电商前缀），GUI 两页签（Connectors / Plugins·MCP）。
+控制台一致（仅去电商前缀），GUI 四页签（Connectors / Plugins·MCP /
+Skills / Sub-agents，issue #41 能力中心 hub）。
 
 独立于 fusion-plugin-server（MCP wire）运行：
     fusion-plugin-console --port 8795
@@ -73,7 +74,7 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.4.7",
+        version="0.4.9",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)
@@ -114,6 +115,12 @@ def create_app(
     @app.get("/api/capabilities")
     async def capabilities() -> dict[str, Any]:
         return {"capabilities": console.list_capabilities()}
+
+    # ── 能力中心 hub（issue #41）──
+
+    @app.get("/api/hub")
+    async def hub(q: str = "") -> dict[str, Any]:
+        return console.list_hub(q)
 
     # ── connectors ──
 
