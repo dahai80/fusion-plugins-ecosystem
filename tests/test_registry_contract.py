@@ -62,6 +62,14 @@ class TestContract:
         await console.tick_bundle_item("finance-kit", "excel-skill", False)
         assert _by_id(console, "node.excel-skill")["enabled"] is False
 
+    async def test_connector_pack_bridge_listed(self, console):
+        # 连接器包桥接（无 rest 文档）按桥接清单入列，授权面全量
+        console.registry.register(_manifest("connector__packdemo__search", []))
+        cap = _by_id(console, "connector.packdemo.search")
+        assert cap["kind"] == "connector"
+        assert cap["auth"]["state"] == "granted"
+        assert cap["auth"]["all_scopes_granted"] is True
+
     async def test_connector_auth_state_single_source(self, console):
         await console.install_bundle("finance-kit")
         # pending_auth：通道可见但未授权暴露
