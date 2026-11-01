@@ -253,7 +253,7 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   连接器包 + 技能包市场目录派生，语义化版本比较（`1.0` ≡ `1.0.0`）。GUI 支持 zh/en 切换
   并跟随 shell 宿主深浅主题。
 - **端点** — `/api/whoami`、`/api/capabilities`、`/api/hub?q=<query>`（issue #41）、
-  `/api/extensions/connectors[/{id}/enable|disable|harness]`、
+  `/api/extensions/connectors[/{id}/enable|disable|harness]`（DELETE 删除独立连接器——摘桥接 + 文档 + 逐用策略清理）、
   `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、
   `/api/hub/audit`、`/api/hub/connectors/{id}/revoke`、`/api/hub/capabilities/{cap}/used-by`（issue #43）、`/health`。
 - **安装/授权/更新/卸载流（issue #42）** — 推荐位市场条目（含第一方连接器包）一键安装为
