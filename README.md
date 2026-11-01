@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.6.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.7.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -250,6 +250,7 @@ fusion-plugins-ecosystem/
     ├── test_hub.py                  ← capabilities hub (issue #41): builtin bootstrap, four-tab classification, cross-type search, market groups, /api/hub endpoint
     ├── test_install_flow.py         ← bundle install/OAuth/update/uninstall flows (issue #42): per-item states, scope grants, per-use policy, reverse lookup
     ├── test_audit_flow.py           ← authorization audit events → security JSONL pipeline (issue #43): trace-id linkage, scope revoke re-bridge, used-by, HTTP endpoints
+    ├── test_registry_contract.py    ← stable registry read contract registry/1.0 (issue #44): kinds/install state, connector auth single-source (pending/granted/revoked), detail, HTTP endpoints
     ├── test_soak.py                 ← long-run stability (token-meter cap, log buffer cap, session LRU cap, counter monotonic no-drift, lifecycle sustained execute no-residual)
     └── test_integration.py
 ```
@@ -344,7 +345,8 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **Endpoints** — `/api/whoami`, `/api/capabilities`, `/api/hub?q=<query>` (issue #41),
   `/api/extensions/connectors[/{id}/enable|disable|harness]` (DELETE removes a standalone connector — unbridge + doc + per-use policy cleanup),
   `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`,
-  `/api/hub/audit`, `/api/hub/connectors/{id}/revoke`, `/api/hub/capabilities/{cap}/used-by` (issue #43), `/health`.
+  `/api/hub/audit`, `/api/hub/connectors/{id}/revoke`, `/api/hub/capabilities/{cap}/used-by` (issue #43),
+  `/api/registry/capabilities[/{id}]` (issue #44 stable read contract), `/health`.
 - **Install / authorize / update / uninstall flows (issue #42)** — marketplace entries
   (incl. first-party packs) install as bundles from the Recommended row: skills enable,
   sub-agents register, connectors land as `pending_auth` until OAuth. Per-item
@@ -381,6 +383,21 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   remain; effect lands on next load per the issue #43 contract), `GET
   /api/hub/capabilities/{capability}/used-by` (reverse lookup — cowork nodes referencing
   the capability, same engine as the uninstall blast radius).
+- **Stable registry read contract (issue #44, PC-4)** — `GET /api/registry/capabilities`
+  (`contract: "registry/1.0"`) is the single source of truth for external capability
+  surfaces: the cowork capability marketplace
+  ([fusion-cowork#228](https://github.com/dahai80/fusion-cowork/issues/228)) and the
+  agent builder suggestions (fusion-agent-studio#529) consume it directly — no sync
+  jobs, no forked capability caches. Each item: `{id, kind (plugin|skill|subagent|
+  connector|mcp_tool), name, version, description, enabled, auth}`. Connector read
+  channels expand from the connector doc (not just live bridges) so revoked/pending
+  channels stay visible with `auth.state` = `granted|pending|revoked` (+ `granted`,
+  `granted_scopes`, `all_scopes_granted`, `hub_url` — authorization actions happen in
+  the hub, never in a consuming surface). `GET /api/registry/capabilities/{id}` returns
+  the detail (same fields + `per_use_scopes` for connectors + `in_use_by` reverse
+  lookup). Hub state changes (install/disable/revoke/uninstall) propagate on the
+  consumer's next fetch — `enabled: false` items must stop being offered. Contract
+  stability: additive field changes only, no semantic renames.
 - **Env vars** — `FUSION_PLUGIN_CONNECTOR_DIR` (default `~/.fusion-plugins-ecosystem/connectors`),
   `FUSION_PLUGIN_EXTENSIONS_DIR` (default `~/.fusion-plugins-ecosystem/extensions`),
   `FUSION_PLUGIN_KEY_SALT` (key-derivation salt; unset = empty in dev with a warning,
@@ -599,6 +616,7 @@ Latest run: **634 passed**.
 | `test_console_app.py` | 6 | FastAPI console: whoami/capabilities, connector full flow (install→vault→enable→disable→harness), MCP flow, plugins flow, static serving |
 | `test_hub.py` | 17 | capabilities hub (issue #41): builtin bootstrap, four-tab classification, cross-type search incl. recommended facet, market groups, key isolation, /api/hub endpoint |
 | `test_install_flow.py` | 22 | bundle install/OAuth/update/uninstall flows (issue #42): per-item states, pending_auth, scope grants bridging, per-use policy, changelog-first update, uninstall blast radius |
+| `test_registry_contract.py` | 4 |
 | `test_audit_flow.py` | 9 | authorization audit (issue #43): install/OAuth/update/uninstall events + trace-id linkage + JSONL contract, scope revoke re-bridge/disable, used-by reverse lookup, HTTP endpoints |
 
 ## ⚠️ Technical constraints

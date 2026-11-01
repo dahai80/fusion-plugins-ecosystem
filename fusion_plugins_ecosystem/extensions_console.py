@@ -1104,6 +1104,126 @@ class ExtensionsConsole:
         in_use_by = self._reverse_lookup([capability])
         return {"capability": capability, "in_use_by": in_use_by}
 
+    # ── 稳定注册表读契约（issue #44 PC-4：单注册表三表面）──
+    # 消费方：fusion-cowork#228 能力市场、fusion-agent-studio#529 构建器建议。
+    # 契约版本 registry/1.0 — 只增字段不改语义；授权态只读，授权动作跳 hub。
+
+    REGISTRY_CONTRACT = "registry/1.0"
+    HUB_URL = "/shell/fusion-plugins-ecosystem/"
+
+    @staticmethod
+    def _registry_kind(manifest: Any) -> str:
+        caps = {c.value for c in manifest.capabilities}
+        if "claude_skill" in caps:
+            return "skill"
+        if "subagent" in caps:
+            return "subagent"
+        return "plugin"
+
+    def _connector_grants(self, connector_id: str) -> list[str] | None:
+        """已授权读 scope 列表；None = 全量授权（#30 直装路径，无 _scope_grants）。"""
+        doc = get_connector(connector_id)
+        if not doc:
+            return None
+        grants = doc.get("_scope_grants")
+        if not isinstance(grants, list):
+            return None
+        return grants
+
+    def registry_capabilities(self) -> dict[str, Any]:
+        """registry/1.0 全量能力清单：单一事实源，消费方不得分叉缓存。
+
+        连接器按文档读通道展开（非仅已桥接清单）— 已撤销/待授权通道以
+        auth.state 呈现，消费方可见完整授权面而非只有活跃桥接。
+        """
+        items: list[dict[str, Any]] = []
+        for entry in connector_report():
+            cid = entry["id"]
+            doc = get_connector(cid) or {}
+            grants = self._connector_grants(cid)
+            for ch in read_channels(doc):
+                bridged = self.registry.get(f"connector__{cid}__{ch['id']}")
+                enabled = bridged is not None and self._plugin_enabled(bridged.id)
+                granted = grants is None or ch["id"] in grants
+                if not granted:
+                    state = "revoked"
+                elif enabled:
+                    state = "granted"
+                else:
+                    state = "pending"
+                items.append(
+                    {
+                        "id": f"connector.{cid}.{ch['id']}",
+                        "kind": "connector",
+                        "name": f"{cid} · {ch['title']}",
+                        "version": str(doc.get("version") or "1.0.0"),
+                        "description": ch["description"],
+                        "enabled": enabled,
+                        "auth": {
+                            "state": state,
+                            "granted": granted,
+                            "granted_scopes": grants if grants is not None else [],
+                            "all_scopes_granted": grants is None,
+                            "hub_url": self.HUB_URL,
+                        },
+                    }
+                )
+        for m in self.registry.list():
+            if m.id.startswith("connector__"):
+                continue  # 连接器由文档读通道展开覆盖
+            if m.id.startswith("mcp__"):
+                _, sid, tool = m.id.split("__", 2)
+                items.append(
+                    {
+                        "id": f"mcp.{sid}.{tool}",
+                        "kind": "mcp_tool",
+                        "name": m.name,
+                        "version": m.version,
+                        "description": m.description or "",
+                        "enabled": self._plugin_enabled(m.id),
+                        "auth": {
+                            "state": "none",
+                            "granted": True,
+                            "granted_scopes": [],
+                            "all_scopes_granted": True,
+                            "hub_url": self.HUB_URL,
+                        },
+                    }
+                )
+            else:
+                items.append(
+                    {
+                        "id": f"node.{m.id}",
+                        "kind": self._registry_kind(m),
+                        "name": m.name,
+                        "version": m.version,
+                        "description": m.description or "",
+                        "enabled": self._plugin_enabled(m.id),
+                        "auth": {
+                            "state": "none",
+                            "granted": True,
+                            "granted_scopes": [],
+                            "all_scopes_granted": True,
+                            "hub_url": self.HUB_URL,
+                        },
+                    }
+                )
+        logger.info("extensions_console: registry/1.0 清单 %d 项", len(items))
+        return {"contract": self.REGISTRY_CONTRACT, "capabilities": items}
+
+    def registry_capability(self, capability: str) -> dict[str, Any]:
+        """registry/1.0 单能力详情：清单字段 + per-use 策略 + 被使用于。"""
+        listing = self.registry_capabilities()["capabilities"]
+        item = next((c for c in listing if c["id"] == capability), None)
+        if item is None:
+            return {"error": f"capability {capability!r} not found"}
+        out = dict(item)
+        if item["kind"] == "connector":
+            cid = item["id"].split(".", 2)[1]
+            out["per_use_scopes"] = self.scope_policy(cid).get("per_use_scopes") or []
+        out["in_use_by"] = self._reverse_lookup([item["id"]])
+        return out
+
     # ── 连接器 ──
 
     def list_connectors(self) -> dict[str, Any]:

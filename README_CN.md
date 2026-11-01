@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.6.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.7.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -255,7 +255,8 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **端点** — `/api/whoami`、`/api/capabilities`、`/api/hub?q=<query>`（issue #41）、
   `/api/extensions/connectors[/{id}/enable|disable|harness]`（DELETE 删除独立连接器——摘桥接 + 文档 + 逐用策略清理）、
   `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、
-  `/api/hub/audit`、`/api/hub/connectors/{id}/revoke`、`/api/hub/capabilities/{cap}/used-by`（issue #43）、`/health`。
+  `/api/hub/audit`、`/api/hub/connectors/{id}/revoke`、`/api/hub/capabilities/{cap}/used-by`（issue #43）、
+  `/api/registry/capabilities[/{id}]`（issue #44 稳定读契约）、`/health`。
 - **安装/授权/更新/卸载流（issue #42）** — 推荐位市场条目（含第一方连接器包）一键安装为
   bundle：skills 启用、子代理注册启用、连接器落盘置 `pending_auth`（OAuth 后暴露），
   安装后逐项可停用。连接器 OAuth 在 hub 内完成（弹层）：读 scope 逐项勾选授权（未勾选的
@@ -284,6 +285,18 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   （body `{"scopes": [...]}` — 撤销已授权读 scope：按剩余 scope 重桥接连接器，全撤则停用；
   按 issue #43 契约于下次加载生效）、`GET /api/hub/capabilities/{capability}/used-by`
   （反向查找引用该能力的 cowork 节点，与卸载影响面同一引擎）。
+- **稳定注册表读契约（issue #44，PC-4）** — `GET /api/registry/capabilities`
+  （`contract: "registry/1.0"`）是外部能力表面的单一事实源：cowork 能力市场
+  （[fusion-cowork#228](https://github.com/dahai80/fusion-cowork/issues/228)）与
+  agent 构建器建议（fusion-agent-studio#529）直接消费 — 无同步任务、不分叉缓存。
+  每项字段：`{id, kind (plugin|skill|subagent|connector|mcp_tool), name, version,
+  description, enabled, auth}`。连接器读通道按文档展开（非仅活跃桥接），已撤销/待
+  授权通道以 `auth.state` = `granted|pending|revoked` 可见（另有 `granted`、
+  `granted_scopes`、`all_scopes_granted`、`hub_url` — 授权动作只在 hub 发生，消费面
+  只读）。`GET /api/registry/capabilities/{id}` 返回详情（同字段 + 连接器
+  `per_use_scopes` + `in_use_by` 反向查找）。hub 状态变更（安装/停用/撤销/卸载）于
+  消费方下次拉取即生效 — `enabled: false` 项必须停止供应。契约稳定性：只增字段、
+  不改语义。
 - **环境变量** — `FUSION_PLUGIN_CONNECTOR_DIR`（默认 `~/.fusion-plugins-ecosystem/connectors`）、
   `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）、
   `FUSION_PLUGIN_KEY_SALT`（密钥派生盐；未设置时 dev 空盐放行并告警，`FUSION_PROFILE=prod`
