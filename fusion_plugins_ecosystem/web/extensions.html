@@ -626,7 +626,7 @@ $("hub-modal").addEventListener("click", e => {
 
 async function bundleInstall(id) {
   try {
-    const r = await hubApi("POST", `/hub/bundles/${encodeURIComponent(id)}/install`);
+    const r = await hubApi("POST", `/bundles/${encodeURIComponent(id)}/install`);
     const errs = (r.errors || []).join(" | ");
     $("msg").textContent = errs || `${id}: ${hubT().install} ✓`;
     loadHub(); loadBundles(); loadSpine();
@@ -635,7 +635,7 @@ async function bundleInstall(id) {
 
 async function loadBundles() {
   try {
-    const r = await hubApi("GET", "/hub/bundles");
+    const r = await hubApi("GET", "/bundles");
     const t = hubT();
     const bundles = (r.bundles || []).filter(b => b.items);
     const wrap = $("hub-bundles-wrap");
@@ -670,7 +670,7 @@ async function loadBundles() {
 async function bundleItemTick(bundleId, ref, enabled) {
   try {
     const r = await hubApi("POST",
-      `/hub/bundles/${encodeURIComponent(bundleId)}/items/${encodeURIComponent(ref)}/tick`,
+      `/bundles/${encodeURIComponent(bundleId)}/items/${encodeURIComponent(ref)}/tick`,
       { enabled });
     $("msg").textContent = r.error || `${ref}: ${r.state}`;
     loadBundles(); loadHub(); loadSpine();
@@ -679,7 +679,7 @@ async function bundleItemTick(bundleId, ref, enabled) {
 
 async function authorizeConnector(connectorId) {
   try {
-    const s = await hubApi("GET", `/hub/connectors/${encodeURIComponent(connectorId)}/oauth`);
+    const s = await hubApi("GET", `/connectors/${encodeURIComponent(connectorId)}/oauth`);
     if (s.error) { $("msg").textContent = s.error; return; }
     const t = hubT();
     const scopeRows = (s.scopes || []).map(sc => {
@@ -709,7 +709,7 @@ async function oauthSubmit(connectorId) {
   });
   try {
     const r = await hubApi("POST",
-      `/hub/connectors/${encodeURIComponent(connectorId)}/oauth`,
+      `/connectors/${encodeURIComponent(connectorId)}/oauth`,
       { scopes, credentials });
     closeModal();
     $("msg").textContent = r.error || `${connectorId}: ${hubT().authorize} ✓`;
@@ -719,7 +719,7 @@ async function oauthSubmit(connectorId) {
 
 async function updateBundle(bundleId) {
   try {
-    const pv = await hubApi("GET", `/hub/bundles/${encodeURIComponent(bundleId)}/update`);
+    const pv = await hubApi("GET", `/bundles/${encodeURIComponent(bundleId)}/update`);
     const t = hubT();
     if (pv.error) { $("msg").textContent = pv.error; return; }
     if (!pv.update_available) { $("msg").textContent = `${bundleId}: ${t.noUpdate}`; return; }
@@ -739,7 +739,7 @@ async function updateApply(bundleId) {
   const opt_in = [...document.querySelectorAll("#hub-modal-box .mopt:checked")]
     .map(x => x.value);
   try {
-    const r = await hubApi("POST", `/hub/bundles/${encodeURIComponent(bundleId)}/update`,
+    const r = await hubApi("POST", `/bundles/${encodeURIComponent(bundleId)}/update`,
       { opt_in });
     closeModal();
     $("msg").textContent = `${bundleId} → v${r.version} ✓`;
@@ -750,7 +750,7 @@ async function updateApply(bundleId) {
 async function uninstallPreview(bundleId) {
   try {
     const pv = await hubApi("GET",
-      `/hub/bundles/${encodeURIComponent(bundleId)}/uninstall-preview`);
+      `/bundles/${encodeURIComponent(bundleId)}/uninstall-preview`);
     if (pv.error) { $("msg").textContent = pv.error; return; }
     const t = hubT();
     const usedRows = (pv.in_use_by || []).map(u =>
@@ -765,7 +765,7 @@ async function uninstallPreview(bundleId) {
 
 async function uninstallBundle(bundleId) {
   try {
-    const r = await hubApi("DELETE", `/hub/bundles/${encodeURIComponent(bundleId)}`);
+    const r = await hubApi("DELETE", `/bundles/${encodeURIComponent(bundleId)}`);
     closeModal();
     $("msg").textContent = r.error || `${bundleId}: ${hubT().uninstall} ✓`;
     loadBundles(); loadHub(); loadSpine();
