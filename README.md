@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.7-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.4.8-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -340,8 +340,9 @@ show the product name and role instead of a bare `Python`.
 
 ### Shell module (gateway registration, issue #30 follow-up)
 
-The console registers itself as a fusion-gateway shell module — the shell sidebar shows an
-**Extensions Console** entry at `/shell/fusion-plugins-ecosystem/`; stopping the console greys
+The console registers itself as a fusion-gateway shell module — the shell sidebar shows a
+**Capabilities** (能力中心) entry at `/shell/fusion-plugins-ecosystem/` (issue #40, DD-2 hub
+form); stopping the console greys
 the entry (heartbeat expiry), restarting re-registers it. Same pattern as fusion-cowork #97/#168.
 
 ```bash

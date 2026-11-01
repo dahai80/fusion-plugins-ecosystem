@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.4.7-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.4.8-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -261,8 +261,9 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 
 ### Shell 模块（网关注册，issue #30 验收补充）
 
-控制台向 fusion-gateway 注册为 shell 模块 — 侧边栏出现**扩展控制台**入口
-（`/shell/fusion-plugins-ecosystem/`）；停止控制台入口置灰（心跳过期），重启自动重注册。
+控制台向 fusion-gateway 注册为 shell 模块 — 侧边栏出现**能力中心**入口
+（`/shell/fusion-plugins-ecosystem/`，issue #40 按 DD-2 拍板的 hub 形态）；
+停止控制台入口置灰（心跳过期），重启自动重注册。
 与 fusion-cowork #97/#168 同一模式。
 
 ```bash

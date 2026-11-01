@@ -123,6 +123,9 @@ class TestManifestLoad:
     def test_default_manifest_shape(self):
         manifest = shell_registry.load_manifest()
         assert manifest["id"] == "fusion-plugins-ecosystem"
+        # issue #40 / DD-2: 菜单形态 = 一级 能力中心 hub
+        assert manifest["title"] == "能力中心"
+        assert manifest["title_en"] == "Capabilities"
         assert manifest["entry"] == "/shell/fusion-plugins-ecosystem/"
         assert manifest["upstream"] == "http://127.0.0.1:8795"
         assert manifest["devices"]
