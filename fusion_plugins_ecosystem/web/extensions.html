@@ -495,6 +495,8 @@ const HUB_I18N = {
     usedBy: "Used by", safeRemove: "Nothing references these capabilities — safe to remove.",
     removeQ: q => `Remove bundle "${q}"?`,
     bundlesNone: "No bundles installed yet — install from Recommended.",
+    audit: "Audit", auditTitle: "Authorization audit", auditNone: "No authorization records yet.",
+    revoke: "Revoke", granted: "Granted read scopes", revTime: r => new Date(r * 1000).toLocaleString(),
   },
   zh: {
     search: "搜索 插件 / Skills / 连接器 / 子代理…",
@@ -516,6 +518,8 @@ const HUB_I18N = {
     usedBy: "被使用于", safeRemove: "无节点引用这些能力 — 可安全移除。",
     removeQ: q => `卸载套件 "${q}"？`,
     bundlesNone: "尚未安装套件 — 从官方推荐安装。",
+    audit: "审计", auditTitle: "授权审计", auditNone: "暂无授权记录。",
+    revoke: "撤销", granted: "已授权读 scope", revTime: r => new Date(r * 1000).toLocaleString(),
   },
 };
 let hubLang = "en";
@@ -657,7 +661,8 @@ async function loadBundles() {
           ? `<span class="chip warn">${t.pendingAuth}</span>`
           : `<span class="chip ${i.state === "enabled" ? "ok" : "off"}">${esc(type)}</span>`;
         return `<span class="chip ${i.state === "enabled" ? "ok" : "off"}" ` +
-          `title="${esc(i.state)}">${esc(i.ref)} · ${stateChip} ${ctl}</span>`;
+          `title="${esc(i.state)}">${esc(i.ref)} · ${stateChip} ${ctl}` +
+          ` <button class="link" data-maud="${esc(b.id)}|${esc(i.ref)}|${esc(i.type)}">${t.audit}</button></span>`;
       }).join("");
       return `<div class="bundle-box"><b>${esc(b.name)}</b> · v${esc(b.version)} ` +
         `<button class="link" data-mupd="${esc(b.id)}">${t.updateBtn}</button> ` +
@@ -772,6 +777,43 @@ async function uninstallBundle(bundleId) {
   } catch (err) { $("msg").textContent = err.message; }
 }
 
+async function auditView(bundleId, ref, type) {
+  try {
+    const t = hubT();
+    const r = await hubApi("GET", `/audit?resource_id=${encodeURIComponent(ref)}`);
+    const recs = r.records || [];
+    const rows = recs.map(x =>
+      `<div class="mrow">${esc(t.revTime(x.timestamp))} — <b>${esc(x.action)}</b>` +
+      ` ${esc(x.details && x.details.scope ? "· " + x.details.scope : "")}` +
+      `<br><span class="muted">actor=${esc(x.actor)} risk=${esc(x.risk_level)} trace=${esc(x.trace_id)}</span></div>`
+    ).join("");
+    let revokeRows = "";
+    if (type === "connector") {
+      const s = await hubApi("GET", `/connectors/${encodeURIComponent(ref)}/oauth`);
+      const grantedScopes = (s.scopes || []).filter(x => !x.sensitive);
+      if (grantedScopes.length) {
+        revokeRows = `<h3>${t.granted}</h3>` + grantedScopes.map(x =>
+          `<div class="mrow">${esc(x.id)} ` +
+          `<button class="link" data-mrevoke="${esc(ref)}|${esc(x.id)}">${t.revoke}</button></div>`
+        ).join("");
+      }
+    }
+    openModal(`<h3>${t.auditTitle} · ${esc(ref)}</h3>` +
+      (rows || `<div class="mrow muted">${t.auditNone}</div>`) + revokeRows +
+      `<div class="mbtns"><button class="link" data-mcancel="1">${t.cancel}</button></div>`);
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
+async function revokeScope(connectorId, scope) {
+  try {
+    const r = await hubApi("POST",
+      `/connectors/${encodeURIComponent(connectorId)}/revoke`, { scopes: [scope] });
+    $("msg").textContent = r.error || `${connectorId}: ${scope} ${hubT().revoke} ✓`;
+    closeModal();
+    loadBundles(); loadHub(); loadSpine();
+  } catch (err) { $("msg").textContent = err.message; }
+}
+
 $("hub-bundles").addEventListener("click", e => {
   const d = e.target.dataset;
   if (d.mauth) authorizeConnector(d.mauth);
@@ -779,12 +821,14 @@ $("hub-bundles").addEventListener("click", e => {
   else if (d.mtoff) { const [b, r] = d.mtoff.split("|"); bundleItemTick(b, r, false); }
   else if (d.mupd) updateBundle(d.mupd);
   else if (d.mrm) uninstallPreview(d.mrm);
+  else if (d.maud) { const [b, ref, type] = d.maud.split("|"); auditView(b, ref, type); }
 });
 $("hub-modal-box").addEventListener("click", e => {
   const d = e.target.dataset;
   if (d.moauth) oauthSubmit(d.moauth);
   else if (d.mapply) updateApply(d.mapply);
   else if (d.mrm2) uninstallBundle(d.mrm2);
+  else if (d.mrevoke) { const [cid, sc] = d.mrevoke.split("|"); revokeScope(cid, sc); }
 });
 $("hub-groups").addEventListener("click", e => {
   if (e.target.dataset.binstall) bundleInstall(e.target.dataset.binstall);

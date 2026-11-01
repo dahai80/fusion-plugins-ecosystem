@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.5.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.6.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -93,13 +93,11 @@ lifecycle = fpe.PluginLifecycle(registry)
 gw = fpe.ClaudeGateway(registry, lifecycle)
 
 # 正向：暴露给 Claude
-skills = gw.export_skills()           # → Claude Skill 字典
-tools = gw.list_mcp_tools()           # → MCP 工具描述
+skills = gw.export_skills()  # → Claude Skill 字典
+tools = gw.list_mcp_tools()  # → MCP 工具描述
 
 # 正向：Claude 通过 MCP 调用
-resp = await gw.invoke_mcp_tool(
-    "caveman_compress", {"text": "# 注释\ncode"}
-)
+resp = await gw.invoke_mcp_tool("caveman_compress", {"text": "# 注释\ncode"})
 # → {"content": [{"type":"text","text":"{\"compressed\":\"code\",...}"}], "isError": false}
 
 # 反向：拉起 Claude Code 子代理
@@ -116,12 +114,17 @@ result = await gw.dispatch_subagent(task)
 
 ```python
 from fusion_plugins_ecosystem.registry import (
-    PluginCapability, PluginCategory, PluginManifest, PluginParam,
+    PluginCapability,
+    PluginCategory,
+    PluginManifest,
+    PluginParam,
 )
+
 
 def my_plugin(desk, params):
     desk.log("my_plugin", "INFO", "called", chars=len(params["text"]))
     return {"echo": params["text"].upper()}
+
 
 MY_MANIFEST = PluginManifest(
     id="my_echo",
@@ -130,8 +133,8 @@ MY_MANIFEST = PluginManifest(
     category=PluginCategory.CUSTOM,
     description="Echoes input text uppercased.",
     capabilities=[
-        PluginCapability.MCP_TOOL,        # 自动暴露为 MCP Tool
-        PluginCapability.CLAUDE_SKILL,    # 自动转 Claude Skill
+        PluginCapability.MCP_TOOL,  # 自动暴露为 MCP Tool
+        PluginCapability.CLAUDE_SKILL,  # 自动转 Claude Skill
     ],
     params=[
         PluginParam(name="text", type="string", description="Input", required=True),
@@ -251,7 +254,8 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   并跟随 shell 宿主深浅主题。
 - **端点** — `/api/whoami`、`/api/capabilities`、`/api/hub?q=<query>`（issue #41）、
   `/api/extensions/connectors[/{id}/enable|disable|harness]`、
-  `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、`/health`。
+  `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、
+  `/api/hub/audit`、`/api/hub/connectors/{id}/revoke`、`/api/hub/capabilities/{cap}/used-by`（issue #43）、`/health`。
 - **安装/授权/更新/卸载流（issue #42）** — 推荐位市场条目（含第一方连接器包）一键安装为
   bundle：skills 启用、子代理注册启用、连接器落盘置 `pending_auth`（OAuth 后暴露），
   安装后逐项可停用。连接器 OAuth 在 hub 内完成（弹层）：读 scope 逐项勾选授权（未勾选的
@@ -264,6 +268,22 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
 - **市场 bundle 类型（issue #42）** — 索引条目 `kind: "bundle"` 携带 `items` 列表
   （`skill` / `subagent` / `connector` / `connector_pack` / `skill_package` 引用）；
   索引来源 `FUSION_PLUGIN_MARKETPLACE_INDEX`（本地 JSON 或 HTTPS URL，未设置仅内置目录）。
+- **授权审计轨迹（issue #43）** — hub 每个授权动作都向 fusion-security 审计管道
+  （`~/.fusion_security/audit/audit_<tenant>.jsonl`，行结构与
+  `fusion_security.engine.tenant.audit.AuditEntry` 同构 — 安全工作台
+  （[fusion-security#61](https://github.com/dahai80/fusion-security/issues/61)）可直接检索）
+  写入审计事件；仅文件契约、零跨工程 import。事件：`hub.bundle.install`（medium）/
+  `hub.bundle.item.install`（low）/ `hub.bundle.item.enable|disable` /
+  `hub.connector.oauth.grant`（low，逐 scope）/ `hub.connector.scope.policy`（high，
+  逐用确认写通道策略）/ `hub.bundle.update` / `hub.bundle.uninstall` /
+  `hub.connector.oauth.revoke`（medium）——同一次 bundle 流程的安装/OAuth/策略事件共享
+  `trace_id`（格式 `fp-<hex16>`），跨服务链路可串联。hub GUI 每个安装项带审计按钮
+  （查看该项事件史 + 已授权 scope 撤销按钮）。
+- **审计端点（issue #43）** — `GET /api/hub/audit`（按 `resource_id` / `resource_type` /
+  `action` / `trace_id` 只读检索）、`POST /api/hub/connectors/{id}/revoke`
+  （body `{"scopes": [...]}` — 撤销已授权读 scope：按剩余 scope 重桥接连接器，全撤则停用；
+  按 issue #43 契约于下次加载生效）、`GET /api/hub/capabilities/{capability}/used-by`
+  （反向查找引用该能力的 cowork 节点，与卸载影响面同一引擎）。
 - **环境变量** — `FUSION_PLUGIN_CONNECTOR_DIR`（默认 `~/.fusion-plugins-ecosystem/connectors`）、
   `FUSION_PLUGIN_EXTENSIONS_DIR`（默认 `~/.fusion-plugins-ecosystem/extensions`）、
   `FUSION_PLUGIN_KEY_SALT`（密钥派生盐；未设置时 dev 空盐放行并告警，`FUSION_PROFILE=prod`
@@ -273,7 +293,10 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `FUSION_PLUGINS_ECOSYSTEM_PORT` / `FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT`
   （issue #38 端口单点解析，`fusion_core.config.service_port`）、
   `FUSION_PLUGIN_MARKETPLACE_INDEX`（issue #42：bundle 安装市场索引 — 本地 JSON 路径或
-  HTTPS URL；未设置仅内置第一方目录）。
+  HTTPS URL；未设置仅内置第一方目录）、
+  `FUSION_PLUGIN_AUDIT_DIR`（issue #43：审计 JSONL 落点目录，默认
+  `~/.fusion_security/audit`）、`FUSION_PLUGIN_AUDIT_TENANT`（默认 `system`）、
+  `FUSION_PLUGIN_AUDIT_SINK`（`off` 丢弃事件 — 测试/离线隔离）。
 
 ### 进程标题（issue #35）
 
