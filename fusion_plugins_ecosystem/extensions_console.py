@@ -1168,9 +1168,33 @@ class ExtensionsConsole:
                         },
                     }
                 )
+        # 连接器包（issue #27 ConnectorRegistry 桥接）无 rest 文档 — 按桥接
+        # 清单入列，授权面 = 全量（包工具无逐 scope 模型，对齐 #30 直装路径）
+        doc_cids = {entry["id"] for entry in connector_report()}
         for m in self.registry.list():
             if m.id.startswith("connector__"):
-                continue  # 连接器由文档读通道展开覆盖
+                cid = m.id.split("__", 2)[1]
+                if cid in doc_cids:
+                    continue  # rest 连接器由文档读通道展开覆盖
+                _, cid, op = m.id.split("__", 2)
+                items.append(
+                    {
+                        "id": f"connector.{cid}.{op}",
+                        "kind": "connector",
+                        "name": m.name,
+                        "version": m.version,
+                        "description": m.description or "",
+                        "enabled": self._plugin_enabled(m.id),
+                        "auth": {
+                            "state": "granted",
+                            "granted": True,
+                            "granted_scopes": [],
+                            "all_scopes_granted": True,
+                            "hub_url": self.HUB_URL,
+                        },
+                    }
+                )
+                continue
             if m.id.startswith("mcp__"):
                 _, sid, tool = m.id.split("__", 2)
                 items.append(
