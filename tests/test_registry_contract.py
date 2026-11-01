@@ -113,6 +113,20 @@ class TestContract:
         assert out["state"] == "enabled"
         assert console._plugin_enabled(out["plugin_ids"][0])
 
+    async def test_uninstall_leaves_no_pack_orphans(self, console):
+        # issue #44 验收：hub 卸载后注册表无残留（消费方拉取干净）
+        state = console._bundles_state()
+        state["pack-bundle"] = {
+            "id": "pack-bundle",
+            "items": [{"type": "connector_pack", "ref": "notion", "state": "enabled"}],
+        }
+        console._save_bundles_state(state)
+        await console._install_bundle_item("connector_pack", "notion", {})
+        assert console._pack_plugin_ids("notion")
+        out = await console.uninstall_bundle("pack-bundle")
+        assert out["removed"] is True and "notion" in out["items_removed"]
+        assert console._pack_plugin_ids("notion") == []
+
     async def test_connector_auth_state_single_source(self, console):
         await console.install_bundle("finance-kit")
         # pending_auth：通道可见但未授权暴露

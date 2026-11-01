@@ -1008,9 +1008,12 @@ class ExtensionsConsole:
                     delete_connector(ref)
                     removed.append(ref)
                 elif item.get("type") == "connector_pack":
+                    # 卸载即注销桥接（不留孤儿清单 — issue #44 验收：hub 卸载
+                    # 后消费方拉取无残留）；内联 creg 无持久化态，直接注销
                     for pid in self._pack_plugin_ids(ref):
                         if self._plugin_enabled(pid):
                             await self.lifecycle.disable(pid)
+                        self.registry.unregister(pid)
                     removed.append(ref)
                 elif item.get("type") == "skill_package":
                     from fusion_plugins_ecosystem.marketplace import Marketplace
