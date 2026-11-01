@@ -74,7 +74,7 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.6.0",
+        version="0.7.0",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)
@@ -214,6 +214,19 @@ def create_app(
     @app.get("/api/hub/capabilities/{capability}/used-by")
     async def capability_used_by(capability: str) -> dict[str, Any]:
         return console.capability_used_by(capability)
+
+    # ── 稳定注册表读契约（issue #44 PC-4：cowork#228 / agent-studio#529 消费）──
+
+    @app.get("/api/registry/capabilities")
+    async def registry_capabilities() -> dict[str, Any]:
+        return console.registry_capabilities()
+
+    @app.get("/api/registry/capabilities/{capability}")
+    async def registry_capability(capability: str) -> dict[str, Any]:
+        out = console.registry_capability(capability)
+        if "error" in out:
+            raise HTTPException(status_code=404, detail=out["error"])
+        return out
 
     # ── connectors ──
 
