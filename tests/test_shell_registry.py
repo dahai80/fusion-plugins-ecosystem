@@ -130,6 +130,9 @@ class TestManifestLoad:
         assert manifest["upstream"] == "http://127.0.0.1:8795"
         assert manifest["devices"]
         assert "api_key" not in manifest
+        # issue #60: MT-1 taxonomy — 能力中心 belongs in 能力与治理 governance
+        assert manifest["category"] == "governance"
+        assert manifest["sort"] == 21
 
     def test_upstream_override_env(self, monkeypatch):
         monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_UPSTREAM", "http://127.0.0.1:18995")
