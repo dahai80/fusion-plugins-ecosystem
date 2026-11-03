@@ -237,7 +237,7 @@ async def test_sse_transport_get_handshake() -> None:
     port = t.port
 
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
-    writer.write(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+    writer.write(b"GET /sse HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
     await writer.drain()
 
     response_line = await reader.readline()
@@ -256,8 +256,29 @@ async def test_sse_transport_get_handshake() -> None:
     await t.stop()
 
 
+async def test_sse_transport_get_unknown_path_404() -> None:
+    """issue #62：SSETransport 对非 /sse 的 GET 返回 404 快速失败，
+    不再 200-then-hang（挂起会骗过健康探针，掩盖上游误路由）。"""
+    t = SSETransport(handler=None, host="127.0.0.1", port=0)
+    await t.start()
+    port = t.port
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    writer.write(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+    await writer.drain()
+
+    response_line = await reader.readline()
+    assert b"404 Not Found" in response_line
+    rest = await asyncio.wait_for(reader.read(-1), timeout=5)
+    assert b"Connection: close" in rest
+
+    writer.close()
+    await writer.wait_closed()
+    await t.stop()
+
+
 async def test_http_transport_bad_request() -> None:
-    """真实回环：HTTPTransport 对非 POST/无 body 请求返回 400。"""
+    """真实回环：HTTPTransport 对非 POST/无 body 请求返回 404（issue #62）。"""
     t = HTTPTransport(handler=None, host="127.0.0.1", port=0)
     await t.start()
     port = t.port
@@ -267,7 +288,7 @@ async def test_http_transport_bad_request() -> None:
     await writer.drain()
 
     response_line = await reader.readline()
-    assert b"400 Bad Request" in response_line
+    assert b"404 Not Found" in response_line
 
     writer.close()
     await writer.wait_closed()
@@ -275,8 +296,8 @@ async def test_http_transport_bad_request() -> None:
 
 
 async def test_http_transport_bad_request_closes_connection() -> None:
-    """400 错误路径必须关闭连接（HTTP/Connection: close），否则客户端
-    阻塞读 EOF 致测试超时挂起。回归 HTTPTransport GET 400 漏 close。"""
+    """404 错误路径必须关闭连接（HTTP/Connection: close），否则客户端
+    阻塞读 EOF 致测试超时挂起。回归 HTTPTransport 非 POST 漏 close（issue #62）。"""
     t = HTTPTransport(handler=None, host="127.0.0.1", port=0)
     await t.start()
     port = t.port
@@ -286,7 +307,7 @@ async def test_http_transport_bad_request_closes_connection() -> None:
     await writer.drain()
 
     response_line = await reader.readline()
-    assert b"400 Bad Request" in response_line
+    assert b"404 Not Found" in response_line
     # read(-1) 仅在 EOF 返回；服务端写完 400 后主动关连接，
     # 故 wait_for 内必返回（证明连接已关闭，非永久挂起泄漏）。
     rest = await asyncio.wait_for(reader.read(-1), timeout=5)

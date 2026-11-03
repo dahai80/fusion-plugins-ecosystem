@@ -163,7 +163,7 @@ async def test_http_metrics_endpoint_exposes_exposition() -> None:
 
 
 async def test_http_metrics_endpoint_no_provider_falls_through() -> None:
-    """无 metrics_provider 时 GET /metrics 不短路，落到正常 POST 校验 → 400。"""
+    """无 metrics_provider 时 GET /metrics 不短路，落到端点校验 → 404（issue #62）。"""
     from fusion_plugins_ecosystem.transport import HTTPTransport
 
     t = HTTPTransport(handler=None, host="127.0.0.1", port=0)
@@ -177,8 +177,8 @@ async def test_http_metrics_endpoint_no_provider_falls_through() -> None:
     writer.close()
     await writer.wait_closed()
     await t.stop()
-    # 无 provider 短路 → 继续 POST 校验 → 非 POST → 400
-    assert b"400 Bad Request" in resp_line
+    # 无 provider 短路 → 继续 JSON-RPC 端点校验 → 非 POST → 404
+    assert b"404 Not Found" in resp_line
     assert b"Connection: close" in rest
 
 
