@@ -280,7 +280,18 @@ class SSETransport(Transport):
                 return
 
             if request_text.startswith("GET"):
-                await self._handle_sse_handshake(writer)
+                # issue #62：SSE 握手仅在 /sse 路径；未知路径 404 快速失败，
+                # 不返回 200-then-hang（挂起会骗过健康探针，掩盖上游误路由）。
+                if _request_path(request_text).rstrip("/") == "/sse":
+                    await self._handle_sse_handshake(writer)
+                else:
+                    logger.warning(
+                        "SSETransport: GET %s 非 SSE 端点，返回 404",
+                        _request_path(request_text),
+                    )
+                    await _write_simple_response(writer, 404, b"Not Found")
+                    writer.close()
+                    await writer.wait_closed()
                 return
 
             if request_text.startswith("POST"):
@@ -458,7 +469,13 @@ class HTTPTransport(Transport):
                 return
 
             if not request_text.startswith("POST"):
-                await _write_simple_response(writer, 400, b"Bad Request")
+                # issue #62：JSON-RPC 端点仅接受 POST，未知路径/方法 404 快速
+                # 失败（原 400 掩盖误路由 — 200/4xx 均可能被判"存活"）。
+                logger.warning(
+                    "HTTPTransport: %s 非 JSON-RPC POST 端点，返回 404",
+                    _request_path(request_text),
+                )
+                await _write_simple_response(writer, 404, b"Not Found")
                 writer.close()
                 await writer.wait_closed()
                 return
@@ -586,6 +603,12 @@ def _check_auth(auth_token: str | None, headers: dict[str, str]) -> bool:
     return hmac.compare_digest(raw[len("Bearer ") :], auth_token)
 
 
+def _request_path(request_text: str) -> str:
+    """从请求行提取路径（issue #62：SSE/HTTP 传输按路径分发）。"""
+    parts = request_text.split()
+    return parts[1] if len(parts) >= 2 else "/"
+
+
 async def _write_simple_response(
     writer: asyncio.StreamWriter, status: int, message: bytes
 ) -> None:
@@ -593,6 +616,8 @@ async def _write_simple_response(
     reason = {
         400: b"Bad Request",
         401: b"Unauthorized",
+        404: b"Not Found",
+        405: b"Method Not Allowed",
         408: b"Request Timeout",
         413: b"Payload Too Large",
     }.get(status, b"Error")
