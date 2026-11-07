@@ -11,7 +11,6 @@ version: 0.8.0
 updated: 2026-11-07
 owner: @dahai
 source_of_truth:
-  - CLAUDE.md
   - README.md
   - docs/PLUGIN_DEVELOPMENT.md
   - fusion_plugins_ecosystem/shell_registry.py
