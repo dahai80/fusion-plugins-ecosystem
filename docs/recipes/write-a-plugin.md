@@ -9,7 +9,7 @@ audience: developer
 status: draft
 version: 0.8.0
 updated: 2026-11-07
-owner: @dahai
+owner: "@dahai"
 source_of_truth:
   - docs/PLUGIN_DEVELOPMENT.md
   - examples/ex01_echo
