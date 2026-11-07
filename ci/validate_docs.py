@@ -221,9 +221,14 @@ HTML_SAFE = {
 SECRET_PATTERNS = [
     (re.compile(r"sk-[A-Za-z0-9]{16,}"), "possible OpenAI-style API key"),
     (re.compile(r"AKIA[0-9A-Z]{16}"), "possible AWS Access Key"),
-    (re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{24,}"), "possible hardcoded Bearer token"),
     (
-        re.compile(r"(?i)(password|passwd|secret|token)\s*[:=]\s*['\"][^'\"\s]{8,}['\"]"),
+        re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{24,}"),
+        "possible hardcoded Bearer token",
+    ),
+    (
+        re.compile(
+            r"(?i)(password|passwd|secret|token)\s*[:=]\s*['\"][^'\"\s]{8,}['\"]"
+        ),
         "possible hardcoded password",
     ),
 ]
@@ -304,7 +309,9 @@ def load_doc(path: str) -> Doc:
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         text = fh.read()
     meta, body_start, total = parse_frontmatter(text)
-    return Doc(path=path, meta=meta, body_start=body_start, body_lines=total - body_start)
+    return Doc(
+        path=path, meta=meta, body_start=body_start, body_lines=total - body_start
+    )
 
 
 # ---------------------------------------------------------------- checks
@@ -325,7 +332,9 @@ def check_frontmatter(doc: Doc, rel: str, out: List[Finding]) -> None:
 
     for key in REQUIRED_KEYS:
         if key not in doc.meta:
-            out.append(Finding("ERROR", "FM-KEY", rel, 1, f"missing required key {key}"))
+            out.append(
+                Finding("ERROR", "FM-KEY", rel, 1, f"missing required key {key}")
+            )
 
     def val(k: str) -> Optional[str]:
         v = doc.meta.get(k)
@@ -348,32 +357,60 @@ def check_frontmatter(doc: Doc, rel: str, out: List[Finding]) -> None:
     if owner and not owner.startswith("@"):
         out.append(
             Finding(
-                "ERROR", "FM-OWNER", rel, 1, "owner must be an @handle (a single specific person)"
+                "ERROR",
+                "FM-OWNER",
+                rel,
+                1,
+                "owner must be an @handle (a single specific person)",
             )
         )
     if owner and owner.startswith("@") and len(owner.strip("@")) > 39:
         out.append(
-            Finding("WARN", "FM-OWNER", rel, 1, f"owner too long, looks like a team name: {owner}")
+            Finding(
+                "WARN",
+                "FM-OWNER",
+                rel,
+                1,
+                f"owner too long, looks like a team name: {owner}",
+            )
         )
 
     up = val("updated")
     if up and not re.match(r"^\d{4}-\d{2}-\d{2}$", up):
-        out.append(Finding("ERROR", "FM-DATE", rel, 1, f"updated must be YYYY-MM-DD: {up}"))
+        out.append(
+            Finding("ERROR", "FM-DATE", rel, 1, f"updated must be YYYY-MM-DD: {up}")
+        )
 
     doc_id = val("doc_id")
     if doc_id and not re.match(r"^[a-z0-9-]+/[a-z0-9-]+(/[a-z0-9-]+)?$", doc_id):
         out.append(
-            Finding("ERROR", "FM-DOCID", rel, 1, f"doc_id must be <product>/<doc_type>: {doc_id}")
+            Finding(
+                "ERROR",
+                "FM-DOCID",
+                rel,
+                1,
+                f"doc_id must be <product>/<doc_type>: {doc_id}",
+            )
         )
 
     if st == "deprecated" and not doc.meta.get("superseded_by"):
         out.append(
-            Finding("ERROR", "FM-SUPERSEDE", rel, 1, "status=deprecated requires superseded_by")
+            Finding(
+                "ERROR",
+                "FM-SUPERSEDE",
+                rel,
+                1,
+                "status=deprecated requires superseded_by",
+            )
         )
 
     sot = doc.meta.get("source_of_truth")
     if not isinstance(sot, list) or not sot:
-        out.append(Finding("ERROR", "FM-SOT", rel, 1, "source_of_truth must be a non-empty list"))
+        out.append(
+            Finding(
+                "ERROR", "FM-SOT", rel, 1, "source_of_truth must be a non-empty list"
+            )
+        )
 
 
 def check_sot_paths(doc: Doc, rel: str, repo_root: str, out: List[Finding]) -> None:
@@ -387,7 +424,13 @@ def check_sot_paths(doc: Doc, rel: str, repo_root: str, out: List[Finding]) -> N
         target = os.path.join(repo_root, p)
         if not os.path.exists(target):
             out.append(
-                Finding("ERROR", "SOT-PATH", rel, 1, f"source_of_truth path does not exist: {p}")
+                Finding(
+                    "ERROR",
+                    "SOT-PATH",
+                    rel,
+                    1,
+                    f"source_of_truth path does not exist: {p}",
+                )
             )
             continue
         # line-range validation
@@ -428,10 +471,14 @@ def check_redlines(text: str, rel: str, out: List[Finding]) -> None:
         # wording cannot hide in examples)
         for w in FORBIDDEN_ZH:
             if w in line:
-                out.append(Finding("ERROR", "RED-MKT", rel, idx, f"marketing/vague word: {w}"))
+                out.append(
+                    Finding("ERROR", "RED-MKT", rel, idx, f"marketing/vague word: {w}")
+                )
         for w in FORBIDDEN_EN:
             if re.search(r"\b" + re.escape(w) + r"\b", line, re.I):
-                out.append(Finding("ERROR", "RED-MKT", rel, idx, f"marketing word: {w}"))
+                out.append(
+                    Finding("ERROR", "RED-MKT", rel, idx, f"marketing word: {w}")
+                )
 
         # leftover placeholders (frontmatter lines are exempt; template files
         # are exempt via --skip-placeholder; code fences are skipped because
@@ -449,7 +496,9 @@ def check_redlines(text: str, rel: str, out: List[Finding]) -> None:
                 if i < len(segs) - 1:
                     in_inline = not in_inline  # toggle only at real backticks
             prose = "".join(prose_parts)
-            prose = re.sub(r"<!--.*?-->", " ", prose)  # HTML comments are markers, not prose
+            prose = re.sub(
+                r"<!--.*?-->", " ", prose
+            )  # HTML comments are markers, not prose
             for m in PLACEHOLDER_RE.finditer(prose):
                 inner = m.group(1).strip()
                 if not inner or inner in HTML_SAFE:
@@ -461,7 +510,11 @@ def check_redlines(text: str, rel: str, out: List[Finding]) -> None:
                     continue  # comparison like r<5 or margin<4e-4, not a tag
                 if inner.startswith("//") or inner.endswith("/"):
                     continue
-                out.append(Finding("ERROR", "RED-PH", rel, idx, f"leftover placeholder: <{inner}>"))
+                out.append(
+                    Finding(
+                        "ERROR", "RED-PH", rel, idx, f"leftover placeholder: <{inner}>"
+                    )
+                )
 
         # secrets
         for pat, why in SECRET_PATTERNS:
@@ -522,7 +575,11 @@ def check_links(doc_path: str, text: str, rel: str, out: List[Finding]) -> None:
         if not os.path.exists(cand):
             out.append(
                 Finding(
-                    "ERROR", "LINK-BROKEN", rel, 0, f"relative link target does not exist: {target}"
+                    "ERROR",
+                    "LINK-BROKEN",
+                    rel,
+                    0,
+                    f"relative link target does not exist: {target}",
                 )
             )
 
@@ -537,7 +594,13 @@ def check_budget(doc: Doc, rel: str, out: List[Finding]) -> None:
         limit = GUIDED_UI_BUDGET
     if limit is None:
         out.append(
-            Finding("INFO", "BUDGET", rel, 0, f"body {doc.body_lines} lines ({dt} has no hard cap)")
+            Finding(
+                "INFO",
+                "BUDGET",
+                rel,
+                0,
+                f"body {doc.body_lines} lines ({dt} has no hard cap)",
+            )
         )
         return
     if doc.body_lines > limit:
@@ -562,7 +625,11 @@ def check_budget(doc: Doc, rel: str, out: List[Finding]) -> None:
             )
         )
     else:
-        out.append(Finding("INFO", "BUDGET", rel, 0, f"body {doc.body_lines} lines / cap {limit}"))
+        out.append(
+            Finding(
+                "INFO", "BUDGET", rel, 0, f"body {doc.body_lines} lines / cap {limit}"
+            )
+        )
 
 
 def check_bi_lingual(doc: Doc, rel: str, out: List[Finding]) -> None:
@@ -571,11 +638,15 @@ def check_bi_lingual(doc: Doc, rel: str, out: List[Finding]) -> None:
     if isinstance(title, str):
         if "zh" not in title or "en" not in title:
             out.append(
-                Finding("WARN", "I18N-TITLE", rel, 1, "title should be { zh: ..., en: ... }")
+                Finding(
+                    "WARN", "I18N-TITLE", rel, 1, "title should be { zh: ..., en: ... }"
+                )
             )
     elif isinstance(title, list):
         out.append(
-            Finding("WARN", "I18N-TITLE", rel, 1, "title failed to parse, check indentation")
+            Finding(
+                "WARN", "I18N-TITLE", rel, 1, "title failed to parse, check indentation"
+            )
         )
 
 
@@ -600,7 +671,11 @@ def check_inventory(root: str, cls: str, entry: str, out: List[Finding]) -> None
         if not os.path.exists(p):
             out.append(
                 Finding(
-                    "ERROR", "INV-T1", rel, 0, f"Tier 1 doc missing (grid position {cls}x{entry})"
+                    "ERROR",
+                    "INV-T1",
+                    rel,
+                    0,
+                    f"Tier 1 doc missing (grid position {cls}x{entry})",
                 )
             )
         elif os.path.isdir(p) and not os.listdir(p):
@@ -608,10 +683,22 @@ def check_inventory(root: str, cls: str, entry: str, out: List[Finding]) -> None
     for rel, need in TIER1_MIN_COUNT.get(key, []):
         d = os.path.join(root, rel)
         if os.path.isdir(d):
-            n = len([f for f in os.listdir(d) if f.endswith(".md") and not f.startswith("_")])
+            n = len(
+                [
+                    f
+                    for f in os.listdir(d)
+                    if f.endswith(".md") and not f.startswith("_")
+                ]
+            )
             if n < need:
                 out.append(
-                    Finding("ERROR", "INV-COUNT", rel, 0, f"need at least {need} docs, found {n}")
+                    Finding(
+                        "ERROR",
+                        "INV-COUNT",
+                        rel,
+                        0,
+                        f"need at least {need} docs, found {n}",
+                    )
                 )
 
 
@@ -621,7 +708,9 @@ def check_inventory(root: str, cls: str, entry: str, out: List[Finding]) -> None
 def iter_docs(root: str, skip_dirs: Tuple[str, ...]) -> List[str]:
     found = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith(".")]
+        dirnames[:] = [
+            d for d in dirnames if d not in skip_dirs and not d.startswith(".")
+        ]
         for fn in filenames:
             if fn.endswith(".md"):
                 found.append(os.path.join(dirpath, fn))
@@ -633,7 +722,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--root", default=".", help="repository root directory")
     ap.add_argument("--product", help="e.g. fusion-mlx, used for the doc-set check")
     ap.add_argument(
-        "--class", dest="cls", choices=sorted(VALID_CLASS), help="product class core/platform/app"
+        "--class",
+        dest="cls",
+        choices=sorted(VALID_CLASS),
+        help="product class core/platform/app",
     )
     ap.add_argument(
         "--entry",
@@ -667,7 +759,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.product:
         if not args.cls or not args.entry:
             print(
-                "[ERROR] --class and --entry are required together with --product", file=sys.stderr
+                "[ERROR] --class and --entry are required together with --product",
+                file=sys.stderr,
             )
             return 2
         if not args.skip_inventory:
@@ -693,7 +786,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.skip_placeholder:
             # drop the placeholder findings for this file, keep every other redline
             check_redlines(text, rel, findings)
-            findings[:] = [f for f in findings if not (f.code == "RED-PH" and f.file == rel)]
+            findings[:] = [
+                f for f in findings if not (f.code == "RED-PH" and f.file == rel)
+            ]
         else:
             check_redlines(text, rel, findings)
 
