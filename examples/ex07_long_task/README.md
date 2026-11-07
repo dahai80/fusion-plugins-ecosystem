@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex07-long-task
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex07 超时熔断与重启", en: "ex07 Timeout Meltdown and Restart"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex07_long_task/
+---
+
 # ex07 — Long Task (超时熔断 + 自动重启)
 
 `LONG_TASK` 能力 + 短超时。超时后插件转 `TIMEOUT`，`_maybe_restart` 重载它（上限 `max_restart`）/ Timeout meltdown then auto-restart up to max_restart.

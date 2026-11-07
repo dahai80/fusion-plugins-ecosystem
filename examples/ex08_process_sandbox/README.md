@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex08-process-sandbox
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex08 PROCESS 沙箱隔离", en: "ex08 PROCESS Sandbox Isolation"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex08_process_sandbox/
+---
+
 # ex08 — Process Sandbox (进程隔离)
 
 `SandboxMode.PROCESS` 把入口放到子进程执行（`PluginSandbox`），崩溃隔离 / Entry point runs in a subprocess over JSON IPC, crash-isolated.

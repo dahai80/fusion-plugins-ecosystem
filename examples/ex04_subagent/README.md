@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex04-subagent
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex04 反向子代理", en: "ex04 Reverse Subagent Dispatch"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex04_subagent/
+---
+
 # ex04 — Subagent Dispatch (反向子代理调度)
 
 fusion 主动拉起 Claude Code 子代理 / fusion pulls a Claude Code subagent.

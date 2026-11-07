@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex06-vram
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex06 显存占用（INLINE）", en: "ex06 VRAM Consumer (INLINE)"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex06_vram/
+---
+
 # ex06 — VRAM Consumer (显存占用)
 
 `VRAM_CONSUMER` 插件：`enable()` 自动通过 `desk.acquire_vram` 申请显存，`disable()` 释放 / Auto VRAM acquire on enable, release on disable.

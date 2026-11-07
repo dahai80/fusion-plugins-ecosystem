@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex01-echo
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex01 最小同步插件", en: "ex01 Echo (Minimal Plugin)"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex01_echo/
+---
+
 # ex01 — Echo (Minimal Plugin)
 
 最小可运行插件 / Minimal runnable plugin.

@@ -1,9 +1,26 @@
-<div align="center">
-  <h1>🔌 Fusion-Plugins-Ecosystem</h1>
-  <p><strong>Plugin registry, lifecycle manager, and native Claude full-chain adaptation layer for fusion-cowork.</strong></p>
-  <p><em>Build on fusion-cowork. Expose every plugin to Claude. Zero adapter code.</em></p>
-  <p>English | <a href="README_CN.md">简体中文</a></p>
-</div>
+---
+doc_id: fusion-plugins-ecosystem/readme
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: readme
+title: {zh: "Fusion-Plugins-Ecosystem", en: "Fusion-Plugins-Ecosystem"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - README.md
+---
+
+# 🔌 Fusion-Plugins-Ecosystem
+
+**Plugin registry, lifecycle manager, and native Claude full-chain adaptation layer for fusion-cowork.**
+
+*Build on fusion-cowork. Expose every plugin to Claude. Zero adapter code.*
+
+English | [简体中文](README_CN.md)
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
@@ -11,7 +28,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-747%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.8.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -60,7 +77,7 @@ fusion-mlx core                ← Mac local inference kernel (Metal/MLX)
 - **Forward**: Claude calls all fusion local capabilities (image/video generation, MLX local inference, file ops, quantization tools)
 - **Reverse**: fusion-cowork proactively spins up Claude Code subagents for batch refactors, PR generation, code optimization
 
-See [docs/CLAUDE_COMPATIBILITY.md](docs/CLAUDE_COMPATIBILITY.md) for the full spec.
+See [docs/claude-compatibility.md](docs/claude-compatibility.md) for the full spec.
 
 ## 🚀 Quick Start
 
@@ -78,7 +95,7 @@ python3 -m venv .venv
 
 # Run tests
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 634 passed
+# → 747 passed
 ```
 
 ```python
@@ -150,9 +167,9 @@ Register once → it auto-appears in Claude's tool catalog and MCP `tools/list`.
 
 | Doc | Content |
 |-----|---------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layering, module map, data flow (forward/reverse), capability mapping, pain points solved |
-| [docs/API.md](docs/API.md) | Full public API reference: `PluginRegistry`, `PluginLifecycle`, `ClaudeGateway`, `TokenMeter`, `DeskRuntime`, `EcosystemConfig` |
-| [docs/CLAUDE_COMPATIBILITY.md](docs/CLAUDE_COMPATIBILITY.md) | Three-layer compat, forward/reverse flows, volcengine auth, MLX visual backend, token metering, config toggles |
+| [docs/architecture.md](docs/architecture.md) | Layering, module map, data flow (forward/reverse), capability mapping, pain points solved |
+| [docs/api-reference.md](docs/api-reference.md) | Full public API reference: `PluginRegistry`, `PluginLifecycle`, `ClaudeGateway`, `TokenMeter`, `DeskRuntime`, `EcosystemConfig` |
+| [docs/claude-compatibility.md](docs/claude-compatibility.md) | Three-layer compat, forward/reverse flows, volcengine auth, MLX visual backend, token metering, config toggles |
 | [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Plugin authoring guide: manifest, capabilities, params schema, async, lazy entry, testing checklist |
 | [examples/](examples/) | 9 runnable plugin samples (echo → file_access): each a manifest + test + README. `pytest examples/` |
 
@@ -165,9 +182,9 @@ fusion-plugins-ecosystem/
 ├── README.md                     ← this file (English)
 ├── README_CN.md                  ← 中文版
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── API.md
-│   ├── CLAUDE_COMPATIBILITY.md
+│   ├── architecture.md
+│   ├── api-reference.md
+│   ├── claude-compatibility.md
 │   └
     PLUGIN_DEVELOPMENT.md
 ├── fusion_plugins_ecosystem/
@@ -218,7 +235,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/            ← timeout meltdown + restart
 │   ├── ex08_process_sandbox/      ← PROCESS sandbox isolation
 │   └── ex09_file_access/          ← file permission gating
-└── tests/                        ← 634 tests
+└── tests/                        ← 747 tests
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -586,7 +603,7 @@ and `{pong: true}`.
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-Latest run: **634 passed**.
+Latest run: **747 passed**.
 
 | Test file | Tests | Covers |
 |-----------|-------|--------|

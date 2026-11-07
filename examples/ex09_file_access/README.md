@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex09-file-access
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex09 文件权限门控", en: "ex09 File Permission Gating"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex09_file_access/
+---
+
 # ex09 — File Access (文件权限)
 
 `FILE_ACCESS` 能力。读文件前先查 `desk.check_file_permission(plugin_id, path)` / Permission gate before file read.

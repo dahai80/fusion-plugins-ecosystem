@@ -1,9 +1,26 @@
-<div align="center">
-  <h1>🔌 Fusion-Plugins-Ecosystem</h1>
-  <p><strong>基于 fusion-cowork 的插件注册中心、生命周期管理器、Claude 全链路适配层。</strong></p>
-  <p><em>构建于 fusion-cowork 之上。所有插件自动暴露给 Claude。零适配代码。</em></p>
-  <p><a href="README.md">English</a> | 中文</p>
-</div>
+---
+doc_id: fusion-plugins-ecosystem/readme-cn
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: readme
+title: {zh: "Fusion-Plugins-Ecosystem", en: "Fusion-Plugins-Ecosystem"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - README_CN.md
+---
+
+# 🔌 Fusion-Plugins-Ecosystem
+
+**基于 fusion-cowork 的插件注册中心、生命周期管理器、Claude 全链路适配层。**
+
+*构建于 fusion-cowork 之上。所有插件自动暴露给 Claude。零适配代码。*
+
+[English](README.md) | 简体中文
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-brightgreen" alt="macOS">
@@ -11,7 +28,7 @@
   <img src="https://img.shields.io/badge/base-fusion--cowork-orange" alt="fusion-cowork">
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
-  <img src="https://img.shields.io/badge/tests-689%20passed-success" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-747%20passed-success" alt="Tests">
   <img src="https://img.shields.io/badge/version-0.8.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
@@ -58,7 +75,7 @@ fusion-mlx core                ← Mac 本地推理内核（Metal/MLX）
 - **正向**：Claude 调用 fusion 全部本地能力（图片视频生成、MLX 本地推理、文件操作、量化工具）
 - **反向**：fusion-cowork 主动拉起 Claude Code 子代理，完成项目批量重构、PR 生成、代码优化
 
-完整规范见 [docs/CLAUDE_COMPATIBILITY.md](docs/CLAUDE_COMPATIBILITY.md)。
+完整规范见 [docs/claude-compatibility.md](docs/claude-compatibility.md)。
 
 ## 🚀 快速开始
 
@@ -76,7 +93,7 @@ python3 -m venv .venv
 
 # 运行测试
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
-# → 634 passed
+# → 747 passed
 ```
 
 ### 最小用法
@@ -150,9 +167,9 @@ MY_MANIFEST = PluginManifest(
 
 | 文档 | 内容 |
 |------|------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 分层、模块图、数据流（正向/反向）、能力映射、痛点解决 |
-| [docs/API.md](docs/API.md) | 完整公开 API 参考：`PluginRegistry`、`PluginLifecycle`、`ClaudeGateway`、`TokenMeter`、`DeskRuntime`、`EcosystemConfig` |
-| [docs/CLAUDE_COMPATIBILITY.md](docs/CLAUDE_COMPATIBILITY.md) | 三层兼容、正向/反向流、火山方舟鉴权、MLX 视觉后端、token 计量、配置开关 |
+| [docs/architecture.md](docs/architecture.md) | 分层、模块图、数据流（正向/反向）、能力映射、痛点解决 |
+| [docs/api-reference.md](docs/api-reference.md) | 完整公开 API 参考：`PluginRegistry`、`PluginLifecycle`、`ClaudeGateway`、`TokenMeter`、`DeskRuntime`、`EcosystemConfig` |
+| [docs/claude-compatibility.md](docs/claude-compatibility.md) | 三层兼容、正向/反向流、火山方舟鉴权、MLX 视觉后端、token 计量、配置开关 |
 | [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | 插件开发指南：清单、能力、参数 schema、异步、惰性入口、测试清单 |
 | [examples/](examples/) | 9 个可运行插件样例（echo → file_access），各含清单 + 测试 + README。`pytest examples/` |
 
@@ -165,9 +182,9 @@ fusion-plugins-ecosystem/
 ├── README.md                     ← 英文版
 ├── README_CN.md                  ← 中文版（本文件）
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── API.md
-│   ├── CLAUDE_COMPATIBILITY.md
+│   ├── architecture.md
+│   ├── api-reference.md
+│   ├── claude-compatibility.md
 │   └── PLUGIN_DEVELOPMENT.md
 ├── fusion_plugins_ecosystem/
 │   ├── __init__.py               ← 顶层导出 + 惰性导入
@@ -202,7 +219,7 @@ fusion-plugins-ecosystem/
 │   ├── ex07_long_task/           ← 超时熔断 + 重启
 │   ├── ex08_process_sandbox/     ← 进程沙箱隔离
 │   └── ex09_file_access/         ← 文件权限校验
-└── tests/                        ← 634 测试
+└── tests/                        ← 747 测试
     ├── test_caveman.py
     ├── test_claude_adapter.py
     ├── test_claude_gateway.py
@@ -425,7 +442,7 @@ SIGTERM——此前 sse/http 会立即返回、进程随之退出。已验证：
 .venv/bin/python -m pytest --cov=fusion_plugins_ecosystem --cov-report=term-missing -q
 ```
 
-最新结果：**634 passed**。
+最新结果：**747 passed**。
 
 | 测试文件 | 用例数 | 覆盖范围 |
 |---------|-------|---------|

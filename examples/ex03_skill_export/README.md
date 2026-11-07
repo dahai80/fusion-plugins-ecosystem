@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex03-skill-export
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex03 Skill 导出", en: "ex03 Skill Export"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex03_skill_export/
+---
+
 # ex03 — Skill Export (Claude Skill 导出)
 
 插件导出为 Claude Code Skill bundle / Export plugin as a Claude Code Skill.
