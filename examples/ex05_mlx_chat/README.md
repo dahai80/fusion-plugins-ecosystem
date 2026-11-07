@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex05-mlx-chat
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex05 本地 MLX 推理", en: "ex05 Local MLX Inference"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex05_mlx_chat/
+---
+
 # ex05 — MLX Chat (本地推理)
 
 通过 `desk.mlx_chat()` 调用本地 fusion-mlx 引擎 / Call local fusion-mlx engine.

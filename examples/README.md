@@ -1,3 +1,19 @@
+---
+doc_id: examples/index
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "示例索引", en: "Examples Index"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/
+---
+
 # Examples — fusion-plugins-ecosystem
 
 Runnable plugin samples, organized by scenario. Each directory is self-contained: a manifest module, a test, and a README.

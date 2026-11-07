@@ -1,3 +1,19 @@
+---
+doc_id: examples/ex02-async
+product: fusion-plugins-ecosystem
+class: platform
+entry: developer
+doc_type: guide
+title: {zh: "ex02 异步入口", en: "ex02 Async Entry Point"}
+audience: developer
+status: draft
+version: 0.8.0
+updated: 2026-11-07
+owner: @dahai
+source_of_truth:
+  - examples/ex02_async/
+---
+
 # ex02 — Async Entry Point (异步入口)
 
 异步插件入口 / Async plugin entry point.
