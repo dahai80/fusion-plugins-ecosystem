@@ -1,0 +1,36 @@
+{
+    "identifier": "caveman_compress",
+    "meta": {
+        "name": "Caveman Token Compressor",
+        "description": "Caveman-style token compression for input text: strips redundant whitespace/comments, merges repeated blank lines, cuts Claude session token usage.",
+        "version": "0.9.0"
+    },
+    "api": [
+        {
+            "name": "compress",
+            "description": "Compress text caveman-style; returns the compressed text plus savings stats.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text to compress"
+                    },
+                    "keep_comments": {
+                        "type": "boolean",
+                        "description": "Keep comment lines (default false)",
+                        "default": false
+                    },
+                    "strategy": {
+                        "type": "string",
+                        "description": "Compression strategy",
+                        "enum": ["caveman"],
+                        "default": "caveman"
+                    }
+                },
+                "required": ["text"]
+            }
+        }
+    ],
+    "systemRole": "You compress text caveman-style: drop articles, filler and pleasantries; keep all technical substance, code and identifiers verbatim. Never invent abbreviations that save no tokens."
+}

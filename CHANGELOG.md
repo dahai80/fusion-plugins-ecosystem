@@ -19,7 +19,17 @@ source_of_truth:
 
 All notable changes are tracked via git history; entries below summarize released versions. Versions follow `pyproject.toml` (`version`).
 
-## 0.8.0 (current, per pyproject.toml)
+## 0.9.0 (current, per pyproject.toml)
+
+- Declarative tool-manifest interchange format (issue #68): one static JSON file per plugin (`identifier` + `meta` + JSON-Schema `api[]` + `systemRole`), shipped JSON-Schema validator, deterministic manifest-to-MCP and MCP-to-manifest converters with identity round-trip tests; builtin `caveman_compress` migrated, validated at startup (fail-loudly)
+
+## 0.8.x
+
+- Docs-system v1.1 adoption: docs/ tree, contract validator, docs CI (PR #67)
+- Global audit browser + used-by lookup in the extensions console (issue #64, #65)
+- API server unknown paths return 404 fast instead of 200-then-hang (issue #62, #63)
+
+## 0.7.x and earlier
 
 Recent merged work (see `git log` for the full list):
 
