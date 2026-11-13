@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable
 
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
@@ -154,6 +155,7 @@ class PluginRegistry:
 
     def __init__(self, desk: DeskRuntime | None = None) -> None:
         self._manifests: dict[str, PluginManifest] = {}
+        self.tool_manifests: dict[str, Any] = {}
         self.desk: DeskRuntime = desk or DeskRuntime()
 
     def register(self, manifest: PluginManifest) -> None:
@@ -246,12 +248,17 @@ class PluginRegistry:
         from fusion_plugins_ecosystem.builtin.caveman_compress import (
             CAVEMAN_MANIFEST,
         )
+        from fusion_plugins_ecosystem.tool_manifest import load_tool_manifest
 
         builtin_manifests: list[PluginManifest] = [
             CAVEMAN_MANIFEST,
         ]
         for manifest in builtin_manifests:
             self.register(manifest)
+        # issue #68: static tool manifests validate at startup — fail loudly
+        self.tool_manifests["caveman_compress"] = load_tool_manifest(
+            Path(__file__).parent / "builtin" / "caveman_compress.tool.json"
+        )
 
     def default_mounted(self) -> list[PluginManifest]:
         """返回所有 default_mounted=True 的插件（默认挂载给 Claude 会话）。"""

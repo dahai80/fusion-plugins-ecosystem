@@ -99,6 +99,16 @@ Signatures are taken from source (v0.8.0). Top-level names are exposed lazily vi
 
 一键开关面板，全字段见 [config-reference.md](config-reference.md)；持久化到 Desk 配置中心，支持 observer 回调。 / One-toggle config panel; all fields in [config-reference.md](config-reference.md); persisted to the Desk config center with observer callbacks.
 
+## ToolManifest（tool_manifest.py）— 声明式工具清单交换格式（issue #68）
+
+每插件一个静态 JSON 清单：`identifier` + `meta{name,description,icon,version}` + `api[]`（每端点 JSON-Schema `parameters`）+ `systemRole`（启用时注入的系统提示片段）。构建/启动期校验（jsonschema Draft 2020-12），非法清单 fail-loudly。 / One static JSON file per plugin: `identifier` + `meta` + `api[]` (per-endpoint JSON-Schema `parameters`) + `systemRole`. Validated at build/startup time (jsonschema Draft 2020-12); invalid manifests fail loudly.
+
+- `parse_tool_manifest(data) -> ToolManifest` / `load_tool_manifest(path)` — 校验并解析（`ToolManifestError` 带路径信息）/ validate + parse with path-carrying errors
+- `manifest_to_mcp(manifest) -> tools/list 条目`（`<identifier>__<api>` 命名防跨插件冲突）/ MCP `tools/list` entries with `<identifier>__<api>` names
+- `manifest_from_mcp(identifier, ..., tools, system_role) -> ToolManifest` — 逆向转换；与 `manifest_to_mcp` 构成恒等往返 / inverse conversion; identity round-trip with `manifest_to_mcp`
+- `TOOL_MANIFEST_JSON_SCHEMA` — 清单本身的 JSON-Schema（单一校验源）/ the manifest's own JSON-Schema (single validation source)
+- 内置插件迁移：`builtin/caveman_compress.tool.json`，`register_builtin()` 启动时加载校验，存于 `registry.tool_manifests` / builtin migrated; `register_builtin()` loads + validates at startup into `registry.tool_manifests`
+
 ## CLI
 
 | 命令 / Command | 参数 / Args |

@@ -10,7 +10,7 @@ Lazy Import 机制（与 fusion-cowork 一致）：
 
 from __future__ import annotations
 
-__version__ = "0.4.7"
+__version__ = "0.9.0"
 __app_name__ = "Fusion-Plugins-Ecosystem"
 
 # ── Lazy Import 注册表 ──
@@ -22,6 +22,14 @@ _LAZY_IMPORTS: dict[str, str] = {
     "PluginCapability": "fusion_plugins_ecosystem.registry",
     "PluginCategory": "fusion_plugins_ecosystem.registry",
     "PluginParam": "fusion_plugins_ecosystem.registry",
+    # Tool manifest interchange (issue #68)
+    "ToolManifest": "fusion_plugins_ecosystem.tool_manifest",
+    "ToolApiSpec": "fusion_plugins_ecosystem.tool_manifest",
+    "ToolManifestError": "fusion_plugins_ecosystem.tool_manifest",
+    "parse_tool_manifest": "fusion_plugins_ecosystem.tool_manifest",
+    "load_tool_manifest": "fusion_plugins_ecosystem.tool_manifest",
+    "manifest_to_mcp": "fusion_plugins_ecosystem.tool_manifest",
+    "manifest_from_mcp": "fusion_plugins_ecosystem.tool_manifest",
     # 生命周期
     "PluginLifecycle": "fusion_plugins_ecosystem.lifecycle",
     "PluginState": "fusion_plugins_ecosystem.lifecycle",
