@@ -1,0 +1,13 @@
+# Dependency snapshot for CI pip-cache keying only (issue #70).
+# NEVER installed directly — pip install uses pyproject.toml extras.
+# Keep in sync with pyproject.toml [project] dependencies + [test] extra.
+# Cache key hashes this file AND pyproject.toml (see ci.yml cache-dependency-path).
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-mock>=3.14.0
+pytest-timeout>=2.3.0
+pydantic>=2.0.0
+httpx>=0.27.0
+cryptography>=42.0.0
+setproctitle>=1.3.0
+jsonschema>=4.21.0

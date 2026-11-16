@@ -19,7 +19,11 @@ source_of_truth:
 
 All notable changes are tracked via git history; entries below summarize released versions. Versions follow `pyproject.toml` (`version`).
 
-## 0.9.0 (current, per pyproject.toml)
+## 0.9.1 (current, per pyproject.toml)
+
+- CI retrofit per fusion#2 checklist (issue #70): `concurrency` cancel-in-progress grouped by ref on both workflows; pip download cache keyed on `ci/requirements-ci.txt` + `pyproject.toml`; suite sharding and nightly tier assessed and declined (763 tests finish in about 60s)
+
+## 0.9.0
 
 - Declarative tool-manifest interchange format (issue #68): one static JSON file per plugin (`identifier` + `meta` + JSON-Schema `api[]` + `systemRole`), shipped JSON-Schema validator, deterministic manifest-to-MCP and MCP-to-manifest converters with identity round-trip tests; builtin `caveman_compress` migrated, validated at startup (fail-loudly)
 
