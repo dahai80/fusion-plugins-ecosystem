@@ -2,14 +2,28 @@ class FusionPluginsEcosystem < Formula
     desc "Fusion plugin ecosystem: registry, lifecycle, MCP server, Claude adaptation"
     homepage "https://github.com/dahai80/fusion-plugins-ecosystem"
     url "https://github.com/dahai80/fusion-plugins-ecosystem/archive/refs/tags/v0.10.0.tar.gz"
-    sha256 "PLACEHOLDER_SHA256"
+    sha256 "f168bff048f800f8c68e3adcc2d1e1a0321fdd3b180b58be646a4a5e821dbad4"
     license "Apache-2.0"
     head "https://github.com/dahai80/fusion-plugins-ecosystem.git", branch: "main"
 
     depends_on "python@3.12"
 
-    # ARM64-native wheels — must be pre-built for macOS arm64
-    # (fusion-mlx tap convention; regenerated on dependency changes)
+    include Language::Python::Virtualenv
+
+    # Install strategy: every dependency is a pinned wheel resource (brew
+    # downloads all resources during the network-enabled fetch phase), then
+    # the install step does a single offline `pip install --no-deps` of the
+    # staged wheels. This avoids both virtualenv_install_with_resources'
+    # --no-binary=:all: (which breaks platform wheels like pydantic-core,
+    # cryptography, cffi) and any index access inside the build sandbox.
+    # The dependency set is regenerated from a pip resolution report on
+    # dependency changes (see homebrew-tap/ in the source repo).
+
+    resource "fusion-plugins-ecosystem" do
+        url "https://github.com/dahai80/fusion-plugins-ecosystem/releases/download/v0.10.0/fusion_plugins_ecosystem-0.10.0-py3-none-any.whl"
+        sha256 "0b9a214cfb723662646f783cc3870983d261b895227d41f36b5100b37cf0910f"
+    end
+
     resource "annotated-doc" do
         url "https://files.pythonhosted.org/packages/cd/f5/3dd85d583e55be76cd02b1fc9bbec771b12d63124b01661d9535ccf8721f/annotated_doc-0.0.6-py3-none-any.whl"
         sha256 "361ca0950cc7082f53fa69e9328409f40a62c61e57e0a47e1825a08078a58a53"
@@ -146,7 +160,23 @@ class FusionPluginsEcosystem < Formula
     end
 
     def install
-        virtualenv_install_with_resources
+        venv = virtualenv_create(libexec, "python3.12")
+        # Resource#stage unpacks archives (a wheel is a zip), so install from
+        # the cached downloads (original .whl files). Brew cache filenames
+        # carry a "<sha>--" prefix that pip rejects as a wheel filename —
+        # copy each file under its clean basename first.
+        wheel_dir = buildpath/"wheels"
+        wheels = resources.map do |r|
+            name = File.basename(r.cached_download.to_s).sub(/\A[0-9a-f]{64}--/, "")
+            dst = wheel_dir/name
+            dst.dirname.mkpath
+            cp r.cached_download, dst
+            dst
+        end
+        system Formula["python@3.12"].opt_bin/"python3.12", "-m", "pip",
+               "--python=#{libexec}/bin/python", "install", "--no-deps", *wheels
+        bin.install libexec/"bin/fusion-plugin-server"
+        bin.install libexec/"bin/fusion-plugin-console"
     end
 
     def caveats
