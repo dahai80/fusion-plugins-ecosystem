@@ -29,7 +29,7 @@ source_of_truth:
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-747%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.9.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.10.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -80,6 +80,25 @@ fusion-mlx core                ← Mac 本地推理内核（Metal/MLX）
 ## 🚀 快速开始
 
 ### 安装
+
+**PyPI**（推荐；MCP server + console，不含 cowork runtime）：
+
+```bash
+pip install fusion-plugins-ecosystem
+# console UI extra（FastAPI + uvicorn）
+pip install "fusion-plugins-ecosystem[console]"
+
+fusion-plugin-server --transport stdio   # MCP server，接 Claude Desktop / Claude Code
+fusion-plugin-console --port 8795        # Extensions 控制台 Web UI
+```
+
+**Homebrew**（macOS，Apple Silicon）：
+
+```bash
+brew install dahai80/fusion-mlx/fusion-plugins-ecosystem
+```
+
+**源码安装**（完整开发环境；in-tree 的 `fusion-cowork` runtime 不上 PyPI）：
 
 ```bash
 # 克隆

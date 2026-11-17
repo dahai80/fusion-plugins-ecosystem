@@ -15,6 +15,7 @@ import os
 import signal
 from typing import Any
 
+from fusion_plugins_ecosystem import __version__
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.jsonrpc import MCPHandler
@@ -291,6 +292,11 @@ def main() -> None:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
         help="Log level (default: INFO)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     args = parser.parse_args()
 

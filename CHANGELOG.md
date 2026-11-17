@@ -19,7 +19,13 @@ source_of_truth:
 
 All notable changes are tracked via git history; entries below summarize released versions. Versions follow `pyproject.toml` (`version`).
 
-## 0.9.1 (current, per pyproject.toml)
+## 0.10.0 (current, per pyproject.toml)
+
+- Distribution support (issue #72): PyPI publishing via GitHub Actions trusted publishing (tag-driven, dry-run dispatch available) and a Homebrew formula auto-synced to `dahai80/homebrew-fusion-mlx` (pinned macOS arm64 wheels)
+- Packaging fixes: `[tool.setuptools.package-data]` ships runtime files (`builtin/*.tool.json`, `web/`) in wheel + sdist; English PyPI metadata with README; dependency floor `fusion-core>=0.12.1`
+- Both CLIs gain `--version`
+
+## 0.9.1
 
 - CI retrofit per fusion#2 checklist (issue #70): `concurrency` cancel-in-progress grouped by ref on both workflows; pip download cache keyed on `ci/requirements-ci.txt` + `pyproject.toml`; suite sharding and nightly tier assessed and declined (763 tests finish in about 60s)
 
