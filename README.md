@@ -29,7 +29,7 @@ English | [简体中文](README_CN.md)
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-747%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.9.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.10.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -82,6 +82,25 @@ See [docs/claude-compatibility.md](docs/claude-compatibility.md) for the full sp
 ## 🚀 Quick Start
 
 ### Installation
+
+**PyPI** (recommended; MCP server + console, no cowork runtime):
+
+```bash
+pip install fusion-plugins-ecosystem
+# console UI extra (FastAPI + uvicorn)
+pip install "fusion-plugins-ecosystem[console]"
+
+fusion-plugin-server --transport stdio   # MCP server for Claude Desktop / Claude Code
+fusion-plugin-console --port 8795        # Extensions console web UI
+```
+
+**Homebrew** (macOS, Apple Silicon):
+
+```bash
+brew install dahai80/fusion-mlx/fusion-plugins-ecosystem
+```
+
+**From source** (full development install; the in-tree `fusion-cowork` runtime is not on PyPI):
 
 ```bash
 # Clone
