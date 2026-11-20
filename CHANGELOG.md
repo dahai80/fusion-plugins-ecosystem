@@ -19,7 +19,11 @@ source_of_truth:
 
 All notable changes are tracked via git history; entries below summarize released versions. Versions follow `pyproject.toml` (`version`).
 
-## 0.11.0 (current, per pyproject.toml)
+## 0.11.1 (current, per pyproject.toml)
+
+- Fix: approved community submissions rendered with wrong fields in the marketplace listing (version 0.0.0, empty name/description) — submission manifest keys (`name`/`description`/`version`/`permissions`) now map onto the presentational catalog keys
+
+## 0.11.0
 
 - Marketplace backend API (issue #74): `GET /api/marketplace/plugins` listing (id, EN+CN descriptions, source module, category, tags, icon, install count, rating, official flag, stable/beta stage), `GET /api/marketplace/plugins/{id}` detail with permissions derived from plugin capabilities (file access / network / vRAM / long task / sub-agent) and connector tool risk, install / uninstall / update endpoints with idempotency and per-tenant install state (X-Tenant header)
 - Publish/review queue: `POST /api/marketplace/submissions` with manifest validation (id/version/category/permissions/https source_repo), review queue listing + approve/reject; approved plugins appear in the marketplace listing as community entries

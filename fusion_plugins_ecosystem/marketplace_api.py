@@ -141,6 +141,14 @@ class PluginMarketplaceAPI:
             if pid in catalog:
                 continue
             meta = dict(manifest or {})
+            # submission manifests use plugin-manifest key names; the catalog
+            # layer expects presentational keys — map them over
+            if manifest:
+                meta.setdefault("name_en", manifest.get("name") or pid)
+                meta.setdefault("description_en", manifest.get("description") or "")
+                meta["version"] = manifest.get("version") or "0.0.0"
+                meta["permissions"] = manifest.get("permissions") or []
+                meta["tags"] = manifest.get("tags") or []
             meta.setdefault("source_module", meta.get("source_repo") or "community")
             meta.setdefault("official", False)
             meta.setdefault("lifecycle_stage", "beta")
@@ -298,6 +306,7 @@ class PluginMarketplaceAPI:
             "source_repo",
             "icon",
             "lifecycle_stage",
+            "version",
         ):
             if meta.get(key):
                 row[key] = meta[key]

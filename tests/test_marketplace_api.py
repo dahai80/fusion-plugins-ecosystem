@@ -215,6 +215,12 @@ class TestPublishReview:
         assert row["official"] is False
         assert row["lifecycle_stage"] == "beta"
         assert row["source_module"] == "https://github.com/example/community_skill"
+        # regression: community manifests carry plugin-manifest key names —
+        # they must map onto the catalog keys (name_en/description_en/version)
+        assert row["name_en"] == "Community Skill"
+        assert row["description_en"] == "A community contributed skill"
+        assert row["version"] == "1.0.0"
+        assert row["permissions"] == [{"id": "file_access", "risk": "medium"}]
 
     async def test_reject_path_and_double_review_guard(self, api):
         api.submit(self._manifest())

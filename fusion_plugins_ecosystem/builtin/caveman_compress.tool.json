@@ -3,7 +3,7 @@
     "meta": {
         "name": "Caveman Token Compressor",
         "description": "Caveman-style token compression for input text: strips redundant whitespace/comments, merges repeated blank lines, cuts Claude session token usage.",
-        "version": "0.11.0"
+        "version": "0.11.1"
     },
     "api": [
         {
