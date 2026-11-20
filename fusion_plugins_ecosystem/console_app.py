@@ -51,7 +51,7 @@ def create_app(
 ) -> Any:
     """构建 FastAPI 控制台应用（fastapi 为 console 可选依赖）。"""
     try:
-        from fastapi import FastAPI, HTTPException
+        from fastapi import FastAPI, Header, HTTPException
         from fastapi.responses import FileResponse, JSONResponse
         from fastapi.staticfiles import StaticFiles
     except ImportError as exc:  # pragma: no cover — 环境缺依赖
@@ -74,12 +74,16 @@ def create_app(
 
     app = FastAPI(
         title="Fusion Plugins — Extensions Console",
-        version="0.10.0",
+        version="0.11.0",
         lifespan=lifespan,
     )
     console = ExtensionsConsole(desk=desk, registry=registry, lifecycle=lifecycle)
     console_holder["console"] = console
     app.state.console = console
+
+    from fusion_plugins_ecosystem.marketplace_api import PluginMarketplaceAPI
+
+    market = PluginMarketplaceAPI(console)
 
     @app.middleware("http")
     async def _api_auth(request, call_next):
@@ -227,6 +231,78 @@ def create_app(
         if "error" in out:
             raise HTTPException(status_code=404, detail=out["error"])
         return out
+
+    # ── marketplace backend（issue #74：web-shell 市场页数据源）──
+
+    @app.get("/api/marketplace/plugins")
+    async def market_plugins(
+        q: str = "",
+        category: str = "",
+        x_tenant: str | None = Header(default=None, alias="X-Tenant"),
+    ) -> dict[str, Any]:
+        return market.list_plugins(tenant=x_tenant, query=q, category=category)
+
+    @app.get("/api/marketplace/plugins/{plugin_id}")
+    async def market_plugin_detail(
+        plugin_id: str,
+        x_tenant: str | None = Header(default=None, alias="X-Tenant"),
+    ) -> dict[str, Any]:
+        try:
+            return market.plugin_detail(plugin_id, tenant=x_tenant)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/marketplace/plugins/{plugin_id}/install")
+    async def market_plugin_install(
+        plugin_id: str,
+        x_tenant: str | None = Header(default=None, alias="X-Tenant"),
+    ) -> dict[str, Any]:
+        try:
+            return await market.install(plugin_id, tenant=x_tenant)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/api/marketplace/plugins/{plugin_id}/uninstall")
+    async def market_plugin_uninstall(
+        plugin_id: str,
+        x_tenant: str | None = Header(default=None, alias="X-Tenant"),
+    ) -> dict[str, Any]:
+        try:
+            return await market.uninstall(plugin_id, tenant=x_tenant)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/marketplace/submissions")
+    async def market_submit(body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return market.submit(
+                body.get("manifest") or {},
+                submitter=str(body.get("submitter") or "anonymous"),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/marketplace/submissions")
+    async def market_submissions(status: str = "") -> dict[str, Any]:
+        try:
+            return market.list_submissions(status=status)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/api/marketplace/submissions/{submission_id}/review")
+    async def market_review(submission_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return market.review(
+                submission_id,
+                approve=bool(body.get("approve")),
+                reviewer=str(body.get("reviewer") or "admin"),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # ── connectors ──
 

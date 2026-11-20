@@ -1,6 +1,6 @@
 [project]
 name = "fusion-plugins-ecosystem"
-version = "0.10.0"
+version = "0.11.0"
 description = "Fusion plugin ecosystem — plugin registry, lifecycle manager, MCP server, and Claude full-chain adaptation layer on top of fusion-cowork"
 readme = "README.md"
 authors = [
