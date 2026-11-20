@@ -29,7 +29,7 @@ English | [简体中文](README_CN.md)
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-747%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.10.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.11.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -231,6 +231,7 @@ fusion-plugins-ecosystem/
 │   ├── rest_connector.py         ← declarative REST/webhook connector docs (validation, read/write channels, execution contract)
 │   ├── extensions_console.py     ← Extensions console backend (issues #30/#41/#42/#43): Connectors + Plugins·MCP + Skills + Sub-agents tabs, capabilities hub, bundle flows, scope revoke + audit
 │   ├── audit_events.py           ← authorization audit event stream → fusion-security JSONL pipeline (issue #43)
+│   ├── marketplace_api.py        ← marketplace backend API: listing/detail/permissions, install-state, publish/review queue (issue #74)
 │   ├── console_app.py            ← FastAPI console app + `fusion-plugin-console` CLI (port 8795)
 │   ├── shell_registry.py         ← fusion-gateway shell module registration + fm- key persistence (#30)
 │   ├── logging_setup.py          ← structured JSON logging + correlation_id (P3-6)
@@ -383,6 +384,17 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `/api/adapters/{ref}` (vault), `/api/extensions/plugins[/{name}/tick]`, `/api/extensions/mcp[/{sid}/tick]`,
   `/api/hub/audit`, `/api/hub/connectors/{id}/revoke`, `/api/hub/capabilities/{cap}/used-by` (issue #43),
   `/api/registry/capabilities[/{id}]` (issue #44 stable read contract), `/health`.
+- **Marketplace backend API (issue #74)** — data source for the web-shell marketplace page:
+  `GET /api/marketplace/plugins?q=&category=` (id, EN+CN descriptions, source module,
+  category, tags, icon, install count, rating, official flag, stable/beta stage, per-tenant
+  install state), `GET /api/marketplace/plugins/{id}` (full description, size, changelog,
+  source repo, and **permissions derived from plugin capabilities and connector tool risk** —
+  surfaced before install), `POST /api/marketplace/plugins/{id}/install|uninstall`
+  (idempotent, per-tenant state via the `X-Tenant` header, update = re-install when a newer
+  version is available), and a publish path: `POST /api/marketplace/submissions` (manifest
+  validation) + `GET /api/marketplace/submissions?status=pending` +
+  `POST /api/marketplace/submissions/{sid}/review` (approve → the plugin appears in the
+  listing as a community entry).
 - **Install / authorize / update / uninstall flows (issue #42)** — marketplace entries
   (incl. first-party packs) install as bundles from the Recommended row: skills enable,
   sub-agents register, connectors land as `pending_auth` until OAuth. Per-item

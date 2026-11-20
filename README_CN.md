@@ -29,7 +29,7 @@ source_of_truth:
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-747%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.10.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.11.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -293,6 +293,14 @@ fusion-plugin-console --port 8795     # → http://127.0.0.1:8795
   `/api/adapters/{ref}`（保险库）、`/api/extensions/plugins[/{name}/tick]`、`/api/extensions/mcp[/{sid}/tick]`、
   `/api/hub/audit`、`/api/hub/connectors/{id}/revoke`、`/api/hub/capabilities/{cap}/used-by`（issue #43）、
   `/api/registry/capabilities[/{id}]`（issue #44 稳定读契约）、`/health`。
+- **市场后端 API（issue #74）** — web-shell 市场页数据源：`GET /api/marketplace/plugins?q=&category=`
+  （id、中英文描述、来源模块、分类、标签、图标、安装数、评分、官方标志、stable/beta 阶段、
+  租户安装状态），`GET /api/marketplace/plugins/{id}`（完整描述、大小、变更记录、源码仓库、
+  以及**由插件能力与连接器工具风险推导的权限清单**——安装前可见），`POST
+  /api/marketplace/plugins/{id}/install|uninstall`（幂等，`X-Tenant` 请求头区分租户，
+  有新版本时重装即升级），发布路径：`POST /api/marketplace/submissions`（清单校验）+
+  `GET /api/marketplace/submissions?status=pending` + `POST
+  /api/marketplace/submissions/{sid}/review`（批准后以社区条目出现在列表）。
 - **安装/授权/更新/卸载流（issue #42）** — 推荐位市场条目（含第一方连接器包）一键安装为
   bundle：skills 启用、子代理注册启用、连接器落盘置 `pending_auth`（OAuth 后暴露），
   安装后逐项可停用。连接器 OAuth 在 hub 内完成（弹层）：读 scope 逐项勾选授权（未勾选的

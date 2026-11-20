@@ -19,7 +19,13 @@ source_of_truth:
 
 All notable changes are tracked via git history; entries below summarize released versions. Versions follow `pyproject.toml` (`version`).
 
-## 0.10.0 (current, per pyproject.toml)
+## 0.11.0 (current, per pyproject.toml)
+
+- Marketplace backend API (issue #74): `GET /api/marketplace/plugins` listing (id, EN+CN descriptions, source module, category, tags, icon, install count, rating, official flag, stable/beta stage), `GET /api/marketplace/plugins/{id}` detail with permissions derived from plugin capabilities (file access / network / vRAM / long task / sub-agent) and connector tool risk, install / uninstall / update endpoints with idempotency and per-tenant install state (X-Tenant header)
+- Publish/review queue: `POST /api/marketplace/submissions` with manifest validation (id/version/category/permissions/https source_repo), review queue listing + approve/reject; approved plugins appear in the marketplace listing as community entries
+- Presentational metadata catalog `builtin/marketplace_catalog.json` merged over the registry + marketplace index (single source of truth unchanged); new `marketplace_api.py` module, 22 tests (785 total)
+
+## 0.10.0
 
 - Distribution support (issue #72): PyPI publishing via GitHub Actions trusted publishing (tag-driven, dry-run dispatch available) and a Homebrew formula auto-synced to `dahai80/homebrew-fusion-mlx` (pinned macOS arm64 wheels)
 - Packaging fixes: `[tool.setuptools.package-data]` ships runtime files (`builtin/*.tool.json`, `web/`) in wheel + sdist; English PyPI metadata with README; dependency floor `fusion-core>=0.12.1`
