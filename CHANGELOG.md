@@ -19,7 +19,11 @@ source_of_truth:
 
 All notable changes are tracked via git history; entries below summarize released versions. Versions follow `pyproject.toml` (`version`).
 
-## 0.11.1 (current, per pyproject.toml)
+## 0.12.0 (current, per pyproject.toml)
+
+- Artifact publish pipeline (issue #76): `scripts/publish_artifacts.py` builds installable packages for ecosystem-owned registry entries — `caveman_compressor` plugin (PluginManifest + tool manifest archive), `mlx_inference` connector (declarative REST connector doc archive), `web_search` skill (in-repo source in fusion-skills); registry.json schema v2 validation (unique id+kind, https-only artifact URLs, 64-hex sha256 verified against the dist, source_path checks); upload to the unified `dahai80/fusion-skills@registry-artifacts` release; `publish-artifacts.yml` manual-dispatch CI (guarded by `FUSION_SKILLS_TOKEN`); ingestion contract documented in `docs/distribution.md`
+
+## 0.11.1
 
 - Fix: approved community submissions rendered with wrong fields in the marketplace listing (version 0.0.0, empty name/description) — submission manifest keys (`name`/`description`/`version`/`permissions`) now map onto the presentational catalog keys
 

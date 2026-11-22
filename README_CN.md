@@ -29,7 +29,7 @@ source_of_truth:
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-747%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.11.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.12.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -190,6 +190,7 @@ MY_MANIFEST = PluginManifest(
 | [docs/api-reference.md](docs/api-reference.md) | 完整公开 API 参考：`PluginRegistry`、`PluginLifecycle`、`ClaudeGateway`、`TokenMeter`、`DeskRuntime`、`EcosystemConfig` |
 | [docs/claude-compatibility.md](docs/claude-compatibility.md) | 三层兼容、正向/反向流、火山方舟鉴权、MLX 视觉后端、token 计量、配置开关 |
 | [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | 插件开发指南：清单、能力、参数 schema、异步、惰性入口、测试清单 |
+| [docs/distribution.md](docs/distribution.md) | 制品发布管线（issue #76）：包载荷、registry.json schema v2 校验、入库契约 |
 | [examples/](examples/) | 9 个可运行插件样例（echo → file_access），各含清单 + 测试 + README。`pytest examples/` |
 
 ## 🗂️ 项目结构
