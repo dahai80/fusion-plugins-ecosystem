@@ -29,7 +29,7 @@ English | [简体中文](README_CN.md)
   <img src="https://img.shields.io/badge/Claude-native-blueviolet" alt="Claude">
   <img src="https://img.shields.io/badge/MCP-2026--07--28-yellow" alt="MCP">
   <img src="https://img.shields.io/badge/tests-747%20passed-success" alt="Tests">
-  <img src="https://img.shields.io/badge/version-0.11.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.12.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/coverage-89%25-success" alt="Coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License">
 </p>
@@ -190,6 +190,7 @@ Register once → it auto-appears in Claude's tool catalog and MCP `tools/list`.
 | [docs/api-reference.md](docs/api-reference.md) | Full public API reference: `PluginRegistry`, `PluginLifecycle`, `ClaudeGateway`, `TokenMeter`, `DeskRuntime`, `EcosystemConfig` |
 | [docs/claude-compatibility.md](docs/claude-compatibility.md) | Three-layer compat, forward/reverse flows, volcengine auth, MLX visual backend, token metering, config toggles |
 | [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Plugin authoring guide: manifest, capabilities, params schema, async, lazy entry, testing checklist |
+| [docs/distribution.md](docs/distribution.md) | Artifact publish pipeline (issue #76): package payloads, registry.json schema v2 validation, ingestion contract |
 | [examples/](examples/) | 9 runnable plugin samples (echo → file_access): each a manifest + test + README. `pytest examples/` |
 
 ## 🗂️ Project structure
