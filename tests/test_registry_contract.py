@@ -15,8 +15,8 @@ from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 from fusion_plugins_ecosystem.registry import PluginRegistry
 
 sys.path.insert(0, str(Path(__file__).parent))
-from test_install_flow import BUNDLE, _manifest, _write_index  # noqa: E402
 from test_extensions_console import FakeDesk  # noqa: E402
+from test_install_flow import BUNDLE, _manifest, _write_index  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -28,9 +28,7 @@ def _env(tmp_path, monkeypatch):
     from fusion_plugins_ecosystem import shell_registry
 
     monkeypatch.setattr(shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key")
-    monkeypatch.setenv(
-        "FUSION_PLUGIN_MARKETPLACE_INDEX", str(tmp_path / "market_index.json")
-    )
+    monkeypatch.setenv("FUSION_PLUGIN_MARKETPLACE_INDEX", str(tmp_path / "market_index.json"))
 
 
 @pytest.fixture()
@@ -82,18 +80,14 @@ class TestContract:
             registry=PluginRegistry(console.desk),
             lifecycle=None,
         )
-        assert not any(
-            m.id.startswith("connector__bank-api__") for m in fresh.registry.list()
-        )
+        assert not any(m.id.startswith("connector__bank-api__") for m in fresh.registry.list())
         # 重启后清单来源（内置/自定义声明）重新注册 — 测试里手工补
         fresh.registry.register(_manifest("excel-skill", ["claude_skill"]))
         out = await fresh.resync()
         assert "excel-skill" in out["relisted"]
         assert fresh._plugin_enabled("excel-skill")
         # rest 连接器（pending_auth 未授权）按 resync 既有路径桥接
-        assert any(
-            m.id.startswith("connector__bank-api__") for m in fresh.registry.list()
-        )
+        assert any(m.id.startswith("connector__bank-api__") for m in fresh.registry.list())
         # 连接器包：enabled 项重装（用 finance-kit 无 pack，补一个 pack bundle 验证路径）
         state = fresh._bundles_state()
         state["pack-bundle"] = {
@@ -130,13 +124,8 @@ class TestContract:
     async def test_connector_auth_state_single_source(self, console):
         await console.install_bundle("finance-kit")
         # pending_auth：通道可见但未授权暴露
-        assert (
-            _by_id(console, "connector.bank-api.bank.flow.fetch")["auth"]["state"]
-            == "pending"
-        )
-        await console.oauth_complete(
-            "bank-api", ["bank.flow.fetch", "bank.account.fetch"], {"api_key": "k"}
-        )
+        assert _by_id(console, "connector.bank-api.bank.flow.fetch")["auth"]["state"] == "pending"
+        await console.oauth_complete("bank-api", ["bank.flow.fetch", "bank.account.fetch"], {"api_key": "k"})
         cap = _by_id(console, "connector.bank-api.bank.flow.fetch")
         assert cap["kind"] == "connector"
         assert cap["auth"]["state"] == "granted"

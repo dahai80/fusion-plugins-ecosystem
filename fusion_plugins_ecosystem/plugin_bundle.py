@@ -27,7 +27,7 @@ from fusion_plugins_ecosystem.registry import (
     PluginRegistry,
 )
 from fusion_plugins_ecosystem.schema import MCP_PROTOCOL_VERSION
-from fusion_plugins_ecosystem.skill_adapter import SkillBundle, SkillAdapter
+from fusion_plugins_ecosystem.skill_adapter import SkillAdapter, SkillBundle
 
 logger = logging.getLogger(__name__)
 

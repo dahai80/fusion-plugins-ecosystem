@@ -26,7 +26,6 @@ from fusion_plugins_ecosystem.registry import (
     PluginRegistry,
 )
 
-
 # ── 测试 fixtures ──
 
 
@@ -338,9 +337,7 @@ async def test_dispatch_subagent_preserves_manifest_timeout() -> None:
         called.append(1)
         return {}
 
-    gw, _ = _make_gateway(
-        [_make_manifest("p1", entry_point=entry, timeout_seconds=120)]
-    )
+    gw, _ = _make_gateway([_make_manifest("p1", entry_point=entry, timeout_seconds=120)])
     original = gw.registry.get("p1").timeout_seconds
     task = SubagentTask(
         name="t",

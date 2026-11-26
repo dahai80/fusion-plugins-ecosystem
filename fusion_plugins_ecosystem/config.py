@@ -8,9 +8,10 @@ ecosystem 后台提供一键开关：启用 Claude MCP 对外暴露、
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from fusion_core.config import service_data_dir
 
@@ -96,9 +97,7 @@ class EcosystemConfig:
     connector_marketplace_index: str | None = None
 
     # ── 变更回调 ──
-    _observers: list[Callable[[str, Any, Any], None]] = field(
-        default_factory=list, repr=False
-    )
+    _observers: list[Callable[[str, Any, Any], None]] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict[str, object]:
         """序列化为字典（供 Desk 配置中心持久化）。"""
@@ -128,7 +127,7 @@ class EcosystemConfig:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> tuple["EcosystemConfig", list[str]]:
+    def from_dict(cls, data: dict[str, object]) -> tuple[EcosystemConfig, list[str]]:
         """从字典反序列化，返回 (config, warnings)。"""
         defaults = cls().to_dict()
         merged = {**defaults, **data}
@@ -140,9 +139,7 @@ class EcosystemConfig:
                 return val
             if isinstance(val, str):
                 return val.lower() in ("true", "1", "yes")
-            warnings.append(
-                f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值"
-            )
+            warnings.append(f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值")
             return defaults[key]  # type: ignore[return-value]
 
         def _safe_int(key: str, min_val: int = 0, max_val: int = 100000) -> int:
@@ -150,29 +147,21 @@ class EcosystemConfig:
             try:
                 result = int(val)  # type: ignore[arg-type]
                 if result < min_val or result > max_val:
-                    warnings.append(
-                        f"config.{key}: {result} 超出范围 [{min_val},{max_val}]"
-                    )
+                    warnings.append(f"config.{key}: {result} 超出范围 [{min_val},{max_val}]")
                     return defaults[key]  # type: ignore[return-value]
                 return result
             except (ValueError, TypeError):
-                warnings.append(
-                    f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值"
-                )
+                warnings.append(f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值")
                 return defaults[key]  # type: ignore[return-value]
 
         def _safe_str(key: str, allowed: tuple[str, ...] | None = None) -> str:
             val = merged[key]
             if isinstance(val, str):
                 if allowed and val not in allowed:
-                    warnings.append(
-                        f"config.{key}: {val!r} 不在 {allowed} 中, 使用默认值"
-                    )
+                    warnings.append(f"config.{key}: {val!r} 不在 {allowed} 中, 使用默认值")
                     return defaults[key]  # type: ignore[return-value]
                 return val
-            warnings.append(
-                f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值"
-            )
+            warnings.append(f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值")
             return defaults[key]  # type: ignore[return-value]
 
         config = cls(
@@ -189,9 +178,7 @@ class EcosystemConfig:
             mcp_transport=_safe_str("mcp_transport", ("stdio", "sse", "http")),
             mcp_host=_safe_str("mcp_host"),
             mcp_port=_safe_int("mcp_port", 0, 65535),
-            sandbox_default_mode=_safe_str(
-                "sandbox_default_mode", ("inline", "process")
-            ),
+            sandbox_default_mode=_safe_str("sandbox_default_mode", ("inline", "process")),
             log_level=_safe_str("log_level", ("DEBUG", "INFO", "WARNING", "ERROR")),
             vram_limit_mb=_safe_int("vram_limit_mb", 0, 65535),
             max_concurrent_plugins=_safe_int("max_concurrent_plugins", 1, 1024),
@@ -217,9 +204,7 @@ class EcosystemConfig:
         if self.max_auto_restart < 0:
             errors.append("max_auto_restart must be >= 0")
         if self.mcp_transport not in ("stdio", "sse", "http"):
-            errors.append(
-                f"mcp_transport must be stdio/sse/http, got {self.mcp_transport!r}"
-            )
+            errors.append(f"mcp_transport must be stdio/sse/http, got {self.mcp_transport!r}")
         if self.mcp_port < 0 or self.mcp_port > 65535:
             errors.append(f"mcp_port must be 0-65535, got {self.mcp_port}")
         return errors

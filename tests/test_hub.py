@@ -76,9 +76,7 @@ class TestTabs:
         assert any(s["id"] == "caveman_compress" for s in hub["tabs"]["plugins"])
 
     def test_subagent_tab_classification(self, console):
-        console.registry.register(
-            _manifest("research-sub", ["subagent"], description="差异研究员")
-        )
+        console.registry.register(_manifest("research-sub", ["subagent"], description="差异研究员"))
         hub = console.list_hub()
         assert any(s["id"] == "research-sub" for s in hub["tabs"]["subagents"])
         assert not any(s["id"] == "research-sub" for s in hub["tabs"]["skills"])
@@ -98,12 +96,8 @@ class TestTabs:
 
 class TestSearch:
     async def test_cross_type_search(self, console):
-        console.registry.register(
-            _manifest("excel-skill", ["claude_skill"], description="Excel 专家")
-        )
-        console.registry.register(
-            _manifest("bank-conn-agent", ["subagent"], description="网银对账子代理")
-        )
+        console.registry.register(_manifest("excel-skill", ["claude_skill"], description="Excel 专家"))
+        console.registry.register(_manifest("bank-conn-agent", ["subagent"], description="网银对账子代理"))
         hub = console.list_hub("excel")
         assert [i["id"] for i in hub["tabs"]["skills"]] == ["excel-skill"]
         assert hub["tabs"]["subagents"] == []
@@ -122,9 +116,7 @@ class TestSearch:
         assert all(not i.get("recommended") or i["enabled"] is False for i in hits)
         # 空查询不把推荐位混进 tab（counts 保持纯已装口径）
         full = console.list_hub()
-        assert all(
-            not i.get("recommended") for tab in full["tabs"].values() for i in tab
-        )
+        assert all(not i.get("recommended") for tab in full["tabs"].values() for i in tab)
 
     def test_empty_query_returns_all(self, console):
         full = console.list_hub()
@@ -152,9 +144,7 @@ class TestGroups:
     async def test_enable_reflected_in_groups(self, console):
         await console.tick_nodes("caveman_compress", ["caveman_compress"])
         hub = console.list_hub()
-        entry = next(
-            i for i in hub["groups"]["installed"] if i["id"] == "caveman_compress"
-        )
+        entry = next(i for i in hub["groups"]["installed"] if i["id"] == "caveman_compress")
         assert entry["enabled"] is True
         skill = next(s for s in hub["tabs"]["skills"] if s["id"] == "caveman_compress")
         assert skill["enabled"] is True

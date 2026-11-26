@@ -87,9 +87,7 @@ def _valid_plugin_id(plugin_id: str | None) -> bool:
     return bool(plugin_id) and bool(_PLUGIN_ID_RE.match(plugin_id))
 
 
-def _error_response(
-    request_id: Any, code: int, message: str, data: Any = None
-) -> dict[str, Any]:
+def _error_response(request_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
     """构造 JSON-RPC 错误响应。"""
     err: dict[str, Any] = {"code": code, "message": message}
     if data is not None:
@@ -189,9 +187,7 @@ class MCPHandler:
             logger.error("jsonrpc: handler %s error: %s", method, e, exc_info=True)
             # P2-9：handler 错误汇入 desk 环形缓冲（不记异常详情防泄露）
             try:
-                self.desk.infra_log(
-                    "jsonrpc", "ERROR", f"handler {method} error: {type(e).__name__}"
-                )
+                self.desk.infra_log("jsonrpc", "ERROR", f"handler {method} error: {type(e).__name__}")
             except Exception:
                 pass
             return _error_response(request_id, -32603, "Internal error")
@@ -261,18 +257,14 @@ class MCPHandler:
         plugin_id = _extract_plugin_id(tool_name)
         if plugin_id is None:
             return {
-                "content": [
-                    {"type": "text", "text": f"Invalid tool name: {tool_name}"}
-                ],
+                "content": [{"type": "text", "text": f"Invalid tool name: {tool_name}"}],
                 "isError": True,
             }
 
         # C13: 速率限制检查
         if not self._check_rate_limit(plugin_id):
             return {
-                "content": [
-                    {"type": "text", "text": f"Rate limit exceeded for {tool_name}"}
-                ],
+                "content": [{"type": "text", "text": f"Rate limit exceeded for {tool_name}"}],
                 "isError": True,
             }
 
@@ -287,18 +279,16 @@ class MCPHandler:
             result = await self.lifecycle.execute(plugin_id, arguments)
             content = self._format_result(result)
             self.desk.log(plugin_id, "INFO", "MCP tools/call completed")
-            self.desk.metrics.counter(
-                "mcp_tool_calls_total", "MCP tools/call 调用总数（按结果分桶）"
-            ).inc(plugin=plugin_id, status="success")
+            self.desk.metrics.counter("mcp_tool_calls_total", "MCP tools/call 调用总数（按结果分桶）").inc(
+                plugin=plugin_id, status="success"
+            )
             # C12: 记录会话
             if session_id:
                 self._touch_session(session_id, plugin_id)
             return {"content": content, "isError": False}
         except Exception as e:
             # P1-7：对外返回通用错误消息，原始异常详情写日志，防信息泄露
-            logger.error(
-                "jsonrpc: tools/call %s error: %s", tool_name, e, exc_info=True
-            )
+            logger.error("jsonrpc: tools/call %s error: %s", tool_name, e, exc_info=True)
             # P2-9：tools/call 执行错误汇入 desk 环形缓冲
             try:
                 self.desk.infra_log(
@@ -308,12 +298,12 @@ class MCPHandler:
                 )
             except Exception:
                 pass
-            self.desk.metrics.counter(
-                "mcp_tool_calls_total", "MCP tools/call 调用总数（按结果分桶）"
-            ).inc(plugin=plugin_id, status="error")
-            self.desk.metrics.counter(
-                "mcp_tool_errors_total", "MCP tools/call 错误总数（按类型分桶）"
-            ).inc(plugin=plugin_id, kind=type(e).__name__)
+            self.desk.metrics.counter("mcp_tool_calls_total", "MCP tools/call 调用总数（按结果分桶）").inc(
+                plugin=plugin_id, status="error"
+            )
+            self.desk.metrics.counter("mcp_tool_errors_total", "MCP tools/call 错误总数（按类型分桶）").inc(
+                plugin=plugin_id, kind=type(e).__name__
+            )
             return {
                 "content": [
                     {
@@ -332,9 +322,7 @@ class MCPHandler:
         """MCP resources/read：读取资源。"""
         uri = params.get("uri", "")
         return {
-            "contents": [
-                {"uri": uri, "text": "Not implemented", "mimeType": "text/plain"}
-            ],
+            "contents": [{"uri": uri, "text": "Not implemented", "mimeType": "text/plain"}],
         }
 
     async def _prompts_list(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -376,11 +364,7 @@ class MCPHandler:
         author/enabled/installed。
         """
         category = params.get("category")
-        manifests = (
-            self.registry.list_as_dicts(category=category)
-            if category
-            else (self.registry.list_as_dicts())
-        )
+        manifests = self.registry.list_as_dicts(category=category) if category else (self.registry.list_as_dicts())
         items = []
         for m in manifests:
             inst = self.lifecycle._instances.get(m["id"])
@@ -453,18 +437,14 @@ class MCPHandler:
         # P1-5：安全敏感字段经 RPC 只读，防止未授权翻转沙箱模式/监听地址等。
         # 变更需在部署期（环境变量/配置文件）完成，不经运行时 RPC。
         if backend_key in _RPC_READONLY_CONFIG_KEYS:
-            logger.warning(
-                "jsonrpc: config.set 拒绝敏感字段 %r（RPC 只读）", backend_key
-            )
+            logger.warning("jsonrpc: config.set 拒绝敏感字段 %r（RPC 只读）", backend_key)
             return {
                 "ok": False,
                 "error": f"字段 {key!r} 为安全敏感项，不可经 RPC 修改",
             }
         probe, warnings = EcosystemConfig.from_dict({backend_key: value})
         if warnings:
-            logger.warning(
-                "jsonrpc: config.set %s 校验失败: %s", key, "; ".join(warnings)
-            )
+            logger.warning("jsonrpc: config.set %s 校验失败: %s", key, "; ".join(warnings))
             return {"ok": False, "error": "; ".join(warnings)}
         setattr(self.config, backend_key, getattr(probe, backend_key))
         self.config._notify_change(backend_key, None, getattr(probe, backend_key))
@@ -503,11 +483,7 @@ class MCPHandler:
     async def _plugins_token_records(self, params: dict[str, Any]) -> dict[str, Any]:
         """plugins/token.records：返回 token 记录（Studio 字段命名）。"""
         plugin_id = params.get("plugin_id")
-        records = (
-            self.token_meter.records_for(plugin_id)
-            if plugin_id
-            else self.token_meter.all_records()
-        )
+        records = self.token_meter.records_for(plugin_id) if plugin_id else self.token_meter.all_records()
         items = [
             {
                 "id": f"{r.plugin_id}-{r.timestamp}",
@@ -594,9 +570,7 @@ class MCPHandler:
         ]
         return {"sessions": items}
 
-    async def _plugins_mcp_sessions_prune(
-        self, params: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _plugins_mcp_sessions_prune(self, params: dict[str, Any]) -> dict[str, Any]:
         """plugins/mcp.sessions.prune：按时间淘汰过期 MCP 会话。
 
         max_age_seconds 下限 _PRUNE_MIN_AGE 秒，防止 RPC 全量清空。
@@ -687,9 +661,7 @@ class MCPHandler:
             logger.warning("jsonrpc: 配置恢复失败: %s", exc)
             return []
         if patch:
-            merged, warnings = EcosystemConfig.from_dict(
-                {**self.config.to_dict(), **patch}
-            )
+            merged, warnings = EcosystemConfig.from_dict({**self.config.to_dict(), **patch})
             self.config = merged
             if warnings:
                 logger.warning("jsonrpc: 恢复配置校验告警: %s", "; ".join(warnings))
@@ -725,10 +697,7 @@ class MCPHandler:
         # R5：共享状态加锁，多 handler 并发 touch 不丢失/错乱会话
         with self._state_lock:
             # 会话数上限 + LRU 淘汰，防止内存耗尽（P0-5）
-            if (
-                len(self._sessions) >= _MAX_SESSIONS
-                and session_id not in self._sessions
-            ):
+            if len(self._sessions) >= _MAX_SESSIONS and session_id not in self._sessions:
                 self._evict_oldest_session()
             session = self._sessions.setdefault(
                 session_id,
@@ -742,9 +711,7 @@ class MCPHandler:
             session["calls"].append({"plugin_id": plugin_id, "ts": time.time()})
             if len(session["calls"]) > 1000:
                 session["calls"] = session["calls"][-500:]
-        self.desk.metrics.gauge("active_sessions", "当前活跃 MCP 会话数").set(
-            len(self._sessions)
-        )
+        self.desk.metrics.gauge("active_sessions", "当前活跃 MCP 会话数").set(len(self._sessions))
 
     def _evict_oldest_session(self) -> None:
         """淘汰最久未活跃的会话（LRU）。调用方须持 _state_lock。"""
@@ -763,15 +730,11 @@ class MCPHandler:
     def prune_sessions(self, max_age_seconds: float = 3600) -> int:
         with self._state_lock:
             cutoff = time.time() - max_age_seconds
-            stale = [
-                sid for sid, s in self._sessions.items() if s["last_active"] < cutoff
-            ]
+            stale = [sid for sid, s in self._sessions.items() if s["last_active"] < cutoff]
             for sid in stale:
                 del self._sessions[sid]
             return len(stale)
-        self.desk.metrics.gauge("active_sessions", "当前活跃 MCP 会话数").set(
-            len(self._sessions)
-        )
+        self.desk.metrics.gauge("active_sessions", "当前活跃 MCP 会话数").set(len(self._sessions))
 
     # C13: 速率限制
     def _check_rate_limit(self, plugin_id: str) -> bool:

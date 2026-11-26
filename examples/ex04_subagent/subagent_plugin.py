@@ -23,9 +23,7 @@ def batch_refactor(desk, params):
     target = params.get("target", "")
     action = params.get("action", "rename")
     if desk is not None:
-        desk.log(
-            "batch_refactor", "INFO", "subagent task", target=target, action=action
-        )
+        desk.log("batch_refactor", "INFO", "subagent task", target=target, action=action)
     return {"refactored": target, "action": action, "files_touched": 1}
 
 

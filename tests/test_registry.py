@@ -9,7 +9,6 @@ from fusion_plugins_ecosystem.builtin.caveman_compress import (
 )
 from fusion_plugins_ecosystem.registry import PluginCategory
 
-
 # ── 注册中心 ──
 
 

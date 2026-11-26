@@ -67,15 +67,13 @@ class ConnectorToolSpec:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ConnectorToolSpec":
+    def from_dict(cls, data: dict[str, Any]) -> ConnectorToolSpec:
         risk = data.get("risk", RiskLevel.LOW.value)
         return cls(
             name=data["name"],
             description=data.get("description", ""),
             input_schema=dict(data.get("input_schema") or {}),
-            risk=RiskLevel(risk)
-            if risk in RiskLevel._value2member_map_
-            else RiskLevel.LOW,
+            risk=RiskLevel(risk) if risk in RiskLevel._value2member_map_ else RiskLevel.LOW,
             read_only=bool(data.get("read_only", False)),
         )
 
@@ -98,9 +96,7 @@ class ConnectorPack:
 
     def __post_init__(self) -> None:
         if self.transport not in ("stdio", "http"):
-            raise ValueError(
-                f"connector {self.id!r}: transport 必须为 stdio/http, got {self.transport!r}"
-            )
+            raise ValueError(f"connector {self.id!r}: transport 必须为 stdio/http, got {self.transport!r}")
         if self.transport == "stdio" and not self.command:
             raise ValueError(f"connector {self.id!r}: stdio 连接器必须提供 command")
         if self.transport == "http" and not self.url:
@@ -123,7 +119,7 @@ class ConnectorPack:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ConnectorPack":
+    def from_dict(cls, data: dict[str, Any]) -> ConnectorPack:
         command = data.get("command")
         return cls(
             id=data["id"],
@@ -179,9 +175,7 @@ class ExternalMCPClient:
 
     # ── JSON-RPC 基础 ──
 
-    def _request_body(
-        self, method: str, params: dict[str, Any] | None
-    ) -> dict[str, Any]:
+    def _request_body(self, method: str, params: dict[str, Any] | None) -> dict[str, Any]:
         self._next_id += 1
         body: dict[str, Any] = {"jsonrpc": "2.0", "id": self._next_id, "method": method}
         if params is not None:
@@ -192,9 +186,7 @@ class ExternalMCPClient:
     def _raise_rpc_error(resp: dict[str, Any]) -> dict[str, Any]:
         if "error" in resp and resp["error"] is not None:
             err = resp["error"]
-            raise RuntimeError(
-                f"MCP server 错误: {err.get('code')}: {err.get('message')}"
-            )
+            raise RuntimeError(f"MCP server 错误: {err.get('code')}: {err.get('message')}")
         return resp.get("result", {})
 
     # ── stdio 传输 ──
@@ -212,9 +204,7 @@ class ExternalMCPClient:
                 env=env,
             )
         except (OSError, FileNotFoundError) as exc:
-            raise RuntimeError(
-                f"connector: {self.pack.id} 无法启动外部 MCP server {self.pack.command}: {exc}"
-            ) from exc
+            raise RuntimeError(f"connector: {self.pack.id} 无法启动外部 MCP server {self.pack.command}: {exc}") from exc
         logger.info("connector: %s 外部 MCP server 已启动 (stdio)", self.pack.id)
         return self._proc
 
@@ -227,9 +217,7 @@ class ExternalMCPClient:
         while True:
             raw = await asyncio.wait_for(proc.stdout.readline(), timeout=self.timeout)
             if not raw:
-                raise RuntimeError(
-                    f"connector: {self.pack.id} 外部 MCP server 已退出 (code={proc.returncode})"
-                )
+                raise RuntimeError(f"connector: {self.pack.id} 外部 MCP server 已退出 (code={proc.returncode})")
             stripped = raw.strip()
             if not stripped:
                 continue
@@ -254,9 +242,7 @@ class ExternalMCPClient:
         token = creds.get("Authorization") or creds.get("authorization")
         if token:
             headers["Authorization"] = token
-        req = urllib.request.Request(
-            self.pack.url, data=json.dumps(body).encode("utf-8"), headers=headers
-        )
+        req = urllib.request.Request(self.pack.url, data=json.dumps(body).encode("utf-8"), headers=headers)
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             return resp.read().decode("utf-8")
 
@@ -264,9 +250,7 @@ class ExternalMCPClient:
         try:
             raw = await asyncio.to_thread(self._http_post_sync, body)
         except (urllib.error.URLError, OSError, subprocess.SubprocessError) as exc:
-            raise RuntimeError(
-                f"connector: {self.pack.id} HTTP 请求失败: {exc}"
-            ) from exc
+            raise RuntimeError(f"connector: {self.pack.id} HTTP 请求失败: {exc}") from exc
         # Streamable HTTP：JSON 或 SSE（data: 行）二选一
         if raw.lstrip().startswith("{"):
             resp = json.loads(raw)
@@ -309,9 +293,7 @@ class ExternalMCPClient:
         if self.pack.transport == "stdio":
             proc = await self._ensure_stdio()
             assert proc.stdin is not None
-            proc.stdin.write(
-                b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
-            )
+            proc.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
             await proc.stdin.drain()
         self._initialized = True
         logger.info(
@@ -330,9 +312,7 @@ class ExternalMCPClient:
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """调用外部 server 的 tools/call，返回 MCP 标准 {content, isError}。"""
         await self.initialize()
-        result = await self._roundtrip(
-            self._request_body("tools/call", {"name": name, "arguments": arguments})
-        )
+        result = await self._roundtrip(self._request_body("tools/call", {"name": name, "arguments": arguments}))
         return {
             "content": result.get("content", []),
             "isError": bool(result.get("isError", False)),
@@ -345,7 +325,7 @@ class ExternalMCPClient:
                 self._proc.terminate()
                 try:
                     await asyncio.wait_for(self._proc.wait(), timeout=5)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     self._proc.kill()
                     await self._proc.wait()
             except ProcessLookupError:
@@ -394,9 +374,7 @@ class _BoundTool:
     闭包不可被 PROCESS worker 导入，由 ConnectorRegistry 安装期闸门兜底。
     """
 
-    def __init__(
-        self, registry: "ConnectorRegistry", pack_id: str, tool_name: str
-    ) -> None:
+    def __init__(self, registry: ConnectorRegistry, pack_id: str, tool_name: str) -> None:
         self.registry = registry
         self.pack_id = pack_id
         self.tool_name = tool_name
@@ -445,14 +423,9 @@ class ConnectorRegistry:
         返回桥接后的插件 ID 列表。同版本重复安装幂等；版本变更先卸旧再装新。
         """
         if not self.enabled:
-            raise RuntimeError(
-                "connector: 连接器框架未启用（enable_connector_framework=false）"
-            )
+            raise RuntimeError("connector: 连接器框架未启用（enable_connector_framework=false）")
         if self.sandbox_default_mode == "process":
-            raise RuntimeError(
-                "connector: 连接器工具仅支持 inline 沙箱，"
-                "请设置 sandbox_default_mode=inline 后重试"
-            )
+            raise RuntimeError("connector: 连接器工具仅支持 inline 沙箱，请设置 sandbox_default_mode=inline 后重试")
         existing = self._packs.get(pack.id)
         if existing is not None and existing.version == pack.version:
             logger.info("connector: %s v%s 重复安装（幂等忽略）", pack.id, pack.version)
@@ -472,9 +445,7 @@ class ConnectorRegistry:
             "INFO",
             f"连接器包已安装 v{pack.version}，桥接 {len(plugin_ids)} 个工具",
         )
-        logger.info(
-            "connector: %s v%s 已安装，工具: %s", pack.id, pack.version, plugin_ids
-        )
+        logger.info("connector: %s v%s 已安装，工具: %s", pack.id, pack.version, plugin_ids)
         return plugin_ids
 
     def uninstall_pack(self, pack_id: str) -> None:
@@ -495,9 +466,7 @@ class ConnectorRegistry:
         self.desk.log(f"connector__{pack_id}", "INFO", "连接器包已卸载")
         logger.info("connector: %s 已卸载", pack_id)
 
-    def _tool_manifest(
-        self, pack: ConnectorPack, tool: ConnectorToolSpec
-    ) -> PluginManifest:
+    def _tool_manifest(self, pack: ConnectorPack, tool: ConnectorToolSpec) -> PluginManifest:
         from fusion_plugins_ecosystem.schema import MCPAnnotations, SandboxMode
 
         return PluginManifest(
@@ -567,9 +536,7 @@ class ConnectorRegistry:
             self._clients[pack.id] = client
         return client
 
-    async def dispatch(
-        self, pack_id: str, tool_name: str, params: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def dispatch(self, pack_id: str, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         """执行连接器工具：风险闸门 → 外部 MCP tools/call。"""
         pack = self._packs.get(pack_id)
         if pack is None:
@@ -577,19 +544,14 @@ class ConnectorRegistry:
         tool = next((t for t in pack.tools if t.name == tool_name), None)
         if tool is None:
             raise KeyError(f"连接器 {pack_id!r} 无工具 {tool_name!r}")
-        if (
-            self.require_high_risk_approval
-            and tool.risk == RiskLevel.HIGH
-            and not self.is_approved(pack_id, tool_name)
-        ):
+        if self.require_high_risk_approval and tool.risk == RiskLevel.HIGH and not self.is_approved(pack_id, tool_name):
             self.desk.log(
                 f"connector__{pack_id}",
                 "WARNING",
                 f"HIGH_RISK 工具 {tool_name} 未审批，拒绝执行",
             )
             raise PermissionError(
-                f"连接器工具 {pack_id}.{tool_name} 风险等级 HIGH 且未审批，"
-                "请先调用 approve_tool 批准"
+                f"连接器工具 {pack_id}.{tool_name} 风险等级 HIGH 且未审批，请先调用 approve_tool 批准"
             )
         client = self._client_for(pack)
         try:
@@ -597,13 +559,13 @@ class ConnectorRegistry:
             status = "success" if not result.get("isError") else "tool_error"
         except Exception:
             status = "error"
-            self.desk.metrics.counter(
-                "connector_tool_calls_total", "连接器工具调用总数（按结果分桶）"
-            ).inc(connector=pack_id, status="error")
+            self.desk.metrics.counter("connector_tool_calls_total", "连接器工具调用总数（按结果分桶）").inc(
+                connector=pack_id, status="error"
+            )
             raise
-        self.desk.metrics.counter(
-            "connector_tool_calls_total", "连接器工具调用总数（按结果分桶）"
-        ).inc(connector=pack_id, status=status)
+        self.desk.metrics.counter("connector_tool_calls_total", "连接器工具调用总数（按结果分桶）").inc(
+            connector=pack_id, status=status
+        )
         return result
 
     async def close_all(self) -> None:

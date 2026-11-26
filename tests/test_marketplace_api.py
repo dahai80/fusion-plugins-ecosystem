@@ -77,10 +77,7 @@ class TestListing:
     async def test_listing_search_and_category_filter(self, api):
         out = api.list_plugins(query="feishu")
         assert out["count"] >= 1
-        assert all(
-            "feishu" in p["id"] or any("feishu" in t for t in p["tags"])
-            for p in out["plugins"]
-        )
+        assert all("feishu" in p["id"] or any("feishu" in t for t in p["tags"]) for p in out["plugins"])
         out2 = api.list_plugins(category="connector")
         assert out2["count"] >= 6
         assert all(p["category"] == "connector" for p in out2["plugins"])
@@ -92,9 +89,7 @@ class TestListing:
 
 class TestDetailPermissions:
     async def test_detail_derives_permissions_from_capabilities(self, api):
-        _register_plugin(
-            api.console.registry, caps=("file_access", "mcp_tool", "vram_consumer")
-        )
+        _register_plugin(api.console.registry, caps=("file_access", "mcp_tool", "vram_consumer"))
         detail = api.plugin_detail("ctx_tool")
         perm_ids = {p["id"] for p in detail["permissions"]}
         assert {"file_access", "network", "vram"} <= perm_ids
@@ -116,11 +111,7 @@ class TestInstallState:
         out = await api.install("ctx_tool", tenant="acme")
         assert out["installed"] is True and out["already"] is False
         assert api.console._plugin_enabled("ctx_tool") is True
-        row = next(
-            p
-            for p in api.list_plugins(tenant="acme")["plugins"]
-            if p["id"] == "ctx_tool"
-        )
+        row = next(p for p in api.list_plugins(tenant="acme")["plugins"] if p["id"] == "ctx_tool")
         assert row["install_state"] == "installed"
         assert row["installed_version"] == "1.0.0"
         # tenant record bumps the installs counter
@@ -131,11 +122,7 @@ class TestInstallState:
 
         un = await api.uninstall("ctx_tool", tenant="acme")
         assert un["uninstalled"] is True
-        row2 = next(
-            p
-            for p in api.list_plugins(tenant="acme")["plugins"]
-            if p["id"] == "ctx_tool"
-        )
+        row2 = next(p for p in api.list_plugins(tenant="acme")["plugins"] if p["id"] == "ctx_tool")
         assert row2["install_state"] == "not_installed"
 
     async def test_tenants_isolated(self, api):
@@ -144,29 +131,17 @@ class TestInstallState:
         # registry-plugin enable is machine-global live truth, so tenant
         # "other" also sees installed (with no version record of its own);
         # the version/installs record stays per-tenant
-        row = next(
-            p
-            for p in api.list_plugins(tenant="other")["plugins"]
-            if p["id"] == "ctx_tool"
-        )
+        row = next(p for p in api.list_plugins(tenant="other")["plugins"] if p["id"] == "ctx_tool")
         assert row["install_state"] == "installed"
         assert row["installed_version"] == ""
-        acme = next(
-            p
-            for p in api.list_plugins(tenant="acme")["plugins"]
-            if p["id"] == "ctx_tool"
-        )
+        acme = next(p for p in api.list_plugins(tenant="acme")["plugins"] if p["id"] == "ctx_tool")
         assert acme["installed_version"] == "1.0.0"
         assert acme["installs"] == 1
 
     async def test_update_available_when_recorded_version_older(self, api):
         _register_plugin(api.console.registry)
         api._record_install("acme", "ctx_tool", "0.9.0", enabled=True)
-        row = next(
-            p
-            for p in api.list_plugins(tenant="acme")["plugins"]
-            if p["id"] == "ctx_tool"
-        )
+        row = next(p for p in api.list_plugins(tenant="acme")["plugins"] if p["id"] == "ctx_tool")
         assert row["install_state"] == "update_available"
         assert row["installed_version"] == "0.9.0"
 
@@ -179,9 +154,7 @@ class TestInstallState:
         assert out2["already"] is True
         un = await api.uninstall("feishu", tenant="acme")
         assert un["uninstalled"] is True
-        assert not any(
-            b["id"] == "feishu" for b in api.console.list_bundles()["bundles"]
-        )
+        assert not any(b["id"] == "feishu" for b in api.console.list_bundles()["bundles"])
 
     async def test_install_unknown_raises(self, api):
         with pytest.raises(KeyError):
@@ -257,9 +230,7 @@ class TestPublishReview:
         assert out["submitted"] is True
         queue = api.list_submissions(status="pending")
         assert queue["count"] == 1
-        assert (
-            queue["submissions"][0]["manifest"]["description"] == "updated description"
-        )
+        assert queue["submissions"][0]["manifest"]["description"] == "updated description"
 
     async def test_duplicate_publish_blocked(self, api):
         api.submit(self._manifest())
@@ -314,9 +285,7 @@ class TestEndpoints:
         )
         assert resp.status_code == 200
         sid = resp.json()["submission_id"]
-        resp2 = client.post(
-            f"/api/marketplace/submissions/{sid}/review", json={"approve": True}
-        )
+        resp2 = client.post(f"/api/marketplace/submissions/{sid}/review", json={"approve": True})
         assert resp2.status_code == 200
         listing = client.get("/api/marketplace/plugins").json()
         assert any(p["id"] == "end_to_end_plugin" for p in listing["plugins"])
@@ -324,8 +293,6 @@ class TestEndpoints:
     def test_bad_submission_422(self, client):
         resp = client.post(
             "/api/marketplace/submissions",
-            json={
-                "manifest": {"id": "x!", "name": "", "version": "", "description": ""}
-            },
+            json={"manifest": {"id": "x!", "name": "", "version": "", "description": ""}},
         )
         assert resp.status_code == 422

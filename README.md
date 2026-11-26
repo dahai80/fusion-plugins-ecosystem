@@ -303,9 +303,7 @@ from fusion_plugins_ecosystem.connector_packs import get_builtin_pack
 
 desk = fpe.DeskRuntime()
 registry = fpe.PluginRegistry(desk)
-creg = fpe.ConnectorRegistry(
-    desk=desk, registry=registry, persist_path="~/.fusion-ecosystem/connectors.json"
-)
+creg = fpe.ConnectorRegistry(desk=desk, registry=registry, persist_path="~/.fusion-ecosystem/connectors.json")
 lifecycle = fpe.PluginLifecycle(registry)
 
 # 1. Install a first-party pack (Feishu / DingTalk / WeCom / Mail / Calendar / Notion)
@@ -318,9 +316,7 @@ creg.install_pack(get_builtin_pack("feishu"))
 creg.approve_tool("feishu", "im.message.send")
 
 # 4. Execute via lifecycle (routed through the external MCP server)
-resp = await lifecycle.execute(
-    "connector__feishu__im.message.send", {"chat_id": "oc_xxx", "content": "hello"}
-)
+resp = await lifecycle.execute("connector__feishu__im.message.send", {"chat_id": "oc_xxx", "content": "hello"})
 ```
 
 Marketplace — distribute connector packs and cowork markdown skill packages:
@@ -328,12 +324,8 @@ Marketplace — distribute connector packs and cowork markdown skill packages:
 ```python
 from fusion_plugins_ecosystem.marketplace import Marketplace
 
-market = Marketplace(
-    creg, marketplace_index="https://my-company/marketplace/index.json"
-)  # private index
-entries, warnings = (
-    market.load_index()
-)  # builtin catalog + remote index (index overrides builtin on id collision)
+market = Marketplace(creg, marketplace_index="https://my-company/marketplace/index.json")  # private index
+entries, warnings = market.load_index()  # builtin catalog + remote index (index overrides builtin on id collision)
 market.install("feishu")  # builtin pack: install directly
 market.install("demo_skill")  # skill_package: git/local source → local install dir
 market.list_installed()

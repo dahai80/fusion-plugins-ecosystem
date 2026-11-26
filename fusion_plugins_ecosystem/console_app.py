@@ -55,9 +55,7 @@ def create_app(
         from fastapi.responses import FileResponse, JSONResponse
         from fastapi.staticfiles import StaticFiles
     except ImportError as exc:  # pragma: no cover — 环境缺依赖
-        raise RuntimeError(
-            "console 需要 fastapi：pip install 'fusion-plugins-ecosystem[console]'"
-        ) from exc
+        raise RuntimeError("console 需要 fastapi：pip install 'fusion-plugins-ecosystem[console]'") from exc
 
     from contextlib import asynccontextmanager
 
@@ -140,9 +138,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/api/hub/bundles/{bundle_id}/items/{ref}/tick")
-    async def bundle_item_tick(
-        bundle_id: str, ref: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def bundle_item_tick(bundle_id: str, ref: str, body: dict[str, Any]) -> dict[str, Any]:
         return await console.tick_bundle_item(bundle_id, ref, bool(body.get("enabled")))
 
     @app.get("/api/hub/bundles/{bundle_id}/update")
@@ -153,13 +149,9 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/api/hub/bundles/{bundle_id}/update")
-    async def bundle_update_apply(
-        bundle_id: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def bundle_update_apply(bundle_id: str, body: dict[str, Any]) -> dict[str, Any]:
         try:
-            return await console.bundle_update_apply(
-                bundle_id, [str(r) for r in (body.get("opt_in") or [])]
-            )
+            return await console.bundle_update_apply(bundle_id, [str(r) for r in (body.get("opt_in") or [])])
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -176,9 +168,7 @@ def create_app(
         return console.oauth_scopes(connector_id)
 
     @app.post("/api/hub/connectors/{connector_id}/oauth")
-    async def connector_oauth_complete(
-        connector_id: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def connector_oauth_complete(connector_id: str, body: dict[str, Any]) -> dict[str, Any]:
         return await console.oauth_complete(
             connector_id,
             [str(s) for s in (body.get("scopes") or [])],
@@ -208,12 +198,8 @@ def create_app(
         )
 
     @app.post("/api/hub/connectors/{connector_id}/revoke")
-    async def connector_revoke_scopes(
-        connector_id: str, body: dict[str, Any]
-    ) -> dict[str, Any]:
-        return await console.revoke_scopes(
-            connector_id, [str(s) for s in (body.get("scopes") or [])]
-        )
+    async def connector_revoke_scopes(connector_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        return await console.revoke_scopes(connector_id, [str(s) for s in (body.get("scopes") or [])])
 
     @app.get("/api/hub/capabilities/{capability}/used-by")
     async def capability_used_by(capability: str) -> dict[str, Any]:
@@ -336,14 +322,10 @@ def create_app(
     async def adapters_put(credential_ref: str, body: dict[str, Any]) -> dict[str, Any]:
         creds = body.get("credentials")
         if not isinstance(creds, dict):
-            raise HTTPException(
-                status_code=422, detail="body.credentials must be an object"
-            )
+            raise HTTPException(status_code=422, detail="body.credentials must be an object")
         out = console.save_credentials(credential_ref, creds)
         if not out.get("saved"):
-            raise HTTPException(
-                status_code=400, detail=out.get("error") or "credential save failed"
-            )
+            raise HTTPException(status_code=400, detail=out.get("error") or "credential save failed")
         return out
 
     # ── plugins ──
@@ -358,9 +340,7 @@ def create_app(
 
     @app.post("/api/extensions/plugins/{plugin_name}/tick")
     async def plugins_tick(plugin_name: str, body: dict[str, Any]) -> dict[str, Any]:
-        return await console.tick_nodes(
-            plugin_name, [str(n) for n in (body.get("nodes") or [])]
-        )
+        return await console.tick_nodes(plugin_name, [str(n) for n in (body.get("nodes") or [])])
 
     @app.delete("/api/extensions/plugins/{plugin_name}")
     async def plugins_remove(plugin_name: str) -> dict[str, Any]:
@@ -382,9 +362,7 @@ def create_app(
 
     @app.post("/api/extensions/mcp/{server_id}/tick")
     async def mcp_tick(server_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        return await console.tick_mcp_tools(
-            server_id, [str(t) for t in (body.get("tools") or [])]
-        )
+        return await console.tick_mcp_tools(server_id, [str(t) for t in (body.get("tools") or [])])
 
     @app.delete("/api/extensions/mcp/{server_id}")
     async def mcp_remove(server_id: str) -> dict[str, Any]:
@@ -406,9 +384,7 @@ def create_app(
 
         @app.get("/shell.js")
         async def shell_js() -> FileResponse:
-            return FileResponse(
-                WEB_DIR / "shell.js", media_type="application/javascript"
-            )
+            return FileResponse(WEB_DIR / "shell.js", media_type="application/javascript")
 
         @app.get("/extensions.html")
         async def extensions_html() -> FileResponse:
@@ -434,9 +410,7 @@ def main() -> None:
         type=int,
         default=service_port("plugins-ecosystem-console", default=DEFAULT_PORT),
     )
-    parser.add_argument(
-        "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
-    )
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     from fusion_plugins_ecosystem import __version__
 
     parser.add_argument(
@@ -458,9 +432,7 @@ def main() -> None:
     try:
         import uvicorn
     except ImportError as exc:  # pragma: no cover
-        raise RuntimeError(
-            "console 需要 uvicorn：pip install 'fusion-plugins-ecosystem[console]'"
-        ) from exc
+        raise RuntimeError("console 需要 uvicorn：pip install 'fusion-plugins-ecosystem[console]'") from exc
 
     import asyncio
 
@@ -479,12 +451,8 @@ def main() -> None:
     )
 
     async def _serve():
-        registry_task = (
-            asyncio.create_task(shell_registry_loop()) if register_enabled else None
-        )
-        config = uvicorn.Config(
-            app, host=args.host, port=args.port, log_level=args.log_level.lower()
-        )
+        registry_task = asyncio.create_task(shell_registry_loop()) if register_enabled else None
+        config = uvicorn.Config(app, host=args.host, port=args.port, log_level=args.log_level.lower())
         server = uvicorn.Server(config)
         try:
             await server.serve()

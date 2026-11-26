@@ -83,9 +83,7 @@ def test_validate_ok():
 
 
 def test_validate_missing_id():
-    problems = rc.validate_connector(
-        {"kind": "rest", "base_url": "https://x", "operations": {"a": {"path": "/"}}}
-    )
+    problems = rc.validate_connector({"kind": "rest", "base_url": "https://x", "operations": {"a": {"path": "/"}}})
     assert "missing id" in problems
 
 
@@ -102,9 +100,7 @@ def test_validate_rest_requires_base_url():
 
 
 def test_validate_operations_required():
-    problems = rc.validate_connector(
-        {"id": "x", "kind": "rest", "base_url": "https://x"}
-    )
+    problems = rc.validate_connector({"id": "x", "kind": "rest", "base_url": "https://x"})
     assert any("operations" in p for p in problems)
 
 
@@ -164,9 +160,7 @@ def test_get_unreadable_file(tmp_path):
 
 async def test_execute_rest_ok_with_extraction(server):
     doc = _doc(server)
-    out = await rc.execute_operation(
-        doc, "erp.stock.fetch", credentials={"token": "tok-1"}
-    )
+    out = await rc.execute_operation(doc, "erp.stock.fetch", credentials={"token": "tok-1"})
     assert out["ok"] is True
     assert out["status"] == 200
     assert out["extracted"]["total"] == 2
@@ -195,9 +189,7 @@ async def test_execute_unknown_operation(server):
 async def test_execute_http_error_with_code_map(server):
     doc = _doc(server)
     doc["error_code_map"] = {"unauthorized": "auth failed"}
-    out = await rc.execute_operation(
-        doc, "erp.stock.fetch", credentials={"token": "wrong"}
-    )
+    out = await rc.execute_operation(doc, "erp.stock.fetch", credentials={"token": "wrong"})
     assert out["ok"] is False
     assert out["status"] == 401
     assert out["error_code"] == "unauthorized"

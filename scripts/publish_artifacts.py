@@ -60,12 +60,7 @@ def build_caveman_plugin(out_dir: Path, version: str) -> dict[str, Any]:
     if manifest is None:
         raise RuntimeError("builtin caveman_compress not registered")
 
-    tool_json = (
-        REPO_ROOT
-        / "fusion_plugins_ecosystem"
-        / "builtin"
-        / "caveman_compress.tool.json"
-    )
+    tool_json = REPO_ROOT / "fusion_plugins_ecosystem" / "builtin" / "caveman_compress.tool.json"
     if not tool_json.exists():
         raise RuntimeError(f"tool manifest missing: {tool_json}")
 
@@ -171,9 +166,7 @@ VALID_KINDS = {"app", "plugin", "connector", "skill"}
 SHA_RE_LEN = 64
 
 
-def validate_registry(
-    registry: dict[str, Any], dist_dir: Path | None = None
-) -> list[str]:
+def validate_registry(registry: dict[str, Any], dist_dir: Path | None = None) -> list[str]:
     problems: list[str] = []
     entries = registry.get("entries")
     if not isinstance(entries, list):
@@ -199,9 +192,7 @@ def validate_registry(
             sha = str(artifact.get("sha256") or "")
             if not url.startswith("https://"):
                 problems.append(f"{eid}: artifact url must be https ({url})")
-            if len(sha) != SHA_RE_LEN or not all(
-                c in "0123456789abcdef" for c in sha.lower()
-            ):
+            if len(sha) != SHA_RE_LEN or not all(c in "0123456789abcdef" for c in sha.lower()):
                 problems.append(f"{eid}: artifact sha256 must be 64 hex chars")
             if not artifact.get("size"):
                 problems.append(f"{eid}: artifact size missing")
@@ -211,9 +202,7 @@ def validate_registry(
                     problems.append(f"{eid}: sha256 mismatch for {local.name}")
         source_path = entry.get("source_path")
         if source_path is not None:
-            if not str(source_path).startswith(
-                ("skills/", "plugins/", "connectors/", "apps/")
-            ):
+            if not str(source_path).startswith(("skills/", "plugins/", "connectors/", "apps/")):
                 problems.append(f"{eid}: source_path must be an in-repo path")
     return problems
 
@@ -231,10 +220,7 @@ def apply_artifacts(
         record = by_id.get(str(entry.get("id")))
         if record is None:
             continue
-        url = (
-            f"https://github.com/{skills_repo}/releases/download/"
-            f"{release_tag}/{record['file']}"
-        )
+        url = f"https://github.com/{skills_repo}/releases/download/{release_tag}/{record['file']}"
         entry["artifacts"] = [
             {
                 "os": record["os"],

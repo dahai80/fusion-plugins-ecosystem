@@ -116,13 +116,7 @@ def test_install_from_local_source_pack_json(tmp_path, setup) -> None:
     )
     index = tmp_path / "index.json"
     index.write_text(
-        json.dumps(
-            {
-                "packages": [
-                    {"id": "custom_pack", "kind": "connector_pack", "source": str(src)}
-                ]
-            }
-        ),
+        json.dumps({"packages": [{"id": "custom_pack", "kind": "connector_pack", "source": str(src)}]}),
         encoding="utf-8",
     )
     result = market.install("custom_pack", source=str(index))
@@ -136,9 +130,7 @@ def test_install_source_missing_pack_json_raises(tmp_path, setup) -> None:
     src.mkdir()
     index = tmp_path / "index.json"
     index.write_text(
-        json.dumps(
-            {"packages": [{"id": "e1", "kind": "connector_pack", "source": str(src)}]}
-        ),
+        json.dumps({"packages": [{"id": "e1", "kind": "connector_pack", "source": str(src)}]}),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="pack.json"):
@@ -152,13 +144,7 @@ def test_install_skill_package_copies_tree(tmp_path, setup) -> None:
     (src / "SKILL.md").write_text("# demo skill", encoding="utf-8")
     index = tmp_path / "index.json"
     index.write_text(
-        json.dumps(
-            {
-                "packages": [
-                    {"id": "demo_skill", "kind": "skill_package", "source": str(src)}
-                ]
-            }
-        ),
+        json.dumps({"packages": [{"id": "demo_skill", "kind": "skill_package", "source": str(src)}]}),
         encoding="utf-8",
     )
     result = market.install("demo_skill", source=str(index))
@@ -180,9 +166,7 @@ def test_uninstall_removes_pack_and_skill_dir(tmp_path, setup) -> None:
     (src / "SKILL.md").write_text("x", encoding="utf-8")
     index = tmp_path / "index.json"
     index.write_text(
-        json.dumps(
-            {"packages": [{"id": "s1", "kind": "skill_package", "source": str(src)}]}
-        ),
+        json.dumps({"packages": [{"id": "s1", "kind": "skill_package", "source": str(src)}]}),
         encoding="utf-8",
     )
     market.install("s1", source=str(index))

@@ -16,8 +16,8 @@ from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 from fusion_plugins_ecosystem.registry import PluginRegistry
 
 sys.path.insert(0, str(Path(__file__).parent))
-from test_install_flow import BUNDLE, _manifest, _write_index  # noqa: E402
 from test_extensions_console import FakeDesk  # noqa: E402
+from test_install_flow import BUNDLE, _manifest, _write_index  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -30,9 +30,7 @@ def _env(tmp_path, monkeypatch):
     from fusion_plugins_ecosystem import shell_registry
 
     monkeypatch.setattr(shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key")
-    monkeypatch.setenv(
-        "FUSION_PLUGIN_MARKETPLACE_INDEX", str(tmp_path / "market_index.json")
-    )
+    monkeypatch.setenv("FUSION_PLUGIN_MARKETPLACE_INDEX", str(tmp_path / "market_index.json"))
 
 
 @pytest.fixture()
@@ -59,13 +57,9 @@ class TestEventStream:
 
         await console.oauth_complete("bank-api", ["bank.flow.fetch"], {"api_key": "k"})
         # 逐 scope 授权 + 敏感策略事件，同一 trace_id
-        grants = console.audit_records(
-            resource_id="bank-api", action="hub.connector.oauth.grant"
-        )["records"]
+        grants = console.audit_records(resource_id="bank-api", action="hub.connector.oauth.grant")["records"]
         assert [g["details"]["scope"] for g in grants] == ["bank.flow.fetch"]
-        policy = console.audit_records(
-            resource_id="bank-api", action="hub.connector.scope.policy"
-        )["records"]
+        policy = console.audit_records(resource_id="bank-api", action="hub.connector.scope.policy")["records"]
         assert [p["details"]["scope"] for p in policy] == ["bank.order.push"]
         assert all(p["risk_level"] == "high" for p in policy)
         assert grants[0]["trace_id"] == policy[0]["trace_id"]
@@ -118,9 +112,7 @@ class TestEventStream:
 class TestRevoke:
     async def test_revoke_scope_rebridges(self, console):
         await console.install_bundle("finance-kit")
-        await console.oauth_complete(
-            "bank-api", ["bank.flow.fetch", "bank.account.fetch"], {"api_key": "k"}
-        )
+        await console.oauth_complete("bank-api", ["bank.flow.fetch", "bank.account.fetch"], {"api_key": "k"})
         assert console.registry.get("connector__bank-api__bank.account.fetch")
         out = await console.revoke_scopes("bank-api", ["bank.account.fetch"])
         assert out["revoked"] is True
@@ -130,11 +122,7 @@ class TestRevoke:
         assert console.registry.get("connector__bank-api__bank.flow.fetch")
         assert "hub.connector.oauth.revoke" in _actions(console, resource_id="bank-api")
         # oauth_scopes 反映实际授权状态（GUI 撤销列表/OAuth 预勾选用）
-        flags = {
-            s["id"]: s["granted"]
-            for s in console.oauth_scopes("bank-api")["scopes"]
-            if not s["sensitive"]
-        }
+        flags = {s["id"]: s["granted"] for s in console.oauth_scopes("bank-api")["scopes"] if not s["sensitive"]}
         assert flags == {"bank.flow.fetch": True, "bank.account.fetch": False}
 
     async def test_revoke_all_disables(self, console):
@@ -175,9 +163,7 @@ class TestUsedBy:
     async def test_used_by_endpoint_data(self, console):
         from test_install_flow import _FakeNode, _FakeNodeRegistry
 
-        console.desk.node_registry = _FakeNodeRegistry(
-            [_FakeNode("月度对账", "使用 node.excel-skill")]
-        )
+        console.desk.node_registry = _FakeNodeRegistry([_FakeNode("月度对账", "使用 node.excel-skill")])
         out = console.capability_used_by("node.excel-skill")
         assert out["in_use_by"][0]["node"] == "月度对账"
 

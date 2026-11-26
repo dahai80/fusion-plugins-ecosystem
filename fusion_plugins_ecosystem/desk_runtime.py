@@ -81,15 +81,12 @@ def _encrypt_key(plaintext: str) -> str:
     except ImportError:
         if _strict_encryption():
             raise RuntimeError(
-                "desk_runtime: strict mode with cryptography not installed, "
-                "refusing to store API key in plaintext"
+                "desk_runtime: strict mode with cryptography not installed, refusing to store API key in plaintext"
             ) from None
         logger.warning("desk_runtime: cryptography not installed, storing API key in plaintext")
         return plaintext
     try:
-        return _KEY_ENC_PREFIX + Fernet(_derive_key()).encrypt(
-            plaintext.encode("utf-8")
-        ).decode("ascii")
+        return _KEY_ENC_PREFIX + Fernet(_derive_key()).encrypt(plaintext.encode("utf-8")).decode("ascii")
     except Exception as exc:
         if _strict_encryption():
             raise RuntimeError(
@@ -112,11 +109,7 @@ def _decrypt_key(stored: str | None) -> str | None:
         logger.warning("desk_runtime: cryptography not installed, cannot decrypt API key")
         return None
     try:
-        return (
-            Fernet(_derive_key())
-            .decrypt(stored[len(_KEY_ENC_PREFIX) :].encode("ascii"))
-            .decode("utf-8")
-        )
+        return Fernet(_derive_key()).decrypt(stored[len(_KEY_ENC_PREFIX) :].encode("ascii")).decode("utf-8")
     except Exception as exc:
         logger.warning("desk_runtime: API key decryption failed: %s", exc)
         return None
@@ -179,9 +172,7 @@ class DeskRuntime:
 
     def __post_init__(self) -> None:
         if not FUSION_COWORK_AVAILABLE:
-            logger.info(
-                "desk_runtime: fusion-cowork 未安装，DeskRuntime 以降级模式运行"
-            )
+            logger.info("desk_runtime: fusion-cowork 未安装，DeskRuntime 以降级模式运行")
 
     @property
     def metrics(self) -> Any:
@@ -268,9 +259,7 @@ class DeskRuntime:
                 return False
             self.vram_allocations[plugin_id] = mb
             logger.info("desk_runtime: 插件 %s 显存 %dMB→%dMB", plugin_id, current, mb)
-            self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(
-                sum(self.vram_allocations.values())
-            )
+            self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(sum(self.vram_allocations.values()))
             # 步骤 4：同步 vRAM 分配到集群共享存储（跨节点可见）
             from fusion_plugins_ecosystem import cluster_bridge
 
@@ -283,9 +272,7 @@ class DeskRuntime:
             freed = self.vram_allocations.pop(plugin_id, 0)
         if freed:
             logger.info("desk_runtime: 插件 %s 释放 %dMB 显存", plugin_id, freed)
-        self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(
-            sum(self.vram_allocations.values())
-        )
+        self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(sum(self.vram_allocations.values()))
         # 步骤 4：同步释放到集群共享存储
         from fusion_plugins_ecosystem import cluster_bridge
 
@@ -356,9 +343,7 @@ class DeskRuntime:
         （plugin_id="_infra"），同时仍经 desk_logger 输出 stderr，形成
         单一可查询流。component 记入 kwargs 供按子系统过滤。
         """
-        self.log(
-            "_infra", level, f"[{component}] {message}", component=component, **kwargs
-        )
+        self.log("_infra", level, f"[{component}] {message}", component=component, **kwargs)
 
     def get_logs(
         self,
@@ -415,9 +400,7 @@ class DeskRuntime:
 
     def grant_permission(self, plugin_id: str, allowed_paths: list[str]) -> None:
         """授予插件路径访问权限。"""
-        self.plugin_permissions.setdefault(plugin_id, {})["allowed_paths"] = (
-            allowed_paths
-        )
+        self.plugin_permissions.setdefault(plugin_id, {})["allowed_paths"] = allowed_paths
 
     # ── API 密钥 ──
 
