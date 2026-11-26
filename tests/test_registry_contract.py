@@ -1,8 +1,9 @@
-"""稳定注册表读契约测试（issue #44 PC-4：单注册表三表面）。
+"""Stable registry read-contract tests (issue #44 PC-4: one registry, three surfaces).
 
-契约 registry/1.0：fusion-cowork#228 能力市场与 fusion-agent-studio#529
-构建器建议消费 `/api/registry/capabilities` — 只读授权态，授权动作跳 hub；
-消费方不得分叉缓存（单一事实源）。
+Contract registry/1.0: fusion-cowork#228 capability market and
+fusion-agent-studio#529 builder suggestions consume `/api/registry/capabilities`
+— read-only authorization state; authorization actions jump to the hub;
+consumers must not fork caches (single source of truth).
 """
 
 import sys
@@ -58,12 +59,12 @@ class TestContract:
         assert skill["kind"] == "skill" and skill["enabled"] is True
         agent = _by_id(console, "node.bank-recon-agent")
         assert agent["kind"] == "subagent"
-        # 停用即从消费方消失（enabled=false — 消费方按 enabled 过滤）
+        # Disable removes it from consumers (enabled=false — consumers filter by enabled)
         await console.tick_bundle_item("finance-kit", "excel-skill", False)
         assert _by_id(console, "node.excel-skill")["enabled"] is False
 
     async def test_connector_pack_bridge_listed(self, console):
-        # 连接器包桥接（无 rest 文档）按桥接清单入列，授权面全量
+        # Connector pack bridging (no rest doc) listed by bridge inventory, full auth surface
         console.registry.register(_manifest("connector__packdemo__search", []))
         cap = _by_id(console, "connector.packdemo.search")
         assert cap["kind"] == "connector"
@@ -71,12 +72,12 @@ class TestContract:
         assert cap["auth"]["all_scopes_granted"] is True
 
     async def test_resync_rebuilds_bundle_items(self, console):
-        # issue #44：重启后 enabled bundle 项重建 — 消费方拉取不"消失"
+        # issue #44: enabled bundle items rebuilt after restart — consumers do not see them "vanish"
         from fusion_plugins_ecosystem.connector_packs import NOTION_PACK
 
         pack_ids = [f"connector__notion__{t.name}" for t in NOTION_PACK.tools]
         await console.install_bundle("finance-kit")
-        # 模拟重启：新 console 共享磁盘状态，registry 清空
+        # Simulate restart: a fresh console shares the on-disk state, registry emptied
         fresh = ExtensionsConsole(
             desk=console.desk,
             registry=PluginRegistry(console.desk),
@@ -85,16 +86,16 @@ class TestContract:
         assert not any(
             m.id.startswith("connector__bank-api__") for m in fresh.registry.list()
         )
-        # 重启后清单来源（内置/自定义声明）重新注册 — 测试里手工补
+        # After restart, manifest sources (builtin/custom declarations) re-register — patched manually in the test
         fresh.registry.register(_manifest("excel-skill", ["claude_skill"]))
         out = await fresh.resync()
         assert "excel-skill" in out["relisted"]
         assert fresh._plugin_enabled("excel-skill")
-        # rest 连接器（pending_auth 未授权）按 resync 既有路径桥接
+        # rest connector (pending_auth un-granted) bridges via the existing resync path
         assert any(
             m.id.startswith("connector__bank-api__") for m in fresh.registry.list()
         )
-        # 连接器包：enabled 项重装（用 finance-kit 无 pack，补一个 pack bundle 验证路径）
+        # Connector pack: enabled items reinstalled (finance-kit has no pack, so add a pack bundle to cover the path)
         state = fresh._bundles_state()
         state["pack-bundle"] = {
             "id": "pack-bundle",
@@ -104,17 +105,17 @@ class TestContract:
         await fresh.resync()
         ids = {m.id for m in fresh.registry.list()}
         assert any(pid in ids for pid in pack_ids)
-        # 重建后工具处于 ENABLED（安装路径与 tick-on 一致）
+        # After rebuild tools are ENABLED (install path agrees with tick-on)
         assert any(fresh._plugin_enabled(pid) for pid in pack_ids)
 
     async def test_pack_install_enables_tools(self, console):
-        # 安装路径即启用：bundle 项 state=enabled 与工具生命周期态一致
+        # Install path means enabled: bundle item state=enabled matches the tool lifecycle state
         out = await console._install_bundle_item("connector_pack", "notion", {})
         assert out["state"] == "enabled"
         assert console._plugin_enabled(out["plugin_ids"][0])
 
     async def test_uninstall_leaves_no_pack_orphans(self, console):
-        # issue #44 验收：hub 卸载后注册表无残留（消费方拉取干净）
+        # issue #44 acceptance: no registry residue after hub uninstall (consumers pull clean)
         state = console._bundles_state()
         state["pack-bundle"] = {
             "id": "pack-bundle",
@@ -129,7 +130,7 @@ class TestContract:
 
     async def test_connector_auth_state_single_source(self, console):
         await console.install_bundle("finance-kit")
-        # pending_auth：通道可见但未授权暴露
+        # pending_auth: channel visible but not exposed as granted
         assert (
             _by_id(console, "connector.bank-api.bank.flow.fetch")["auth"]["state"]
             == "pending"
@@ -142,7 +143,7 @@ class TestContract:
         assert cap["auth"]["state"] == "granted"
         assert cap["auth"]["granted"] is True
         assert cap["auth"]["all_scopes_granted"] is False
-        # hub 撤销 → 契约面下次拉取即反映（无同步任务）
+        # Hub revoke -> reflected on the contract surface at next pull (no sync job)
         await console.revoke_scopes("bank-api", ["bank.flow.fetch"])
         cap = _by_id(console, "connector.bank-api.bank.flow.fetch")
         assert cap["auth"]["state"] == "revoked" and cap["auth"]["granted"] is False
@@ -154,7 +155,7 @@ class TestContract:
         await console.install_bundle("finance-kit")
         await console.oauth_complete("bank-api", ["bank.flow.fetch"], {"api_key": "k"})
         console.desk.node_registry = _FakeNodeRegistry(
-            [_FakeNode("月度对账", "使用 connector.bank-api.bank.flow.fetch")]
+            [_FakeNode("月度对账", "使用 connector.bank-api.bank.flow.fetch")]  # i18n: user-facing
         )
         out = console.registry_capability("connector.bank-api.bank.flow.fetch")
         assert out["kind"] == "connector"

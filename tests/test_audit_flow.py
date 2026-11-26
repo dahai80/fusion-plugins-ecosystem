@@ -1,7 +1,8 @@
-"""授权审计事件流测试（issue #43 PC-3）。
+"""Authorization audit event stream tests (issue #43 PC-3).
 
-覆盖: 安装/OAuth/更新/卸载事件入 fusion-security JSONL 管道（trace-id 串
-链）、hub 审计检索、scope 撤销（撤后重桥接 + 事件）、被使用于反向查找端点。
+Covers: install/OAuth/update/uninstall events into the fusion-security JSONL
+pipeline (trace-id chaining), hub audit retrieval, scope revoke (re-bridge after
+revoke + event), and the used-by reverse lookup endpoint.
 """
 
 import json
@@ -58,7 +59,7 @@ class TestEventStream:
         assert "hub.bundle.item.install" in _actions(console, resource_id="excel-skill")
 
         await console.oauth_complete("bank-api", ["bank.flow.fetch"], {"api_key": "k"})
-        # 逐 scope 授权 + 敏感策略事件，同一 trace_id
+        # Per-scope grants + sensitive-policy events under one trace_id
         grants = console.audit_records(
             resource_id="bank-api", action="hub.connector.oauth.grant"
         )["records"]
@@ -70,7 +71,7 @@ class TestEventStream:
         assert all(p["risk_level"] == "high" for p in policy)
         assert grants[0]["trace_id"] == policy[0]["trace_id"]
 
-        # 更新 + 卸载事件
+        # Update + uninstall events
         v2 = json.loads(json.dumps(BUNDLE))
         v2["version"] = "1.1.0"
         v2["items"].append({"type": "skill", "ref": "invoice-skill"})
@@ -95,7 +96,7 @@ class TestEventStream:
         assert {r["action"] for r in recs} == {"x.a", "x.b"}
 
     def test_jsonl_contract_with_security_workbench(self, console, tmp_path):
-        # 行结构与 fusion_security AuditEntry 同构（action/timestamp/risk_level/trace_id）
+        # Rows are shape-compatible with fusion_security AuditEntry (action/timestamp/risk_level/trace_id)
         audit_events.emit("hub.test", resource_id="r", risk_level="high")
         f = tmp_path / "audit" / "audit_system.jsonl"
         rec = json.loads(f.read_text(encoding="utf-8").splitlines()[-1])
@@ -125,11 +126,11 @@ class TestRevoke:
         out = await console.revoke_scopes("bank-api", ["bank.account.fetch"])
         assert out["revoked"] is True
         assert out["remaining_scopes"] == ["bank.flow.fetch"]
-        # 撤销通道不再桥接，保留通道不受影响
+        # Revoked channel no longer bridged, retained channels unaffected
         assert console.registry.get("connector__bank-api__bank.account.fetch") is None
         assert console.registry.get("connector__bank-api__bank.flow.fetch")
         assert "hub.connector.oauth.revoke" in _actions(console, resource_id="bank-api")
-        # oauth_scopes 反映实际授权状态（GUI 撤销列表/OAuth 预勾选用）
+        # oauth_scopes reflects the actual grant state (used by the GUI revoke list / OAuth pre-check)
         flags = {
             s["id"]: s["granted"]
             for s in console.oauth_scopes("bank-api")["scopes"]
@@ -159,12 +160,12 @@ class TestRevoke:
         assert out["removed"] is True
         assert get_connector("bank-api") is None
         assert console.registry.get("connector__bank-api__bank.flow.fetch") is None
-        # per-use 策略随连接器清除
+        # Per-use policy cleared along with the connector
         assert console.scope_policy("bank-api")["per_use_scopes"] == []
         assert "hub.connector.remove" in _actions(console, resource_id="bank-api")
         out = await console.remove_connector("bank-api")
         assert out["removed"] is False
-        # _scope_policy 元数据键不混入 bundle 列表
+        # The _scope_policy metadata key must not leak into the bundle list
         listed = console.list_bundles()["bundles"]
         assert all(b.get("id") == "finance-kit" for b in listed)
         await console.uninstall_bundle("finance-kit")
@@ -176,7 +177,7 @@ class TestUsedBy:
         from test_install_flow import _FakeNode, _FakeNodeRegistry
 
         console.desk.node_registry = _FakeNodeRegistry(
-            [_FakeNode("月度对账", "使用 node.excel-skill")]
+            [_FakeNode("月度对账", "使用 node.excel-skill")]  # i18n: user-facing
         )
         out = console.capability_used_by("node.excel-skill")
         assert out["in_use_by"][0]["node"] == "月度对账"

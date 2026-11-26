@@ -1,13 +1,14 @@
-"""长时稳定性回归（企业级 soak，步骤 5）。
+"""Long-run stability regression (enterprise soak, step 5).
 
-验证持续负载下无内存泄漏、无连接/会话累积、无指标漂移：
-- token_meter 持续 record 超 max_records → 容量封顶不泄漏
-- desk 日志环形缓冲持续 log → deque maxlen 封顶不泄漏
-- MCPHandler 会话持续 _touch_session 新增 → _MAX_SESSIONS LRU 封顶不累积
-- 指标计数器持续 inc → 单调无溢出/漂移
-- lifecycle 持续 execute 500 次 → active_plugins 回基线无残留
+Verifies no memory leaks, no connection/session accumulation, and no metric
+ drift under sustained load:
+- token_meter keeps recording past max_records -> capacity capped, no leak
+- desk log ring buffer keeps logging -> deque maxlen capped, no leak
+- MCPHandler keeps adding sessions via _touch_session -> _MAX_SESSIONS LRU capped, no accumulation
+- metric counters keep inc -> monotonic, no overflow/drift
+- lifecycle executes 500 times -> active_plugins back to baseline, no residue
 
-确定性、入 CI、不依赖 live MLX。
+Deterministic, CI-enabled, no live MLX required.
 """
 
 from __future__ import annotations
@@ -41,11 +42,11 @@ def _registry() -> PluginRegistry:
     return reg
 
 
-# ── token_meter 容量封顶 ──
+# ── token_meter capacity cap ──
 
 
 def test_token_meter_cap_holds_under_sustained_record():
-    """持续 record 远超 max_records → 容量封顶，不泄漏。"""
+    """Sustained record far beyond max_records -> capacity capped, no leak."""
     desk = DeskRuntime()
     meter = TokenMeter(desk, max_records=500)
 
@@ -62,22 +63,22 @@ def test_token_meter_cap_holds_under_sustained_record():
     assert len(meter.all_records()) == 500
 
 
-# ── 日志环形缓冲封顶 ──
+# ── Log ring buffer cap ──
 
 
 def test_log_buffer_cap_holds_under_sustained_log():
-    """持续 log 远超 _LOG_BUFFER_MAX → deque 封顶，不泄漏。"""
+    """Sustained log far beyond _LOG_BUFFER_MAX -> deque capped, no leak."""
     desk = DeskRuntime()
     for i in range(10_000):
         desk.log("soak_p", "INFO", f"msg {i}")
     assert len(desk.log_entries) == _LOG_BUFFER_MAX
 
 
-# ── 会话 LRU 封顶 ──
+# ── Session LRU cap ──
 
 
 def test_session_cap_holds_under_sustained_new_sessions():
-    """持续 _touch_session 新增会话 → _MAX_SESSIONS LRU 封顶，不累积。"""
+    """Sustained _touch_session additions -> _MAX_SESSIONS LRU capped, no accumulation."""
     reg = _registry()
     handler = MCPHandler(registry=reg)
 
@@ -85,12 +86,12 @@ def test_session_cap_holds_under_sustained_new_sessions():
         handler._touch_session(f"sess-{i:05d}", "soak_p")
 
     assert len(handler._sessions) == _MAX_SESSIONS
-    # 最新会话存活
+    # Newest session still alive
     assert handler.get_session("sess-01999") is not None
 
 
 def test_session_calls_list_bounded_under_sustained_touch():
-    """同一会话持续 touch → calls 列表封顶（1000→500），不无限增长。"""
+    """Repeated touch of one session -> calls list capped (1000 -> 500), unbounded growth prevented."""
     reg = _registry()
     handler = MCPHandler(registry=reg)
 
@@ -102,11 +103,11 @@ def test_session_calls_list_bounded_under_sustained_touch():
     assert len(session["calls"]) <= 1000
 
 
-# ── 指标计数器单调无漂移 ──
+# ── Metric counter monotonic without drift ──
 
 
 def test_counter_sustained_inc_monotonic_no_drift():
-    """持续 inc → 总数精确，单调无溢出/漂移。"""
+    """Sustained inc -> exact total, monotonic, no overflow/drift."""
     desk = DeskRuntime()
     counter = desk.metrics.counter("soak_total", "soak total")
 
@@ -116,7 +117,7 @@ def test_counter_sustained_inc_monotonic_no_drift():
 
 
 def test_counter_labeled_sustained_inc_no_drift():
-    """带标签分桶持续 inc → 各桶总数精确，总和精确。"""
+    """Sustained inc with labeled buckets -> each bucket exact, sum exact."""
     desk = DeskRuntime()
     counter = desk.metrics.counter("soak_labeled", "soak labeled")
 
@@ -128,11 +129,11 @@ def test_counter_labeled_sustained_inc_no_drift():
     assert counter.total() == 20_000
 
 
-# ── lifecycle 持续 execute 无残留 ──
+# ── Lifecycle sustained execute without residue ──
 
 
 async def test_lifecycle_sustained_execute_no_residual():
-    """500 次顺序 execute → 全成功，active_plugins 回基线无残留。"""
+    """500 sequential executes -> all succeed, active_plugins back to baseline with no residue."""
     from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 
     reg = _registry()
@@ -145,15 +146,15 @@ async def test_lifecycle_sustained_execute_no_residual():
     for _i in range(500):
         await lifecycle.execute("soak_p", {})
 
-    # 全部执行完成，活跃插件数稳定为 1（已启用，无并发残留）
+    # All executions done; active plugin count stable at 1 (enabled, no concurrency residue)
     assert active_gauge.value() == 1
 
 
-# ── token_meter 持续 record + 查询一致性 ──
+# ── token_meter sustained record + query consistency ──
 
 
 def test_token_meter_sustained_record_query_consistent():
-    """持续 record 后查询 → 总数/总数聚合一致，无丢失。"""
+    """Query after sustained record -> total/aggregation consistent, no loss."""
     desk = DeskRuntime()
     meter = TokenMeter(desk, max_records=10_000)
 

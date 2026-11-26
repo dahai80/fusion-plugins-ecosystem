@@ -1,1 +1,1 @@
-"""tests 包初始化。"""
+"""tests package init."""

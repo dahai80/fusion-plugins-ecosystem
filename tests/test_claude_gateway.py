@@ -1,4 +1,4 @@
-"""ClaudeGateway 全链路网关测试。"""
+"""ClaudeGateway full-chain gateway tests."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from fusion_plugins_ecosystem.registry import (
 )
 
 
-# ── 测试 fixtures ──
+# ── Test fixtures ──
 
 
 def _make_manifest(
@@ -47,12 +47,14 @@ def _make_manifest(
         name="Test Plugin",
         version="0.1.0",
         category=PluginCategory.CUSTOM,
+        # i18n: user-facing
         description="测试插件",
         capabilities=caps,
         params=[
             PluginParam(
                 name="text",
                 type="string",
+                # i18n: user-facing
                 description="输入",
                 required=True,
             ),
@@ -82,7 +84,7 @@ def _make_gateway(
     return gw, registry
 
 
-# ── 接入方式常量 ──
+# ── Access-mode constants ──
 
 
 def test_claude_access_constants() -> None:
@@ -204,7 +206,7 @@ async def test_invoke_mcp_tool_unknown_plugin_returns_error() -> None:
     gw, _ = _make_gateway()
     result = await gw.invoke_mcp_tool("nonexistent", {})
     assert result["isError"] is True
-    assert "未注册" in result["content"][0]["text"]
+    assert "not registered" in result["content"][0]["text"]
 
 
 async def test_invoke_mcp_tool_no_mcp_capability_returns_error() -> None:
@@ -218,7 +220,7 @@ async def test_invoke_mcp_tool_no_mcp_capability_returns_error() -> None:
     )
     result = await gw.invoke_mcp_tool("p1", {})
     assert result["isError"] is True
-    assert "不具备" in result["content"][0]["text"]
+    assert "does not have" in result["content"][0]["text"]
 
 
 async def test_invoke_mcp_tool_crash_returns_error() -> None:
@@ -228,7 +230,7 @@ async def test_invoke_mcp_tool_crash_returns_error() -> None:
     gw, _ = _make_gateway([_make_manifest("p1", entry_point=entry)])
     result = await gw.invoke_mcp_tool("p1", {})
     assert result["isError"] is True
-    assert "执行失败" in result["content"][0]["text"]
+    assert "execution failed" in result["content"][0]["text"]
 
 
 async def test_invoke_mcp_tool_non_dict_result_serialized() -> None:
@@ -285,7 +287,7 @@ async def test_dispatch_subagent_success() -> None:
 async def test_dispatch_subagent_unknown_plugin_raises() -> None:
     gw, _ = _make_gateway()
     task = SubagentTask(name="t", plugin_id="nonexistent", arguments={})
-    with pytest.raises(KeyError, match="未注册"):
+    with pytest.raises(KeyError, match="not registered"):
         await gw.dispatch_subagent(task)
 
 
@@ -310,7 +312,7 @@ async def test_dispatch_subagent_timeout_destroy_on() -> None:
     task = SubagentTask(name="t", plugin_id="p1", arguments={})
     result = await gw.dispatch_subagent(task)
     assert result["state"] == "failed"
-    # 超时销毁：插件应被 unload
+    # Timeout destroy: the plugin should be unloaded
     assert "p1" not in gw.lifecycle._instances
 
 
@@ -327,7 +329,7 @@ async def test_dispatch_subagent_timeout_destroy_off() -> None:
     task = SubagentTask(name="t", plugin_id="p1", arguments={})
     result = await gw.dispatch_subagent(task)
     assert result["state"] == "failed"
-    # 销毁关闭：插件仍保留（可能为 CRASHED/TIMEOUT 状态）
+    # Destroy disabled: the plugin stays (possibly in CRASHED/TIMEOUT state)
     assert "p1" in gw.lifecycle._instances
 
 
@@ -349,7 +351,7 @@ async def test_dispatch_subagent_preserves_manifest_timeout() -> None:
         timeout_seconds=5,
     )
     await gw.dispatch_subagent(task)
-    # 任务结束后 manifest.timeout_seconds 应恢复
+    # After the task ends, manifest.timeout_seconds should be restored
     assert gw.registry.get("p1").timeout_seconds == original
 
 
@@ -382,7 +384,7 @@ def test_list_subagent_capable_plugins_empty() -> None:
 
 
 class _FakeConfigCenter:
-    """Desk 配置中心 fake，支持 get/set API 密钥。"""
+    """Fake Desk config center supporting get/set of API keys."""
 
     def __init__(self) -> None:
         self._store: dict[str, str] = {}
@@ -395,7 +397,7 @@ class _FakeConfigCenter:
 
 
 def _make_desk_with_config() -> DeskRuntime:
-    """构造带 config_center 的 DeskRuntime，供鉴权测试。"""
+    """Build a DeskRuntime with a config_center for auth tests."""
     return DeskRuntime(config_center=_FakeConfigCenter())
 
 
@@ -411,7 +413,7 @@ def test_store_credentials_volcengine_disabled_by_config() -> None:
     desk = _make_desk_with_config()
     gw, _ = _make_gateway([], config=config, desk=desk)
     gw.store_credentials("volcengine_claude", "sk-vol-123")
-    # 关闭时应未存储
+    # With the toggle off, nothing should be stored
     assert gw.get_credentials("volcengine_claude") is None
 
 
@@ -466,11 +468,11 @@ async def test_mlx_visual_backend_disabled_raises() -> None:
     config = EcosystemConfig(enable_mixed_quantization=False)
     desk = DeskRuntime(mlx_client=_FakeMLXClient())
     gw, _ = _make_gateway([], config=config, desk=desk)
-    with pytest.raises(RuntimeError, match="混合量化"):
+    with pytest.raises(RuntimeError, match="mixed quantization"):
         await gw.mlx_visual_backend("m", [])
 
 
-# ── 与 caveman 内置插件集成 ──
+# ── Integration with the caveman builtin plugin ──
 
 
 def test_gateway_with_builtin_caveman() -> None:
@@ -513,7 +515,7 @@ async def test_gateway_dispatch_caveman_subagent() -> None:
     assert result["result"]["compressed"] == "a\n\nb"
 
 
-# ── 构造器默认参数 ──
+# ── Constructor defaults ──
 
 
 def test_gateway_defaults_lifecycle_and_desk() -> None:
@@ -539,7 +541,7 @@ def test_gateway_explicit_desk_overrides() -> None:
     assert gw.desk is desk2
 
 
-# ── token meter 集成 ──
+# ── Token meter integration ──
 
 
 async def test_invoke_mcp_tool_records_mcp_relay_token() -> None:
@@ -550,7 +552,7 @@ async def test_invoke_mcp_tool_records_mcp_relay_token() -> None:
     await gw.invoke_mcp_tool("p1", {})
     records = gw.token_meter.records_for("p1")
     assert len(records) >= 1
-    # 应至少有一条 MCP_RELAY 记录
+    # There should be at least one MCP_RELAY record
     kinds = [r.kind.value for r in records]
     assert "mcp_relay" in kinds
 

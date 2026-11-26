@@ -1,4 +1,4 @@
-"""PluginRegistry 测试。"""
+"""PluginRegistry tests."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def test_register_adds_to_desk_registered_ids() -> None:
 def test_register_duplicate_same_version_idempotent() -> None:
     registry = PluginRegistry()
     registry.register(_make_manifest("p1"))
-    registry.register(_make_manifest("p1"))  # 相同版本幂等
+    registry.register(_make_manifest("p1"))  # same version is idempotent
 
 
 def test_register_duplicate_different_version_raises() -> None:
@@ -55,7 +55,7 @@ def test_register_duplicate_different_version_raises() -> None:
         description="conflict",
         entry_point=lambda d, p: None,
     )
-    with pytest.raises(ValueError, match="版本冲突"):
+    with pytest.raises(ValueError, match="version conflict"):
         registry.register(m2)
 
 
@@ -69,7 +69,7 @@ def test_unregister_removes() -> None:
 
 def test_unregister_unknown_noop() -> None:
     registry = PluginRegistry()
-    registry.unregister("unknown")  # 不应抛异常
+    registry.unregister("unknown")  # must not raise
 
 
 def test_get_unknown_returns_none() -> None:

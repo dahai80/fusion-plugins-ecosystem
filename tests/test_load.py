@@ -1,12 +1,14 @@
-"""负载与并发安全回归测试（企业级压测，步骤 3）。
+"""Load and concurrency-safety regression tests (enterprise-grade load, step 3).
 
-不依赖外部推理引擎，纯进程内验证关键路径在并发压力下的正确性：
-- 生命周期并发 execute（asyncio.Semaphore 并发门不丢/不超额）
-- 指标注册表线程安全（多线程 inc/dec 不竞态、render 一致）
-- PROCESS 沙箱 spawn 风暴（并发 spawn→execute→shutdown 不泄漏）
-- token-meter 压力（高频 record 不丢/节流落盘不崩）
+No external inference engine required; verifies correctness of critical paths
+under concurrent pressure purely in-process:
+- lifecycle concurrent execute (asyncio.Semaphore gate drops/over-admits nothing)
+- metrics registry thread safety (multi-thread inc/dec without races, consistent render)
+- PROCESS sandbox spawn storm (concurrent spawn -> execute -> shutdown without leaks)
+- token-meter pressure (high-frequency record without loss, throttled flush without crash)
 
-确定性、可重复、纳入 CI 回归（保证生产压测前路径已绿）。
+Deterministic, repeatable, part of CI regression (guarantees green paths before
+production load testing).
 """
 
 from __future__ import annotations
@@ -27,7 +29,8 @@ from fusion_plugins_ecosystem.registry import (
 from fusion_plugins_ecosystem.schema import SandboxMode
 from fusion_plugins_ecosystem.token_meter import TokenKind, TokenMeter, TokenRecord
 
-# ── 工具：构建注册表 + 生命周期 ──
+
+# ── Helpers: build registry + lifecycle ──
 
 
 def _registry_with(plugin_id: str, entry_point) -> PluginRegistry:
@@ -48,11 +51,11 @@ def _registry_with(plugin_id: str, entry_point) -> PluginRegistry:
     return registry
 
 
-# ── A. 生命周期并发 execute ──
+# ── A. Lifecycle concurrent execute ──
 
 
 async def test_concurrent_execute_all_complete_no_loss() -> None:
-    """N 路并发 execute，全部返回，无丢失/无异常。"""
+    """N concurrent execute calls all return, no loss and no exceptions."""
     counter = {"n": 0}
 
     async def entry(_desk, _params):
@@ -78,7 +81,7 @@ async def test_concurrent_execute_all_complete_no_loss() -> None:
 
 
 async def test_concurrent_execute_respects_max_concurrent() -> None:
-    """max_concurrent 限流：峰值在途数不超过上限。"""
+    """max_concurrent throttling: peak in-flight count never exceeds the limit."""
     peak = {"in_flight": 0, "max": 0}
 
     async def entry(_desk, _params):
@@ -93,7 +96,7 @@ async def test_concurrent_execute_respects_max_concurrent() -> None:
     lifecycle.load("limited")
     await lifecycle.enable("limited")
 
-    # 默认 max_concurrent 通常较大；显式设小上限验证限流生效
+    # Default max_concurrent is usually large; set a small limit explicitly to verify throttling
     lifecycle._max_concurrent = 4
     lifecycle._concurrency_sem = asyncio.Semaphore(4)
 
@@ -102,11 +105,11 @@ async def test_concurrent_execute_respects_max_concurrent() -> None:
     assert peak["max"] >= 2
 
 
-# ── B. 指标注册表线程安全 ──
+# ── B. Metrics registry thread safety ──
 
 
 def test_counter_concurrent_inc_no_race() -> None:
-    """多线程并发 inc 同一 counter，total = 线程数 × 每线程次数。"""
+    """Multi-thread concurrent inc on one counter: total = threads x per-thread count."""
     reg = MetricsRegistry()
     counter = reg.counter("hits", "test counter")
     threads = 8
@@ -126,7 +129,7 @@ def test_counter_concurrent_inc_no_race() -> None:
 
 
 def test_gauge_concurrent_set_inc_dec_no_corruption() -> None:
-    """多线程并发 set/inc/dec gauge，无异常，最终值在合法范围。"""
+    """Multi-thread concurrent set/inc/dec on a gauge: no exceptions, final value within legal range."""
     reg = MetricsRegistry()
     gauge = reg.gauge("level", "test gauge")
     stop = threading.Event()
@@ -155,13 +158,13 @@ def test_gauge_concurrent_set_inc_dec_no_corruption() -> None:
     for t in ts:
         t.join()
 
-    # 渲染不抛异常即证明内部锁未损坏
+    # Render not raising proves the internal lock is intact
     out = reg.render()
     assert "level" in out
 
 
 def test_render_concurrent_with_writes_consistent() -> None:
-    """并发写 + 并发 render，输出始终可解析、含预期指标。"""
+    """Concurrent writes + concurrent render: output is always parseable and contains expected metrics."""
     reg = MetricsRegistry()
     c = reg.counter("c", "c")
     g = reg.gauge("g", "g")
@@ -190,16 +193,16 @@ def test_render_concurrent_with_writes_consistent() -> None:
         t.join()
 
 
-# ── C. token-meter 压力 ──
+# ── C. token-meter pressure ──
 
 
 def test_token_meter_high_freq_record_no_loss_no_crash() -> None:
-    """高频 record（超过 save_batch 阈值），不丢记录、不崩。"""
+    """High-frequency record (beyond the save_batch threshold) neither drops records nor crashes."""
     desk = DeskRuntime()
     meter = TokenMeter(desk, max_records=5000, persist_path=None)
     n = 1000
 
-    for _i in range(n):
+    for i in range(n):
         meter.record(
             TokenRecord(
                 plugin_id="hp",
@@ -213,7 +216,7 @@ def test_token_meter_high_freq_record_no_loss_no_crash() -> None:
 
 
 def test_token_meter_concurrent_record_thread_safe() -> None:
-    """多线程并发 record，总数 = 线程数 × 每线程数（无竞态丢失）。"""
+    """Multi-thread concurrent record: total = threads x per-thread count (no race-induced loss)."""
     desk = DeskRuntime()
     meter = TokenMeter(desk, max_records=50000, persist_path=None)
     threads = 8
@@ -239,7 +242,7 @@ def test_token_meter_concurrent_record_thread_safe() -> None:
     assert len(meter.all_records()) == threads * per_thread
 
 
-# ── D. PROCESS 沙箱 spawn 风暴 ──
+# ── D. PROCESS sandbox spawn storm ──
 
 
 async def _process_entry(_desk, _params):
@@ -247,7 +250,7 @@ async def _process_entry(_desk, _params):
 
 
 async def test_sandbox_spawn_storm_no_leak() -> None:
-    """PROCESS 沙箱：并发 spawn→execute→shutdown，无进程泄漏、无异常。"""
+    """PROCESS sandbox: concurrent spawn -> execute -> shutdown, no process leaks, no exceptions."""
     registry = PluginRegistry(desk=DeskRuntime())
     registry.register(
         PluginManifest(
@@ -266,12 +269,13 @@ async def test_sandbox_spawn_storm_no_leak() -> None:
     lifecycle.load("storm")
     await lifecycle.enable("storm")
 
-    # 串行 spawn→execute 多轮（PROCESS 同 plugin_id 单实例，并发 spawn
-    # 复用同进程；这里验证风暴量级下不泄漏、状态机正确）
+    # Sequential spawn -> execute rounds (PROCESS keeps a single instance per plugin_id;
+    # concurrent spawns reuse the same process; this verifies no leaks and correct
+    # state machine behavior at storm scale)
     for _ in range(10):
         result = await lifecycle.execute("storm", {})
         assert result == {"sandbox": "ok"}
 
-    # 收尾：shutdown 全部子进程
+    # Teardown: shut down all child processes
     await lifecycle._sandbox.shutdown_all()
     assert len(lifecycle._sandbox._processes) == 0

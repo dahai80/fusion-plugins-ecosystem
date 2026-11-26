@@ -1,7 +1,8 @@
-"""shell 模块注册测试 — issue #30 验收补充。
+"""Shell module registration tests — issue #30 acceptance follow-up.
 
-覆盖: manifest 加载/覆盖、fm- 密钥持久化、注册循环 (签发/心跳/404/401 重注册)、
-console /api/* 鉴权 (静态 env key + 签发 key 双活)、/health 端点。
+Covers: manifest load/override, fm- key persistence, registration loop
+(issue/heartbeat/404/401 re-register), console /api/* auth (static env key +
+issued key dual-active), and the /health endpoint.
 """
 
 import asyncio
@@ -32,14 +33,14 @@ def _clean_env(monkeypatch):
     for var in (
         "FUSION_ADMIN_KEY",
         "FUSION_GATEWAY_BASE_URL",
-        "FUSION_GATEWAY_URL",  # gateway_base_url legacy 别名，防宿主环境泄漏
+        "FUSION_GATEWAY_URL",  # gateway_base_url legacy alias, guards against host-env leakage
         "FUSION_PROFILE",
         "FUSION_SHELL_MANIFEST",
         "FUSION_PLUGINS_CONSOLE_UPSTREAM",
         "FUSION_PLUGINS_CONSOLE_API_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
-    # fusion-core warn-once 集合是模块级状态，逐用例复位保证 caplog 可断言
+    # fusion-core warn-once set is module-level state; reset per test so caplog can assert
     import fusion_core.config as _fc_config
 
     _fc_config._ANON_WARNED.clear()
@@ -105,7 +106,7 @@ class TestIssuedKeyExtraction:
             assert _extract_issued_key({field: "fm-1"}) == "fm-1"
 
     def test_gateway_writeShellKeyResponse_shape(self):
-        # 真实网关签发响应 (#261 K1 writeShellKeyResponse)
+        # Real gateway issue response (#261 K1 writeShellKeyResponse)
         assert (
             _extract_issued_key({"code": "ok", "key_id": "k1", "raw_key": "fm-x"})
             == "fm-x"
@@ -123,14 +124,15 @@ class TestManifestLoad:
     def test_default_manifest_shape(self):
         manifest = shell_registry.load_manifest()
         assert manifest["id"] == "fusion-plugins-ecosystem"
-        # issue #40 / DD-2: 菜单形态 = 一级 能力中心 hub
+        # issue #40 / DD-2: menu shape = top-level capability hub
+        # i18n: user-facing (web/manifest.json)
         assert manifest["title"] == "能力中心"
         assert manifest["title_en"] == "Capabilities"
         assert manifest["entry"] == "/shell/fusion-plugins-ecosystem/"
         assert manifest["upstream"] == "http://127.0.0.1:8795"
         assert manifest["devices"]
         assert "api_key" not in manifest
-        # issue #60: MT-1 taxonomy — 能力中心 belongs in 能力与治理 governance
+        # issue #60: MT-1 taxonomy — the capability hub belongs in governance
         assert manifest["category"] == "governance"
         assert manifest["sort"] == 21
 
@@ -151,8 +153,8 @@ class TestManifestLoad:
 
 
 class TestRegistrationGating:
-    # issue #38：门控迁 fusion_core.config.admin_key — dev 缺失=空串+告警，
-    # prod 缺失=RuntimeError fail-fast。
+    # issue #38: gating moved to fusion_core.config.admin_key — dev missing = empty
+    # string + warning, prod missing = RuntimeError fail-fast.
 
     def test_disabled_without_env(self, caplog):
         with caplog.at_level("WARNING"):
@@ -174,7 +176,7 @@ class TestRegistrationGating:
         assert shell_registry.shell_registration_enabled() is True
 
     def test_gateway_url_single_point(self, monkeypatch):
-        # 网关地址走 gateway_base_url：显式 env 优先，缺省回落本机 11432
+        # Gateway address via gateway_base_url: explicit env wins, default falls back to local 11432
         from fusion_core.config import gateway_base_url
 
         assert gateway_base_url() == "http://127.0.0.1:11432"
@@ -238,7 +240,7 @@ class TestRegistryLoop:
             [_response(200, {}), _response(401), _response(200, {}), _response(200, {})]
         )
         await _drive(client, {"id": "fusion-plugins-ecosystem"})
-        # 重注册走 admin key
+        # Re-registration uses the admin key
         assert client.calls[2]["headers"]["Authorization"] == "Bearer admin-secret"
 
     async def test_register_failure_warns_and_retries(self, monkeypatch):

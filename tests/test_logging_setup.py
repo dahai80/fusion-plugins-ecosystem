@@ -1,4 +1,4 @@
-"""结构化日志 + correlation_id 测试（P3-6a）。"""
+"""Structured logging + correlation_id tests (P3-6a)."""
 
 from __future__ import annotations
 

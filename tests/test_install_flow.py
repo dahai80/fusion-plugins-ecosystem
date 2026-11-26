@@ -1,8 +1,9 @@
-"""安装/授权/更新/卸载流测试（issue #42 PC-2）。
+"""Install/authz/update/uninstall flow tests (issue #42 PC-2).
 
-覆盖: bundle 一键安装（逐项状态）、逐项停用、连接器 OAuth（scope 授权 +
-敏感 scope per_use 策略）、changelog 先行更新 + opt-in、卸载影响面
-（被使用于反向查找）、HTTP 端点、市场 bundle kind 校验。
+Covers: bundle one-click install (per-item states), per-item enable/disable,
+connector OAuth (scope grant + sensitive-scope per_use policy), changelog-first
+update + opt-in, uninstall blast radius (used-by reverse lookup), HTTP endpoints,
+and marketplace bundle kind validation.
 """
 
 import json
@@ -64,6 +65,7 @@ def _write_index(tmp_path, packages):
     )
 
 
+# i18n: user-facing
 BUNDLE = {
     "id": "finance-kit",
     "kind": "bundle",
@@ -112,7 +114,7 @@ class TestInstallBundle:
         out = await populated.install_bundle("finance-kit")
         assert out["installed"] is True
         states = {i["ref"]: i["state"] for i in out["items"]}
-        # skills 启用、子代理注册启用、连接器落盘置 pending_auth
+        # skills enabled, subagent registered+enabled, connector persisted as pending_auth
         assert states["excel-skill"] == "enabled"
         assert states["bank-recon-agent"] == "enabled"
         assert states["bank-api"] == "pending_auth"
@@ -129,11 +131,11 @@ class TestInstallBundle:
             await populated.install_bundle("no-such-bundle")
 
     def test_bundle_listed(self, populated):
-        populated._market_entry("finance-kit")  # 索引可见
+        populated._market_entry("finance-kit")  # visible in the index
         assert populated.list_bundles()["bundles"] == []
 
     async def test_single_pack_entry_synthesizes_bundle(self, console, tmp_path):
-        # 内置 connector_pack 条目 → 单条目 bundle（推荐位一键安装路径）
+        # Builtin connector_pack entry -> single-item bundle (recommended-slot one-click install path)
         out = await console.install_bundle("feishu")
         assert out["installed"] is True
         item = out["items"][0]
@@ -155,6 +157,7 @@ class TestPerItemTick:
         await populated.install_bundle("finance-kit")
         out = await populated.tick_bundle_item("finance-kit", "bank-api", True)
         assert out["ticked"] is False
+        # i18n: user-facing (source keeps this error in Chinese)
         assert "待授权" in out["error"]
 
     async def test_unknown_bundle_or_ref(self, populated):
@@ -168,23 +171,23 @@ class TestOAuth:
     async def test_oauth_flow(self, populated):
         await populated.install_bundle("finance-kit")
         scopes = populated.oauth_scopes("bank-api")
-        # 读 scope 非敏感 + 写 scope 敏感
+        # Read scopes non-sensitive + write scopes sensitive
         by_id = {s["id"]: s for s in scopes["scopes"]}
         assert by_id["bank.flow.fetch"]["sensitive"] is False
         assert by_id["bank.order.push"]["sensitive"] is True
         assert scopes["credential_fields"] == ["api_key"]
-        # 只授权一个读 scope
+        # Grant only one read scope
         out = await populated.oauth_complete(
             "bank-api", ["bank.flow.fetch"], {"api_key": "k1"}
         )
         assert out["completed"] is True
         assert out["granted_scopes"] == ["bank.flow.fetch"]
         assert out["sensitive_scopes_per_use"] == ["bank.order.push"]
-        # 未授权读通道不桥接，授权通道暴露
+        # Un-granted read channels not bridged, granted channel exposed
         assert populated.registry.get("connector__bank-api__bank.flow.fetch")
         assert populated.registry.get("connector__bank-api__bank.account.fetch") is None
         assert populated.registry.get("connector__bank-api__bank.order.push") is None
-        # 敏感 scope 策略可查询（cowork 审批对接点）
+        # Sensitive scope policy queryable (cowork approval integration point)
         policy = populated.scope_policy("bank-api")
         assert policy["per_use_scopes"] == ["bank.order.push"]
 
@@ -192,6 +195,7 @@ class TestOAuth:
         await populated.install_bundle("finance-kit")
         out = await populated.oauth_complete("bank-api", ["nope"], {"api_key": "k"})
         assert out["completed"] is False
+        # i18n: user-facing (source keeps this error in Chinese)
         assert "未知读 scope" in out["error"]
 
     async def test_oauth_requires_credentials(self, populated):
@@ -214,6 +218,7 @@ class TestUpdate:
         await populated.install_bundle("finance-kit")
         v2 = json.loads(json.dumps(BUNDLE))
         v2["version"] = "1.1.0"
+        # i18n: user-facing
         v2["description"] = "新增发票 Skill，修复流水读取"
         v2["items"].append({"type": "skill", "ref": "invoice-skill"})
         _write_index(tmp_path, [v2])
@@ -222,7 +227,7 @@ class TestUpdate:
         assert pv["update_available"] is True
         assert pv["changelog"] == "新增发票 Skill，修复流水读取"
         assert pv["new_items"] == [{"type": "skill", "ref": "invoice-skill"}]
-        # 未应用前 invoice-skill 未启用
+        # invoice-skill not enabled before apply
         assert populated._plugin_enabled("invoice-skill") is False
 
     async def test_update_apply_opt_in_only(self, populated, tmp_path):
@@ -237,10 +242,10 @@ class TestUpdate:
         out = await populated.bundle_update_apply("finance-kit", ["invoice-skill"])
         assert out["updated"] is True
         assert out["version"] == "1.1.0"
-        # opt-in 项启用，未勾选项不自动开
+        # Opt-in items enabled; unticked items not auto-enabled
         assert populated._plugin_enabled("invoice-skill") is True
         assert populated._plugin_enabled("tax-agent") is False
-        # 版本已前移，二次 preview 无更新
+        # Version already bumped; a second preview reports no update
         assert (
             populated.bundle_update_preview("finance-kit")["update_available"] is False
         )
@@ -271,9 +276,9 @@ class _FakeNodeRegistry:
 class TestUninstall:
     async def test_blast_radius_reverse_lookup(self, populated):
         await populated.install_bundle("finance-kit")
-        # excel-skill 被一个 cowork 节点引用
+        # excel-skill referenced by one cowork node
         populated.desk.node_registry = _FakeNodeRegistry(
-            [_FakeNode("月度对账", "使用 node.excel-skill 读取表格")]
+            [_FakeNode("月度对账", "使用 node.excel-skill 读取表格")]  # i18n: user-facing
         )
         pv = populated.uninstall_preview("finance-kit")
         assert pv["safe_to_remove"] is False

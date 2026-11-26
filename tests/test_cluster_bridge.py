@@ -1,13 +1,14 @@
-"""集群分布式状态桥接测试（企业级多节点，步骤 4）。
+"""Cluster distributed-state bridge tests (enterprise multi-node, step 4).
 
-验证：
-- 桥接函数经真实 DistributedStateStore 同步状态到共享存储
-- 跨节点可见性（节点 A enable → 节点 B is_plugin_enabled_anywhere=True）
-- failover：失效节点心跳超时 → cluster_evict_stale_nodes 移除并清理其状态/vRAM
-- lifecycle.enable/disable 经桥接同步集群状态
-- 集群未启用时全 no-op（单机降级）
+Verifies:
+- bridge functions sync state to shared storage via a real DistributedStateStore
+- cross-node visibility (node A enable -> node B is_plugin_enabled_anywhere=True)
+- failover: stale node heartbeat timeout -> cluster_evict_stale_nodes removes it
+  and cleans up its state/vRAM
+- lifecycle.enable/disable sync cluster state via the bridge
+- cluster disabled -> everything is a no-op (single-machine degradation)
 
-直接用真实 DistributedStateStore + 共享临时状态文件，不经 mock。
+Uses a real DistributedStateStore + shared temp state file directly, no mocks.
 """
 
 from __future__ import annotations
@@ -16,8 +17,9 @@ import time
 
 import pytest
 
-# fusion-cowork 仅在本地 monorepo venv 可用；CI 单仓环境未安装。
-# 缺失时整个多节点桥接测试跳过（与 cluster_bridge 的 no-op 降级语义一致）。
+# fusion-cowork is only available in the local monorepo venv; not installed in
+# single-repo CI environments. When missing, skip the whole multi-node bridge
+# suite (consistent with cluster_bridge's no-op degradation semantics).
 pytest.importorskip("fusion_cowork")
 from fusion_cowork.distributed_state import (  # noqa: E402
     DistributedStateStore,
@@ -27,11 +29,11 @@ from fusion_cowork.distributed_state import (  # noqa: E402
 
 @pytest.fixture
 def shared_state(tmp_path, monkeypatch):
-    """共享状态文件 + 集群启用环境。"""
+    """Shared state file + cluster-enabled environment."""
     state_path = str(tmp_path / "cluster-state.json")
     monkeypatch.setenv("FUSION_CLUSTER_ENABLED", "1")
     monkeypatch.setenv("FUSION_CLUSTER_STATE_PATH", state_path)
-    # 每个测试用独立状态文件，重置单例缓存
+    # Per-test isolated state file; reset the singleton cache
     reset_cluster_state_store()
     yield state_path
     reset_cluster_state_store()
@@ -43,18 +45,18 @@ def _store(node_id: str, state_path: str, heartbeat_timeout: float = 30.0):
     )
 
 
-# ── 跨节点可见性 ──
+# ── Cross-node visibility ──
 
 
 def test_enable_on_node_a_visible_on_node_b(shared_state):
-    """节点 A 记录插件启用 → 节点 B 查询 is_plugin_enabled_anywhere=True。"""
+    """Node A records a plugin enable -> node B sees is_plugin_enabled_anywhere=True."""
     store_a = _store("node-a", shared_state)
     store_b = _store("node-b", shared_state)
 
-    # 节点 A 启用插件
+    # Node A enables the plugin
     store_a.record_plugin_state("mlx_chat", installed=True, enabled=True)
 
-    # 节点 B 视角：集群内任意节点已启用
+    # From node B's perspective: enabled on any node in the cluster
     store_b.invalidate_cache()
     assert store_b.is_plugin_enabled_anywhere("mlx_chat") is True
     states = store_b.plugin_state_across_cluster("mlx_chat")
@@ -64,7 +66,7 @@ def test_enable_on_node_a_visible_on_node_b(shared_state):
 
 
 def test_disable_on_node_a_reflects_on_node_b(shared_state):
-    """节点 A 禁用插件 → 节点 B is_plugin_enabled_anywhere=False。"""
+    """Node A disables the plugin -> node B sees is_plugin_enabled_anywhere=False."""
     store_a = _store("node-a", shared_state)
     store_b = _store("node-b", shared_state)
 
@@ -78,7 +80,7 @@ def test_disable_on_node_a_reflects_on_node_b(shared_state):
 
 
 def test_vram_allocation_visible_cluster_wide(shared_state):
-    """节点 A 分配 vRAM → 集群总量统计含该分配。"""
+    """Node A allocates vRAM -> the cluster total includes that allocation."""
     store_a = _store("node-a", shared_state)
     store_b = _store("node-b", shared_state)
 
@@ -97,24 +99,25 @@ def test_vram_allocation_visible_cluster_wide(shared_state):
 
 
 def test_evict_stale_node_cleans_state_and_vram(shared_state):
-    """失效节点心跳超时 → evict 移除并清理其插件状态与 vRAM。"""
-    # 短超时便于构造 stale
+    """Stale node heartbeat timeout -> evict removes it and cleans up its plugin state and vRAM."""
+    # Short timeout to make staleness easy to construct
     store_a = _store("node-a", shared_state, heartbeat_timeout=0.3)
     store_b = _store("node-b", shared_state, heartbeat_timeout=0.3)
 
-    # 节点 A 心跳 + 启用插件 + 分配 vRAM
+    # Node A heartbeats + enables a plugin + allocates vRAM
     store_a.heartbeat(host="10.0.0.1", port=8765, vram_total_mb=8192, vram_used_mb=1024)
     store_a.record_plugin_state("failover_p", installed=True, enabled=True)
     store_a.record_vram_allocation("failover_p", 1024)
 
-    # 节点 A 视角下集群含自己 + 节点 B 需心跳才在列表
+    # From node A's perspective the cluster contains itself; node B only
+    # appears in the list after heartbeating
     store_b.invalidate_cache()
     assert store_b.is_plugin_enabled_anywhere("failover_p") is True
 
-    # 等待节点 A 心跳超时
+    # Wait for node A's heartbeat to time out
     time.sleep(0.4)
 
-    # 节点 B 发起 failover：移除失效的 node-a
+    # Node B initiates failover: remove the stale node-a
     evicted = []
     now = time.time()
     store_b.invalidate_cache()
@@ -126,37 +129,37 @@ def test_evict_stale_node_cleans_state_and_vram(shared_state):
             evicted.append(node.node_id)
 
     assert "node-a" in evicted
-    # 清理后 node-a 的插件状态、vRAM 已移除
+    # After cleanup, node-a's plugin state and vRAM are removed
     store_b.invalidate_cache()
     assert store_b.is_plugin_enabled_anywhere("failover_p") is False
     assert store_b.total_vram_allocated_mb() == 0
 
 
 def test_heartbeat_keeps_node_alive(shared_state):
-    """活跃心跳节点不被 evict。"""
+    """A node with active heartbeats is not evicted."""
     store_a = _store("node-a", shared_state, heartbeat_timeout=5.0)
     store_b = _store("node-b", shared_state, heartbeat_timeout=5.0)
 
     store_a.heartbeat(host="10.0.0.1", port=8765)
     store_b.heartbeat(host="10.0.0.2", port=8766)
 
-    # 节点 B 视角的活跃 peer 应含 node-a
+    # From node B's perspective, live peers should include node-a
     store_b.invalidate_cache()
     peers = store_b.get_peer_nodes()
     assert any(p.node_id == "node-a" for p in peers)
 
 
-# ── 桥接层（cluster_bridge）经单例同步 ──
+# ── Bridge layer (cluster_bridge) syncing via the singleton ──
 
 
 def test_cluster_bridge_noop_when_disabled(monkeypatch):
-    """集群未启用时桥接函数全 no-op、查询返回空/False。"""
+    """With the cluster disabled, bridge functions are all no-ops and queries return empty/False."""
     monkeypatch.delenv("FUSION_CLUSTER_ENABLED", raising=False)
     reset_cluster_state_store()
 
     from fusion_plugins_ecosystem import cluster_bridge
 
-    # 不抛异常即证明 no-op 降级
+    # Not raising proves the no-op degradation
     cluster_bridge.record_plugin_state("p", installed=True, enabled=True)
     cluster_bridge.record_vram("p", 100)
     cluster_bridge.release_vram("p")
@@ -168,7 +171,7 @@ def test_cluster_bridge_noop_when_disabled(monkeypatch):
 
 
 def test_cluster_bridge_syncs_via_singleton(shared_state, monkeypatch):
-    """桥接经单例 store 同步：node-a 桥接记录 → 同节点 store 查询可见。"""
+    """Bridge syncs via the singleton store: node-a bridge record -> visible to a same-node store query."""
     monkeypatch.setenv("FUSION_CLUSTER_NODE_ID", "node-a")
     reset_cluster_state_store()
 
@@ -181,11 +184,11 @@ def test_cluster_bridge_syncs_via_singleton(shared_state, monkeypatch):
     assert cluster_bridge.cluster_node_id() == "node-a"
 
 
-# ── lifecycle 经桥接同步集群状态 ──
+# ── lifecycle syncing cluster state via the bridge ──
 
 
 async def test_lifecycle_enable_syncs_cluster_state(shared_state, monkeypatch):
-    """lifecycle.enable → 集群共享存储记录该插件启用（跨节点可见）。"""
+    """lifecycle.enable -> cluster shared storage records the plugin as enabled (cross-node visible)."""
     monkeypatch.setenv("FUSION_CLUSTER_NODE_ID", "node-lc")
     reset_cluster_state_store()
 
@@ -216,7 +219,7 @@ async def test_lifecycle_enable_syncs_cluster_state(shared_state, monkeypatch):
     lifecycle.load("lc_plugin")
     await lifecycle.enable("lc_plugin")
 
-    # 节点 B 视角（新 store，同状态文件）
+    # From node B's perspective (new store, same state file)
     store_b = _store("node-b", shared_state)
     store_b.invalidate_cache()
     assert store_b.is_plugin_enabled_anywhere("lc_plugin") is True
@@ -226,11 +229,11 @@ async def test_lifecycle_enable_syncs_cluster_state(shared_state, monkeypatch):
     assert store_b.is_plugin_enabled_anywhere("lc_plugin") is False
 
 
-# ── DeskRuntime 桥接方法 ──
+# ── DeskRuntime bridge methods ──
 
 
 def test_desk_cluster_query_methods(shared_state, monkeypatch):
-    """DeskRuntime 暴露的集群查询方法经桥接生效。"""
+    """DeskRuntime's exposed cluster query methods take effect via the bridge."""
     monkeypatch.setenv("FUSION_CLUSTER_NODE_ID", "node-desk")
     reset_cluster_state_store()
 
@@ -239,7 +242,7 @@ def test_desk_cluster_query_methods(shared_state, monkeypatch):
     desk = DeskRuntime()
     assert desk.cluster_node_id() == "node-desk"
 
-    # 经 lifecycle 之外的直接桥接写入
+    # Direct bridge write outside the lifecycle path
     from fusion_plugins_ecosystem import cluster_bridge
 
     cluster_bridge.record_plugin_state("desk_p", installed=True, enabled=True)

@@ -1,4 +1,4 @@
-"""marketplace 测试：内置目录/索引加载/安装卸载/安全约束。"""
+"""Marketplace tests: builtin catalog / index loading / install-uninstall / security constraints."""
 
 from __future__ import annotations
 
@@ -50,6 +50,7 @@ def test_load_index_local_file_merges_and_warns(tmp_path, setup) -> None:
                     {
                         "id": "feishu",
                         "kind": "connector_pack",
+                        # i18n: user-facing
                         "name": "飞书覆盖版",
                         "version": "9.9.9",
                         "pack": {
@@ -77,7 +78,7 @@ def test_load_index_local_file_merges_and_warns(tmp_path, setup) -> None:
 def test_load_index_http_source_rejected(setup) -> None:
     _, market = setup
     entries, warnings = market.load_index("http://evil.example.com/index.json")
-    assert len(entries) == 6  # 内置目录兜底
+    assert len(entries) == 6  # builtin catalog fallback
     assert any("HTTPS" in w for w in warnings)
 
 
@@ -85,7 +86,7 @@ def test_load_index_unreachable_source_warns(setup) -> None:
     _, market = setup
     entries, warnings = market.load_index("/nonexistent/index.json")
     assert len(entries) == 6
-    assert warnings and "索引加载失败" in warnings[0]
+    assert warnings and "index load failed" in warnings[0]
 
 
 def test_install_builtin_connector_pack(setup) -> None:
@@ -204,7 +205,7 @@ def test_list_installed(setup) -> None:
 
 
 def test_marketplace_index_config_wiring() -> None:
-    # 配置面板字段存在且可序列化回环
+    # Config panel field exists and survives a serialization round-trip
     cfg = fpe.EcosystemConfig(
         connector_marketplace_index="https://example.com/index.json",
         connector_persist_path="/tmp/c.json",

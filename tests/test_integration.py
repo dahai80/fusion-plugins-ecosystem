@@ -1,4 +1,4 @@
-"""集成测试 — 端到端流程验证。"""
+"""Integration tests — end-to-end flow validation."""
 
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ def _compressor_manifest() -> PluginManifest:
         name="Caveman Compressor",
         version="1.0.0",
         category=PluginCategory.CONTEXT_COMPRESS,
+        # i18n: user-facing
         description="代码上下文压缩",
         capabilities=(
             PluginCapability.MCP_TOOL,
@@ -41,12 +42,14 @@ def _compressor_manifest() -> PluginManifest:
             PluginParam(
                 name="text",
                 type=PluginParamType.STRING,
+                # i18n: user-facing
                 description="输入文本",
                 required=True,
             ),
             PluginParam(
                 name="keep_comments",
                 type=PluginParamType.BOOL,
+                # i18n: user-facing
                 description="保留注释",
                 default=False,
             ),
@@ -61,6 +64,7 @@ def _agent_manifest() -> PluginManifest:
         name="Code Reviewer",
         version="0.1.0",
         category=PluginCategory.CODING_PLAN,
+        # i18n: user-facing
         description="自动代码审查",
         capabilities=(
             PluginCapability.MCP_TOOL,
@@ -71,6 +75,7 @@ def _agent_manifest() -> PluginManifest:
             PluginParam(
                 name="path",
                 type=PluginParamType.STRING,
+                # i18n: user-facing
                 description="文件路径",
                 required=True,
             ),
@@ -85,6 +90,7 @@ def _inference_manifest() -> PluginManifest:
         name="MLX Inference",
         version="0.1.0",
         category=PluginCategory.MLX_INFERENCE,
+        # i18n: user-facing
         description="本地MLX推理",
         capabilities=(
             PluginCapability.MCP_TOOL,
@@ -96,7 +102,7 @@ def _inference_manifest() -> PluginManifest:
     )
 
 
-# ── Flow 1: 注册 → MCP Tools 导出 → JSON-RPC 调用 ──
+# ── Flow 1: register -> MCP tools export -> JSON-RPC call ──
 
 
 async def test_flow_register_to_mcp_jsonrpc() -> None:
@@ -135,7 +141,7 @@ async def test_flow_register_to_mcp_jsonrpc() -> None:
     assert resp["result"] == {}
 
 
-# ── Flow 2: 注册 → Skill/Agent 适配 → Bundle 生成 ──
+# ── Flow 2: register -> Skill/Agent adaptation -> bundle generation ──
 
 
 def test_flow_register_to_bundle_generation() -> None:
@@ -163,7 +169,7 @@ def test_flow_register_to_bundle_generation() -> None:
     assert len(bundle.agents) == 0
 
 
-# ── Flow 3: 注册 → ClaudeGateway 全链路 ──
+# ── Flow 3: register -> ClaudeGateway full chain ──
 
 
 def test_flow_claude_gateway_full() -> None:
@@ -189,7 +195,7 @@ def test_flow_claude_gateway_full() -> None:
     assert any("caveman" in mid for mid in mounted_ids)
 
 
-# ── Flow 4: 生命周期状态机 ──
+# ── Flow 4: lifecycle state machine ──
 
 
 async def test_flow_lifecycle_state_machine() -> None:
@@ -212,7 +218,7 @@ async def test_flow_lifecycle_state_machine() -> None:
     assert "caveman_compress" not in lifecycle._instances
 
 
-# ── Flow 5: Token 计量 + 持久化 ──
+# ── Flow 5: token metering + persistence ──
 
 
 def test_flow_token_meter_persist_roundtrip() -> None:
@@ -235,7 +241,7 @@ def test_flow_token_meter_persist_roundtrip() -> None:
                 output_tokens=100,
             )
         )
-        # R4：节流落盘，flush 后才落盘供 meter2 读取
+        # R4: throttled persistence; only on flush does it hit disk for meter2 to read
         meter.flush()
 
         meter2 = TokenMeter(persist_path=path)
@@ -248,7 +254,7 @@ def test_flow_token_meter_persist_roundtrip() -> None:
         assert records2[0].output_tokens == 100
 
 
-# ── Flow 6: MCP Exporter + Gateway 联动 ──
+# ── Flow 6: MCP exporter + gateway interplay ──
 
 
 def test_flow_mcp_exporter_gateway_consistency() -> None:
@@ -268,7 +274,7 @@ def test_flow_mcp_exporter_gateway_consistency() -> None:
     assert exporter_ids == gateway_ids
 
 
-# ── Flow 7: Config 变更影响 Gateway 行为 ──
+# ── Flow 7: config changes affect gateway behavior ──
 
 
 def test_flow_config_disables_mcp() -> None:
@@ -284,7 +290,7 @@ def test_flow_config_disables_mcp() -> None:
     assert len(gateway_off.list_mcp_tools()) == 0
 
 
-# ── Flow 8: SkillAdapter + AgentAdapter 独立导出 ──
+# ── Flow 8: SkillAdapter + AgentAdapter standalone export ──
 
 
 def test_flow_adapters_export_all() -> None:
@@ -304,7 +310,7 @@ def test_flow_adapters_export_all() -> None:
     assert "code_reviewer" in agent_mds[0]
 
 
-# ── Flow 9: 多插件注册 + 按分类过滤 ──
+# ── Flow 9: multi-plugin registration + filter by category ──
 
 
 def test_flow_registry_category_filter() -> None:
@@ -322,7 +328,7 @@ def test_flow_registry_category_filter() -> None:
     assert inference[0].id == "mlx_infer"
 
 
-# ── Flow 10: MCP JSON-RPC 错误处理 ──
+# ── Flow 10: MCP JSON-RPC error handling ──
 
 
 async def test_flow_jsonrpc_method_not_found() -> None:
@@ -348,7 +354,7 @@ async def test_flow_jsonrpc_method_not_found() -> None:
     assert resp["error"]["code"] == -32601
 
 
-# ── Flow 11: Bundle 生成未知插件返回 None ──
+# ── Flow 11: bundle generation returns None for an unknown plugin ──
 
 
 def test_flow_bundle_unknown_plugin() -> None:
@@ -357,7 +363,7 @@ def test_flow_bundle_unknown_plugin() -> None:
     assert generator.generate("nonexistent") is None
 
 
-# ── Flow 12: Token 计量 prune + query ──
+# ── Flow 12: token metering prune + query ──
 
 
 def test_flow_token_meter_prune_and_query() -> None:

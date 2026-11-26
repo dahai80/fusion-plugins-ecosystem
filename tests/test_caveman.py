@@ -1,4 +1,4 @@
-"""Caveman 压缩插件测试。"""
+"""Caveman compression plugin tests."""
 
 from __future__ import annotations
 
@@ -118,13 +118,14 @@ def test_caveman_compress_with_desk_logs() -> None:
     call_args = desk_mock.log.call_args
     assert call_args[0][0] == "caveman_compress"
     assert call_args[0][1] == "INFO"
+    # i18n: user-facing (source keeps this log message in Chinese)
     assert "压缩完成" in call_args[0][2]
 
 
 def test_caveman_compress_ratio_calculation() -> None:
     text = "a" * 100
     result = caveman_compress(None, {"text": text})
-    # 100 个 a，压缩后还是 100 个 a
+    # 100 a's; after compression still 100 a's
     assert result["original_chars"] == 100
     assert result["compressed_chars"] == 100
     assert result["ratio"] == 1.0

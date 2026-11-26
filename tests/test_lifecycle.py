@@ -1,4 +1,4 @@
-"""插件生命周期管理器测试。"""
+"""Plugin lifecycle manager tests."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from fusion_plugins_ecosystem.registry import (
 from fusion_plugins_ecosystem.schema import SandboxMode
 
 
-# ── 测试用插件工厂 ──
+# ── Test plugin factory ──
 
 
 def _make_manifest(
@@ -38,7 +38,7 @@ def _make_manifest(
         name="Test Plugin",
         version="0.1.0",
         category=PluginCategory.CUSTOM,
-        description="测试插件",
+        description="test plugin",
         capabilities=[PluginCapability.CLAUDE_SKILL],
         entry_point=entry_point,
         vram_mb=vram_mb,
@@ -60,7 +60,7 @@ def _make_registry(*manifests: PluginManifest) -> PluginRegistry:
 def test_load_unknown_plugin_raises_keyerror() -> None:
     registry = _make_registry()
     lifecycle = PluginLifecycle(registry)
-    with pytest.raises(KeyError, match="未注册"):
+    with pytest.raises(KeyError, match="not registered"):
         lifecycle.load("nonexistent")
 
 
@@ -123,8 +123,9 @@ async def test_enable_vram_exceeds_budget_crashes() -> None:
     registry = PluginRegistry(desk=desk)
     registry.register(m)
     lifecycle = PluginLifecycle(registry)
-    # 显存超预算应抛 RuntimeError（P1-4），而非返回 CRASHED 实例误导调用方成功
-    with pytest.raises(RuntimeError, match="显存申请失败"):
+    # vRAM over budget must raise RuntimeError (P1-4), not return a CRASHED
+    # instance that misleads the caller into thinking it succeeded
+    with pytest.raises(RuntimeError, match="vRAM request failed"):
         await lifecycle.enable("test_plugin")
     inst = lifecycle._instances.get("test_plugin")
     assert inst is not None
@@ -147,7 +148,7 @@ async def test_disable_releases_vram() -> None:
 async def test_disable_unknown_plugin_noop() -> None:
     registry = _make_registry()
     lifecycle = PluginLifecycle(registry)
-    await lifecycle.disable("unknown")  # 不应抛异常
+    await lifecycle.disable("unknown")  # must not raise
 
 
 # ── unload ──
@@ -169,7 +170,7 @@ def test_unload_releases_vram() -> None:
 def test_unload_unknown_plugin_noop() -> None:
     registry = _make_registry()
     lifecycle = PluginLifecycle(registry)
-    lifecycle.unload("unknown")  # 不应抛异常
+    lifecycle.unload("unknown")  # must not raise
 
 
 # ── execute ──
@@ -188,7 +189,7 @@ async def test_execute_sync_entry_point() -> None:
 
 
 async def test_execute_idempotency_key_dedupes() -> None:
-    """P2-5：携带 _idempotency_key 的重复请求命中缓存，跳过重复执行。"""
+    """P2-5: duplicate requests carrying _idempotency_key hit the cache and skip repeated execution."""
     call_count = {"n": 0}
 
     def entry(_desk, params):
@@ -203,12 +204,12 @@ async def test_execute_idempotency_key_dedupes() -> None:
     r1 = await lifecycle.execute("test_plugin", {"text": "a", "_idempotency_key": "k1"})
     r2 = await lifecycle.execute("test_plugin", {"text": "b", "_idempotency_key": "k1"})
     assert r1 == {"seq": 1, "echo": "a"}
-    assert r2 == r1  # 命中缓存，不重复执行
-    assert call_count["n"] == 1  # 入口仅执行一次
+    assert r2 == r1  # cache hit, no repeated execution
+    assert call_count["n"] == 1  # entry point executed only once
 
 
 async def test_execute_idempotency_key_different_keys_independent() -> None:
-    """P2-5：不同幂等键各自独立执行。"""
+    """P2-5: different idempotency keys execute independently."""
     call_count = {"n": 0}
 
     def entry(_desk, params):
@@ -228,7 +229,7 @@ async def test_execute_idempotency_key_different_keys_independent() -> None:
 
 
 async def test_execute_idempotency_key_not_passed_to_plugin() -> None:
-    """P2-5：幂等键从 params 弹出，不透传给插件入口。"""
+    """P2-5: the idempotency key is popped from params, never passed through to the plugin entry point."""
     seen = {}
 
     def entry(_desk, params):
@@ -264,15 +265,15 @@ async def test_execute_not_enabled_raises() -> None:
     m = _make_manifest(entry_point=entry)
     registry = _make_registry(m)
     lifecycle = PluginLifecycle(registry)
-    lifecycle.load("test_plugin")  # 加载但未启用
-    with pytest.raises(RuntimeError, match="未启用"):
+    lifecycle.load("test_plugin")  # loaded but not enabled
+    with pytest.raises(RuntimeError, match="not enabled"):
         await lifecycle.execute("test_plugin", {})
 
 
 async def test_execute_unknown_plugin_raises() -> None:
     registry = _make_registry()
     lifecycle = PluginLifecycle(registry)
-    with pytest.raises(RuntimeError, match="未启用"):
+    with pytest.raises(RuntimeError, match="not enabled"):
         await lifecycle.execute("nonexistent", {})
 
 
@@ -288,7 +289,7 @@ async def test_execute_timeout_triggers_meltdown() -> None:
     with pytest.raises(asyncio.TimeoutError):
         await lifecycle.execute("test_plugin", {})
     inst = lifecycle._instances["test_plugin"]
-    # 超时熔断后，_maybe_restart 把 state 重置为 ENABLED，restart_count 增加
+    # After timeout meltdown, _maybe_restart resets state to ENABLED and bumps restart_count
     assert inst.restart_count >= 1
 
 
@@ -309,7 +310,7 @@ async def test_execute_crash_triggers_restart() -> None:
     with pytest.raises(RuntimeError, match="boom"):
         await lifecycle.execute("test_plugin", {})
     inst = lifecycle._instances["test_plugin"]
-    # 崩溃后 _maybe_restart 重启，restart_count 增加
+    # After crash, _maybe_restart restarts and bumps restart_count
     assert inst.restart_count >= 1
 
 
@@ -320,7 +321,7 @@ async def test_execute_crash_sets_crashed_state() -> None:
     m = _make_manifest(entry_point=entry)
     registry = _make_registry(m)
     lifecycle = PluginLifecycle(registry)
-    lifecycle.MAX_RESTART = 0  # 禁止重启，保留 CRASHED 状态
+    lifecycle.MAX_RESTART = 0  # disable restarts, keep CRASHED state
     await lifecycle.enable("test_plugin")
     with pytest.raises(ValueError, match="bad"):
         await lifecycle.execute("test_plugin", {})
@@ -342,7 +343,7 @@ async def test_maybe_restart_respects_max_restart() -> None:
     await lifecycle.enable("test_plugin")
     with pytest.raises(RuntimeError):
         await lifecycle.execute("test_plugin", {})
-    # 第二次崩溃，达到 MAX_RESTART，不再重启
+    # Second crash reaches MAX_RESTART, no further restart
     inst = lifecycle._instances["test_plugin"]
     inst.state = PluginState.ENABLED
     with pytest.raises(RuntimeError):
@@ -352,7 +353,7 @@ async def test_maybe_restart_respects_max_restart() -> None:
 async def test_maybe_restart_unknown_plugin_noop() -> None:
     registry = _make_registry()
     lifecycle = PluginLifecycle(registry)
-    await lifecycle._maybe_restart("unknown")  # 不应抛异常
+    await lifecycle._maybe_restart("unknown")  # must not raise
 
 
 # ── _invoke ──
@@ -362,10 +363,10 @@ async def test_invoke_uncallable_entry_raises() -> None:
     m = _make_manifest(entry_point=None)
     registry = _make_registry(m)
     lifecycle = PluginLifecycle(registry)
-    # 直接构造一个 instance 为非 callable 的 PluginInstance
+    # Directly build a PluginInstance whose instance is not callable
     inst = PluginInstance(manifest=m, state=PluginState.ENABLED, instance=12345)
     lifecycle._instances["test_plugin"] = inst
-    with pytest.raises(RuntimeError, match="不可调用"):
+    with pytest.raises(RuntimeError, match="not callable"):
         await lifecycle._invoke(inst, {})
 
 
@@ -376,15 +377,17 @@ async def test_watcher_detects_stale_heartbeat() -> None:
     def entry(_desk, _params):
         return {}
 
-    # watcher 仅对 PROCESS 沙箱生效（有独立心跳线程，能真实反映进程活性）；
-    # inline 执行期间无法发心跳，watcher 介入会误杀合法长任务（P2-3）。
+    # The watcher only applies to PROCESS sandbox plugins (they have a dedicated
+    # heartbeat thread that truly reflects process liveness); inline execution
+    # cannot send heartbeats, so watcher intervention would kill legitimate long
+    # tasks (P2-3).
     m = _make_manifest(entry_point=entry, sandbox_mode=SandboxMode.PROCESS)
     registry = _make_registry(m)
     lifecycle = PluginLifecycle(registry)
     lifecycle.HEARTBEAT_STALE = 0.05
     await lifecycle.enable("test_plugin")
     inst = lifecycle._instances["test_plugin"]
-    # 模拟卡死：将心跳时间回退
+    # Simulate a stall: rewind the heartbeat time
     inst.last_heartbeat = time.time() - 100
     await lifecycle.start_watcher()
     await asyncio.sleep(0.15)
@@ -405,7 +408,7 @@ async def test_start_watcher_idempotent() -> None:
 async def test_stop_watcher_when_none_noop() -> None:
     registry = _make_registry()
     lifecycle = PluginLifecycle(registry)
-    await lifecycle.stop_watcher()  # 不应抛异常
+    await lifecycle.stop_watcher()  # must not raise
 
 
 # ── PluginInstance dataclass ──
@@ -447,7 +450,7 @@ async def test_lifecycle_list_states() -> None:
     assert states[0]["state"] == "enabled"
 
 
-# ── 依赖自动加载 ──
+# ── Dependency auto-loading ──
 
 
 def test_load_auto_loads_dependencies() -> None:
@@ -496,7 +499,7 @@ def test_load_circular_dependency_raises() -> None:
     registry.register(a)
     registry.register(b)
     lifecycle = PluginLifecycle(registry)
-    with pytest.raises(ValueError, match="循环依赖"):
+    with pytest.raises(ValueError, match="circular dependency"):
         lifecycle.load("a")
 
 
@@ -514,7 +517,7 @@ def test_load_missing_dependency_raises() -> None:
     registry = PluginRegistry()
     registry.register(m)
     lifecycle = PluginLifecycle(registry)
-    with pytest.raises(KeyError, match="未注册"):
+    with pytest.raises(KeyError, match="not registered"):
         lifecycle.load("orphan")
 
 
@@ -567,7 +570,7 @@ async def test_per_plugin_timeout_overrides_global() -> None:
         await lifecycle.execute("quick_timeout", {})
 
 
-# ── 状态查询 API ──
+# ── State query API ──
 
 
 def test_get_state_returns_loaded() -> None:
@@ -606,7 +609,7 @@ def test_list_by_state_filters() -> None:
 
 
 async def test_enable_with_retry_succeeds_after_transient_vram() -> None:
-    """显存申请失败这类暂态错误应重试，最终成功（不浪费崩溃重启预算）。"""
+    """Transient errors like vRAM request failure should be retried and eventually succeed (without burning the crash-restart budget)."""
 
     def entry(_desk, _params):
         return {"ok": True}
@@ -623,7 +626,7 @@ async def test_enable_with_retry_succeeds_after_transient_vram() -> None:
     def flaky_acquire(plugin_id, mb):
         attempts["n"] += 1
         if attempts["n"] < 2:
-            raise RuntimeError("插件 'test_plugin' 显存申请失败，未启用")
+            raise RuntimeError("plugin 'test_plugin' vRAM request failed, not enabled")
         return real_acquire(plugin_id, mb)
 
     desk.acquire_vram = flaky_acquire
@@ -631,11 +634,11 @@ async def test_enable_with_retry_succeeds_after_transient_vram() -> None:
         "test_plugin", max_attempts=3, backoff=0.01
     )
     assert inst.state == PluginState.ENABLED
-    assert attempts["n"] == 2  # 首次失败 + 重试一次成功
+    assert attempts["n"] == 2  # first failure + one successful retry
 
 
 async def test_enable_with_retry_permanent_error_raises_immediately() -> None:
-    """非显存争用的 RuntimeError（状态/配置错误）立即抛出，不重试。"""
+    """RuntimeError not caused by vRAM contention (state/config errors) raises immediately, no retry."""
 
     def entry(_desk, _params):
         return {"ok": True}
@@ -647,16 +650,16 @@ async def test_enable_with_retry_permanent_error_raises_immediately() -> None:
 
     async def fail_once(plugin_id):
         calls["n"] += 1
-        raise RuntimeError("状态转换非法")
+        raise RuntimeError("illegal state transition")
 
     lifecycle.enable = fail_once
-    with pytest.raises(RuntimeError, match="状态转换非法"):
+    with pytest.raises(RuntimeError, match="illegal state transition"):
         await lifecycle._enable_with_retry("test_plugin", max_attempts=3, backoff=0.01)
-    assert calls["n"] == 1  # 未重试
+    assert calls["n"] == 1  # no retry
 
 
 async def test_enable_with_retry_exhausts_attempts_raises_last() -> None:
-    """暂态错误重试耗尽后抛最后一次异常。"""
+    """After transient-error retries are exhausted, the last exception is raised."""
 
     def entry(_desk, _params):
         return {"ok": True}
@@ -668,8 +671,8 @@ async def test_enable_with_retry_exhausts_attempts_raises_last() -> None:
     lifecycle = PluginLifecycle(registry)
 
     async def always_fail(plugin_id):
-        raise RuntimeError("插件 'test_plugin' 显存申请失败，未启用")
+        raise RuntimeError("plugin 'test_plugin' vRAM request failed, not enabled")
 
     lifecycle.enable = always_fail
-    with pytest.raises(RuntimeError, match="显存申请失败"):
+    with pytest.raises(RuntimeError, match="vRAM request failed"):
         await lifecycle._enable_with_retry("test_plugin", max_attempts=3, backoff=0.01)

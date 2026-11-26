@@ -96,6 +96,7 @@ def build_mlx_inference_connector(out_dir: Path, version: str) -> dict[str, Any]
         "name": "mlx-inference",
         "description": {
             "en": "Local MLX inference daemon (OpenAI-compatible API on 127.0.0.1:11434)",
+            # i18n: user-facing
             "zh": "本地 MLX 推理服务（OpenAI 兼容 API，127.0.0.1:11434）",
         },
         "kind": "rest",

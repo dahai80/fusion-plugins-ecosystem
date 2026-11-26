@@ -1,4 +1,4 @@
-"""fusion-cowork runtime 对接层测试。"""
+"""fusion-cowork runtime adapter-layer tests."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
 
-# ── 显存调度 ──
+# ── VRAM scheduling ──
 
 
 def test_acquire_vram_zero_mb_returns_true() -> None:
@@ -75,11 +75,11 @@ def test_release_vram_removes_allocation() -> None:
 
 def test_release_vram_unknown_plugin_noop() -> None:
     rt = DeskRuntime()
-    rt.release_vram("unknown")  # 不应抛异常
+    rt.release_vram("unknown")  # must not raise
     assert rt.vram_usage() == {}
 
 
-# ── 日志采集 ──
+# ── Log capture ──
 
 
 def test_log_with_desk_logger(caplog: pytest.LogCaptureFixture) -> None:
@@ -109,7 +109,7 @@ def test_log_invalid_level_defaults_to_info(caplog: pytest.LogCaptureFixture) ->
     assert "fallback" in caplog.text
 
 
-# ── 文件权限 ──
+# ── File permissions ──
 
 
 def test_check_file_permission_empty_allowlist_returns_true() -> None:
@@ -137,7 +137,7 @@ def test_grant_permission_overwrites() -> None:
     assert rt.check_file_permission("p1", "/b/file") is True
 
 
-# ── API 密钥 ──
+# ── API keys ──
 
 
 def test_get_api_key_no_config_center_returns_none() -> None:
@@ -162,7 +162,7 @@ def test_get_api_key_from_config_center() -> None:
 
 def test_set_api_key_no_config_center_noop() -> None:
     rt = DeskRuntime()
-    rt.set_api_key("provider", "key")  # 不应抛异常
+    rt.set_api_key("provider", "key")  # must not raise
 
 
 def test_get_api_key_config_center_exception_returns_none() -> None:
@@ -175,10 +175,10 @@ def test_get_api_key_config_center_exception_returns_none() -> None:
 
     rt = DeskRuntime(config_center=BrokenConfigCenter())
     assert rt.get_api_key("any") is None
-    rt.set_api_key("any", "v")  # 不应抛异常
+    rt.set_api_key("any", "v")  # must not raise
 
 
-# ── MLX 推理 ──
+# ── MLX inference ──
 
 
 class _FakeMLXClient:
@@ -201,7 +201,7 @@ class _FakeMLXClient:
 
 async def test_mlx_chat_no_client_raises() -> None:
     rt = DeskRuntime()
-    with pytest.raises(RuntimeError, match="fusion-mlx 客户端未注入"):
+    with pytest.raises(RuntimeError, match="fusion-mlx client not injected"):
         await rt.mlx_chat("m", [])
 
 
@@ -235,7 +235,7 @@ async def test_mlx_health_with_client() -> None:
     assert await rt.mlx_health() is True
 
 
-# ── 节点/调度器桥 ──
+# ── Node/scheduler bridge ──
 
 
 class _FakeNodeRegistry:
@@ -302,7 +302,7 @@ def test_gateway_info_no_port() -> None:
     assert info["port"] is None
 
 
-# ── 密钥盐治理（issue #36：默认盐字面量移除，prod fail-fast / dev 宽松告警）──
+# ── Key salt governance (issue #36: default salt literal removed, prod fail-fast / dev permissive warning) ──
 
 
 class TestKeySaltGovernance:
@@ -324,7 +324,7 @@ class TestKeySaltGovernance:
         self._clean_env(monkeypatch)
         with caplog.at_level(logging.WARNING):
             key = _derive_key()
-        assert key  # 空盐也能派生（dev 宽松），但必须告警
+        assert key  # derivation works even with an empty salt (dev permissive), but must warn
         assert "FUSION_PLUGIN_KEY_SALT" in caplog.text
 
     def test_set_salt_no_warning(self, monkeypatch, caplog):
@@ -346,7 +346,7 @@ class TestKeySaltGovernance:
         assert _derive_key()
 
     def test_no_default_salt_literal_left(self):
-        # check-env 规则 1 回归：源码不得再含默认盐字面量
+        # check-env rule 1 regression: source must no longer contain the default salt literal
         import fusion_plugins_ecosystem.desk_runtime as dr
 
         assert "fusion-plugins-default-salt" not in Path(dr.__file__).read_text(

@@ -1,12 +1,13 @@
-"""Live MLX throughput bench (步骤 3 压测，一次性脚本，不入 CI)。
+"""Live MLX throughput bench (step 3 load test, one-off script, not in CI).
 
-对 live fusion-mlx 发起 N 路并发 tools/call（经 lifecycle.execute →
-desk.mlx_chat），测吞吐/延迟，并验证指标计数器在并发下一致。
+Issues N-way concurrent tools/call against live fusion-mlx (via
+lifecycle.execute -> desk.mlx_chat), measures throughput/latency, and
+verifies metric counters stay consistent under concurrency.
 
-用法：
+Usage:
     python scripts/bench_mlx_load.py --concurrency 8 --total 32
 
-前置：fusion-mlx 已起 + Qwen3.8-27B-4bit 已加载。
+Prerequisite: fusion-mlx running + Qwen3.8-27B-4bit loaded.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import statistics
 import sys
 import time
 
-# 确保用仓库内包
+# Ensure the in-repo package is used
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
@@ -54,10 +55,11 @@ async def mlx_entry(desk, params):
 
 
 class _MLXHTTPClient:
-    """最小 MLX 客户端：直接走 fusion-mlx OpenAI 兼容端点。
+    """Minimal MLX client: talks directly to the fusion-mlx OpenAI-compatible endpoint.
 
-    满足 desk.mlx_chat 的契约（async .chat(model, messages, **kwargs)），
-    不依赖 fusion_core/fusion_cowork 导入路径，压测自包含。
+    Satisfies the desk.mlx_chat contract (async .chat(model, messages, **kwargs))
+    without depending on fusion_core/fusion_cowork import paths, keeping the
+    bench self-contained.
     """
 
     def __init__(self, base_url: str, api_key: str) -> None:
@@ -86,7 +88,7 @@ class _MLXHTTPClient:
 
 def build_runtime():
     desk = DeskRuntime()
-    # 注入真 MLX 客户端（直连 fusion-mlx OpenAI 兼容端点）
+    # Inject a real MLX client (direct to the fusion-mlx OpenAI-compatible endpoint)
     desk.mlx_client = _MLXHTTPClient(BASE_URL, API_KEY)
     registry = PluginRegistry(desk=desk)
     registry.register(
@@ -140,7 +142,7 @@ async def run(concurrency, total):
     err_counter = desk.metrics.get_counter("plugin_errors_total")
     err_total = err_counter.total() if err_counter else 0
 
-    print("\n===== MLX 压测结果 =====")
+    print("\n===== MLX bench results =====")
     print(f"wall_seconds       : {wall:.2f}")
     print(f"throughput(req/s)  : {total / wall:.2f}")
     print(f"success / fail     : {ok} / {fail}")
@@ -183,7 +185,7 @@ def main():
     p.add_argument("--total", type=int, default=32)
     args = p.parse_args()
     res = asyncio.run(run(args.concurrency, args.total))
-    # 输出 JSON 供审计文档引用
+    # Emit JSON for audit-doc reference
     import json
 
     print("\n[result_json]\n" + json.dumps(res, ensure_ascii=False))

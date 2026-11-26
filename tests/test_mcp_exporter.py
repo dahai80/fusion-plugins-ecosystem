@@ -1,4 +1,4 @@
-"""MCPExporter 测试。"""
+"""MCPExporter tests."""
 
 from __future__ import annotations
 
@@ -26,18 +26,21 @@ def _make_manifest(
         name="Test Plugin",
         version="0.1.0",
         category=PluginCategory.CUSTOM,
+        # i18n: user-facing
         description="测试插件",
         capabilities=caps,
         params=[
             PluginParam(
                 name="text",
                 type="string",
+                # i18n: user-facing
                 description="输入文本",
                 required=True,
             ),
             PluginParam(
                 name="count",
                 type="int",
+                # i18n: user-facing
                 description="数量",
                 required=False,
                 default=10,
@@ -45,6 +48,7 @@ def _make_manifest(
             PluginParam(
                 name="mode",
                 type="string",
+                # i18n: user-facing
                 description="模式",
                 enum=["fast", "slow"],
             ),
@@ -76,7 +80,7 @@ def test_list_tools_with_mcp_capability() -> None:
 
 def test_list_tools_filters_out_non_mcp() -> None:
     registry = PluginRegistry()
-    # 无 MCP_TOOL 能力的插件
+    # Plugin without the MCP_TOOL capability
     registry.register(
         _make_manifest(
             "p1",
@@ -129,7 +133,7 @@ def test_gateway_info_returns_mcp_metadata() -> None:
     assert info["port"] == 9999
     assert info["transport"] == "stdio"
     assert info["protocol_version"] == "2026-07-28"
-    assert info["tools_count"] == 0  # 未注册插件
+    assert info["tools_count"] == 0  # no plugins registered
 
 
 def test_list_tools_multiple_plugins() -> None:
@@ -174,6 +178,7 @@ def test_list_tools_plugin_no_params() -> None:
             name="No Params",
             version="0.1.0",
             category=PluginCategory.CUSTOM,
+            # i18n: user-facing
             description="无参数插件",
             capabilities=(PluginCapability.MCP_TOOL,),
             params=(),
@@ -194,6 +199,7 @@ def test_list_tools_all_params_required() -> None:
             name="All Required",
             version="0.1.0",
             category=PluginCategory.CUSTOM,
+            # i18n: user-facing
             description="全部必填",
             capabilities=(PluginCapability.MCP_TOOL,),
             params=(
@@ -215,6 +221,7 @@ def test_list_tools_unknown_param_type_falls_back() -> None:
             name="Weird",
             version="0.1.0",
             category=PluginCategory.CUSTOM,
+            # i18n: user-facing
             description="未知类型",
             capabilities=(PluginCapability.MCP_TOOL,),
             params=(PluginParam(name="x", type="unknown_type", description="X"),),
@@ -233,6 +240,7 @@ def test_list_tools_param_no_enum_no_default() -> None:
             name="Bare",
             version="0.1.0",
             category=PluginCategory.CUSTOM,
+            # i18n: user-facing
             description="裸参数",
             capabilities=(PluginCapability.MCP_TOOL,),
             params=(PluginParam(name="y", type="float", description="Y"),),
@@ -297,6 +305,7 @@ def test_list_tools_param_types_mapping() -> None:
             name="Type Test",
             version="0.1.0",
             category=PluginCategory.CUSTOM,
+            # i18n: user-facing
             description="类型映射测试",
             capabilities=(PluginCapability.MCP_TOOL,),
             params=(

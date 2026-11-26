@@ -1,4 +1,4 @@
-"""registry + claude_adapter + mcp_exporter + caveman 内置插件的集成测试。"""
+"""Integration tests for registry + claude_adapter + mcp_exporter + the caveman builtin plugin."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from fusion_plugins_ecosystem.builtin.caveman_compress import (
 from fusion_plugins_ecosystem.registry import PluginCategory
 
 
-# ── 注册中心 ──
+# ── Registry ──
 
 
 def test_registry_register_and_get() -> None:
@@ -22,7 +22,7 @@ def test_registry_register_and_get() -> None:
 def test_registry_duplicate_same_version_idempotent() -> None:
     registry = fpe.PluginRegistry()
     registry.register(CAVEMAN_MANIFEST)
-    registry.register(CAVEMAN_MANIFEST)  # 相同版本幂等
+    registry.register(CAVEMAN_MANIFEST)  # same version is idempotent
 
 
 def test_registry_duplicate_different_version_raises() -> None:
@@ -39,9 +39,9 @@ def test_registry_duplicate_different_version_raises() -> None:
     try:
         registry.register(different)
     except ValueError as e:
-        assert "版本冲突" in str(e)
+        assert "version conflict" in str(e)
         return
-    raise AssertionError("不同版本重复注册应抛出 ValueError")
+    raise AssertionError("duplicate registration with a different version must raise ValueError")
 
 
 def test_registry_register_builtin_loads_caveman() -> None:
@@ -58,7 +58,7 @@ def test_registry_default_mounted_includes_caveman() -> None:
     assert any(m.id == "caveman_compress" for m in mounted)
 
 
-# ── Claude Skill 适配 ──
+# ── Claude Skill adaptation ──
 
 
 def test_claude_adapter_exports_caveman_skill() -> None:
@@ -82,7 +82,7 @@ def test_claude_adapter_export_default_mounted() -> None:
     assert skills[0]["name"] == "caveman_compress"
 
 
-# ── MCP 导出 ──
+# ── MCP export ──
 
 
 def test_mcp_exporter_lists_caveman_tool() -> None:
@@ -95,10 +95,11 @@ def test_mcp_exporter_lists_caveman_tool() -> None:
     assert "inputSchema" in tools[0]
 
 
-# ── caveman 压缩功能 ──
+# ── caveman compression ──
 
 
 def test_caveman_compress_removes_comments() -> None:
+    # i18n: user-facing
     text = "# 这是注释\n代码行\n// 另一种注释\n实际内容"
     result = caveman_compress(None, {"text": text})
     assert "# 这是注释" not in result["compressed"]
@@ -110,7 +111,7 @@ def test_caveman_compress_removes_comments() -> None:
 def test_caveman_compress_collapses_blank_lines() -> None:
     text = "a\n\n\n\nb"
     result = caveman_compress(None, {"text": text})
-    # 多个空行合并为一个
+    # Multiple blank lines collapse into one
     assert "\n\n\n" not in result["compressed"]
 
 
@@ -122,6 +123,7 @@ def test_caveman_compress_empty_text() -> None:
 
 
 def test_caveman_compress_keep_comments() -> None:
+    # i18n: user-facing
     text = "# 注释\n内容"
     result = caveman_compress(
         None,
@@ -133,7 +135,7 @@ def test_caveman_compress_keep_comments() -> None:
     assert "# 注释" in result["compressed"]
 
 
-# ── 配置面板 ──
+# ── Config panel ──
 
 
 def test_ecosystem_config_defaults_all_enabled() -> None:
@@ -152,7 +154,7 @@ def test_ecosystem_config_roundtrip() -> None:
     assert warnings == []
 
 
-# ── 拓扑排序 ──
+# ── Topological sort ──
 
 
 def _make_manifest(pid: str, depends_on: tuple[str, ...] = ()) -> fpe.PluginManifest:
@@ -204,9 +206,9 @@ def test_resolve_load_order_cycle_raises() -> None:
     try:
         registry.resolve_load_order(["a"])
     except ValueError as e:
-        assert "循环依赖" in str(e)
+        assert "circular dependency" in str(e)
         return
-    raise AssertionError("循环依赖应抛出 ValueError")
+    raise AssertionError("circular dependency must raise ValueError")
 
 
 def test_resolve_load_order_missing_dep_raises() -> None:
@@ -217,7 +219,7 @@ def test_resolve_load_order_missing_dep_raises() -> None:
     except KeyError as e:
         assert "missing" in str(e)
         return
-    raise AssertionError("缺失依赖应抛出 KeyError")
+    raise AssertionError("missing dependency must raise KeyError")
 
 
 def test_resolve_load_order_all_plugins() -> None:
