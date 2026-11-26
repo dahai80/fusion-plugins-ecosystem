@@ -1,8 +1,8 @@
 class FusionPluginsEcosystem < Formula
     desc "Fusion plugin ecosystem: registry, lifecycle, MCP server, Claude adaptation"
     homepage "https://github.com/dahai80/fusion-plugins-ecosystem"
-    url "https://github.com/dahai80/fusion-plugins-ecosystem/archive/refs/tags/v0.12.0.tar.gz"
-    sha256 "e616f690d668726c879c7a588ac99c38d9914032026a5106b0008b1645eadc83"
+    url "https://github.com/dahai80/fusion-plugins-ecosystem/archive/refs/tags/v0.12.1.tar.gz"
+    sha256 "bee593d5cdcfc91ecd43ca7ae096df96ec7f256add3bd24569934883274a8fd8"
     license "Apache-2.0"
     head "https://github.com/dahai80/fusion-plugins-ecosystem.git", branch: "main"
 
@@ -20,8 +20,8 @@ class FusionPluginsEcosystem < Formula
     # dependency changes (see homebrew-tap/ in the source repo).
 
     resource "fusion-plugins-ecosystem" do
-        url "https://github.com/dahai80/fusion-plugins-ecosystem/releases/download/v0.12.0/fusion_plugins_ecosystem-0.12.0-py3-none-any.whl"
-        sha256 "212ad0d3483cc049b4b3b41f0a7dbfc0d8cc2ec0cf001d50f8d19493131651c2"
+        url "https://github.com/dahai80/fusion-plugins-ecosystem/releases/download/v0.12.1/fusion_plugins_ecosystem-0.12.1-py3-none-any.whl"
+        sha256 "6825095118f69009fda6d9ece845704aa68cf763bfe791b6d1b30d3b6a986a43"
     end
 
     resource "annotated-doc" do
