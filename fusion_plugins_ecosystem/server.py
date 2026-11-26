@@ -1,8 +1,7 @@
-"""MCP Server 入口。
-
-组合传输层 + JSON-RPC 处理器 + 运行时，
-提供 fusion-plugin-server 命令入口。
-"""
+# MCP Server entry point.
+#
+# Composes transport + JSON-RPC handler + runtime and provides the
+# fusion-plugin-server command entry.
 
 from __future__ import annotations
 
@@ -28,11 +27,11 @@ logger = logging.getLogger(__name__)
 
 
 def _is_loopback_host(host: str | None) -> bool:
-    """判断 host 是否为 loopback（127.0.0.0/8、::1、localhost）。
-
-    P0-1：远程传输（sse/http）在非 loopback 绑定时强制鉴权，
-    loopback 默认放行（本地单机/测试场景）。
-    """
+    # Whether host is loopback (127.0.0.0/8, ::1, localhost).
+    #
+    # P0-1: remote transports (sse/http) force auth when bound to a
+    # non-loopback address; loopback is allowed by default (local
+    # single-machine / test scenarios).
     if not host:
         return True
     if host in ("localhost", "::1"):
@@ -41,34 +40,36 @@ def _is_loopback_host(host: str | None) -> bool:
         addr = ipaddress.ip_address(host)
         return addr.is_loopback
     except ValueError:
-        # 非 IP 字面量（如主机名）默认视为非 loopback，保守拒绝
+        # Non-IP literals (e.g. hostnames) are conservatively treated as
+        # non-loopback
         return False
 
 
 class MCPServer:
-    """MCP Server 入口，组合传输 + 处理器 + 运行时。
-
-    用法：
-        server = MCPServer()
-        await server.start(transport="stdio")
-
-    或通过 CLI：
-        fusion-plugin-server --transport stdio
-        fusion-plugin-server --transport sse --port 8765
-    """
+    # MCP Server entry point, composing transport + handler + runtime.
+    #
+    # Usage:
+    #     server = MCPServer()
+    #     await server.start(transport="stdio")
+    #
+    # Or via CLI:
+    #     fusion-plugin-server --transport stdio
+    #     fusion-plugin-server --transport sse --port 8765
 
     def __init__(self, config: EcosystemConfig | None = None) -> None:
         self.config = config or EcosystemConfig()
         self.desk = DeskRuntime(
             mcp_gateway_port=self.config.mcp_port or None,
         )
-        # A3：vram_limit_mb 同步到 DeskRuntime 显存总预算
+        # A3: sync vram_limit_mb into the DeskRuntime total vRAM budget
         if self.config.vram_limit_mb:
             self.desk.vram_total_mb = self.config.vram_limit_mb
         self.registry = PluginRegistry(desk=self.desk)
-        # A2：lifecycle 注入 config，超时/重启/心跳阈值改由配置驱动
+        # A2: inject config into lifecycle; timeout/restart/heartbeat
+        # thresholds are now config-driven
         self.lifecycle = PluginLifecycle(self.registry, config=self.config)
-        # A5：token_meter 注入配置的计量阈值与持久化路径
+        # A5: inject configured metering thresholds and persist path into
+        # token_meter
         self.token_meter = TokenMeter(
             self.desk,
             max_records=self.config.max_token_records,
@@ -81,18 +82,21 @@ class MCPServer:
             config=self.config,
             token_meter=self.token_meter,
         )
-        # A4：启动时从 config_center 恢复持久化配置与已安装插件集合
+        # A4: restore persisted config and the installed-plugin set from the
+        # config center at startup
         self.handler.restore_config()
-        # A3：应用配置日志级别到根 logger（CLI --log-level 优先，此处补可编程入口）
+        # A3: apply the configured log level to the root logger (the CLI
+        # --log-level flag wins; this covers the programmatic entry)
         if self.config.log_level and self.config.log_level != "INFO":
             logging.getLogger().setLevel(
                 getattr(logging, self.config.log_level, logging.INFO)
             )
         self._transport: Any = None
         self._running = False
-        # 停止信号：start() 等待、stop() 触发，跨协程保活/停机
+        # Stop signal: start() waits on it, stop() sets it; keeps the
+        # process alive/shuts it down across coroutines
         self._stop_event: asyncio.Event | None = None
-        # P1-4：atexit 注册幂等守卫
+        # P1-4: idempotence guard for atexit registration
         self._atexit_registered = False
 
     async def start(
@@ -100,58 +104,63 @@ class MCPServer:
         transport: str = "stdio",
         **kwargs: Any,
     ) -> None:
-        """启动 MCP Server。"""
+        # Start the MCP Server.
         if self._running:
             logger.warning("MCPServer already running")
             return
 
         self.registry.register_builtin()
 
-        # 默认挂载：default_mount_compressor 开启时，自动 load+enable
-        # 所有 default_mounted 插件，使 tools/call 可直接调用（无需额外 install）。
-        # 否则 tools/list 暴露的工具 tools/call 会报「未启用」——MCP 语义要求
-        # 暴露即可调用。
+        # Default mounting: when default_mount_compressor is on, all
+        # default_mounted plugins are auto load+enabled so tools/call can
+        # invoke them directly (no extra install). Otherwise tools/call on
+        # tools/list-exposed tools would fail with "not enabled" — MCP
+        # semantics require exposed = callable.
         if self.config.default_mount_compressor:
             for manifest in self.registry.default_mounted():
                 if manifest.id not in self.lifecycle._instances:
                     try:
                         await self.lifecycle.enable(manifest.id)
-                        logger.info("auto-mount: %s 已启用", manifest.id)
+                        logger.info("auto-mount: %s enabled", manifest.id)
                     except Exception as exc:
-                        logger.warning("auto-mount: %s 启用失败: %s", manifest.id, exc)
+                        logger.warning("auto-mount: failed to enable %s: %s", manifest.id, exc)
 
-        # A4：从 config_center 恢复持久化的已安装插件（非默认挂载的手动安装项）
+        # A4: restore persisted installed plugins from the config center
+        # (manual installs, not the default-mounted set)
         for plugin_id in self.handler.restore_installed():
             if plugin_id in self.lifecycle._instances:
                 continue
             if self.registry.get(plugin_id) is None:
-                logger.warning("restore: 持久化的插件 %s 未注册，跳过", plugin_id)
+                logger.warning("restore: persisted plugin %s not registered, skipping", plugin_id)
                 continue
             try:
                 await self.lifecycle.enable(plugin_id)
-                logger.info("restore: %s 已恢复启用", plugin_id)
+                logger.info("restore: %s re-enabled", plugin_id)
             except Exception as exc:
-                logger.warning("restore: %s 恢复失败: %s", plugin_id, exc)
+                logger.warning("restore: failed to restore %s: %s", plugin_id, exc)
 
         transport_type = transport or self.config.mcp_transport
         host = kwargs.get("host", self.config.mcp_host)
         port = kwargs.get("port", self.config.mcp_port)
-        # R6：SSE/HTTP 远程传输鉴权 token（环境变量注入，不落盘配置）
+        # R6: auth token for SSE/HTTP remote transports (env-injected, never
+        # written to config files)
         auth_token = kwargs.get(
             "auth_token", os.environ.get("FUSION_PLUGIN_AUTH_TOKEN")
         )
 
-        # P0-1：远程传输非 loopback 绑定必须鉴权，防止对外裸奔全部 RPC
+        # P0-1: non-loopback remote transport bindings must have auth, to
+        # avoid exposing every RPC to the network
         if transport_type in ("sse", "http") and not _is_loopback_host(host):
             if not auth_token:
                 msg = (
-                    f"远程传输 {transport_type} 绑定非 loopback 地址 {host} 但未设置鉴权 token；"
-                    "拒绝启动。请设置环境变量 FUSION_PLUGIN_AUTH_TOKEN 或仅绑 loopback。"
+                    f"remote transport {transport_type} bound to non-loopback address {host} "
+                    "without an auth token; refusing to start. Set the FUSION_PLUGIN_AUTH_TOKEN "
+                    "env var or bind to loopback only."
                 )
                 logger.error(msg)
                 raise RuntimeError(msg)
             logger.warning(
-                "远程传输 %s 绑定 %s 已启用 Bearer 鉴权", transport_type, host
+                "remote transport %s bound to %s with Bearer auth enabled", transport_type, host
             )
 
         self._transport = create_transport(
@@ -171,61 +180,70 @@ class MCPServer:
             port,
         )
 
-        # P1-2：启用 PROCESS 沙箱时启动看门狗，心跳判死生产生效
+        # P1-2: start the watchdog when the PROCESS sandbox is enabled so
+        # heartbeat-based death detection works in production
         if self.config.sandbox_default_mode == "process":
             self.lifecycle.start_watcher()
-            logger.info("lifecycle watcher 已启动（process 沙箱心跳判死）")
+            logger.info("lifecycle watcher started (process sandbox heartbeat death detection)")
 
-        # P1-4：注册 atexit 兜底（SIGKILL 无法捕获，但优雅退出/异常时回收资源）
+        # P1-4: register the atexit fallback (SIGKILL cannot be caught, but
+        # resources are reclaimed on graceful exit/exceptions)
         if not self._atexit_registered:
             atexit.register(self._sync_cleanup)
             self._atexit_registered = True
 
         await self._transport.start()
 
-        # 所有传输类型都需阻塞至停止信号，否则 start() 立即返回会导致
-        # asyncio.run 结束、进程退出（sse/http 此前无 keep-alive → CLI 闪退）
+        # Every transport type must block until the stop signal; otherwise
+        # start() returns immediately, asyncio.run finishes and the process
+        # exits (sse/http previously had no keep-alive, so the CLI flashed
+        # and exited)
         self._stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 loop.add_signal_handler(sig, self._stop_event.set)
             except NotImplementedError:
-                # 部分平台不支持 add_signal_handler，退化轮询
+                # Some platforms lack add_signal_handler; fall back to polling
                 pass
         try:
             await self._stop_event.wait()
         finally:
-            # E5：无论正常唤醒、异常还是 KeyboardInterrupt，均执行完整清理
+            # E5: run the full cleanup on normal wakeup, exceptions, and
+            # KeyboardInterrupt alike
             await self._full_shutdown()
 
     async def _full_shutdown(self) -> None:
-        """完整停机：停看门狗 → 杀全部沙箱子进程 → flush token → 停传输。
-
-        P1-2/P1-3/P1-4：补齐生产运维闭环，避免子进程孤儿与 token 丢失。
-        """
-        # P1-2：停看门狗（stop_watcher 为协程，须 await；同步调用会泄漏 watcher task）
+        # Full shutdown: stop watchdog → kill all sandbox subprocesses →
+        # flush tokens → stop transport.
+        #
+        # P1-2/P1-3/P1-4: completes the production ops loop, preventing
+        # orphan subprocesses and token record loss.
+        # P1-2: stop the watchdog (stop_watcher is a coroutine and must be
+        # awaited; a sync call would leak the watcher task)
         try:
             await self.lifecycle.stop_watcher()
         except Exception as exc:
-            logger.warning("stop_watcher 失败: %s", exc)
-        # P1-3：显式 kill 全部 PROCESS 沙箱子进程，防孤儿
+            logger.warning("stop_watcher failed: %s", exc)
+        # P1-3: explicitly kill all PROCESS sandbox subprocesses to prevent
+        # orphans
         try:
             sandbox = getattr(self.lifecycle, "_sandbox", None)
             if sandbox is not None and hasattr(sandbox, "shutdown_all"):
                 await sandbox.shutdown_all()
         except Exception as exc:
-            logger.warning("sandbox shutdown_all 失败: %s", exc)
-        # P1-4：flush 未落盘 token 记录
+            logger.warning("sandbox shutdown_all failed: %s", exc)
+        # P1-4: flush unpersisted token records
         try:
             self.token_meter.flush()
         except Exception as exc:
-            logger.warning("token_meter flush 失败: %s", exc)
-        # 停传输
+            logger.warning("token_meter flush failed: %s", exc)
+        # Stop the transport
         await self._transport_stop()
 
     async def _transport_stop(self) -> None:
-        """幂等停止传输：_running 守卫防止 start()/stop() 双重 stop。"""
+        # Idempotent transport stop: the _running guard prevents double
+        # stop from start()/stop().
         if not self._running:
             return
         self._running = False
@@ -234,20 +252,21 @@ class MCPServer:
         logger.info("MCPServer stopped")
 
     async def stop(self) -> None:
-        """停止 MCP Server：触发 stop_event 解除 start() 阻塞，并执行完整清理。
-
-        _full_shutdown 幂等（_transport_stop 有 _running 守卫），
-        故 stop() 与 start() 的 finally 调用不会双重回收。
-        """
+        # Stop the MCP Server: sets stop_event to unblock start() and runs
+        # the full cleanup.
+        #
+        # _full_shutdown is idempotent (_transport_stop has the _running
+        # guard), so stop() and start()'s finally clause never double-reclaim.
         if self._stop_event is not None:
             self._stop_event.set()
         await self._full_shutdown()
 
     def _sync_cleanup(self) -> None:
-        """atexit 兜底：同步清理残留资源（事件循环已关闭时尽力而为）。
-
-        SIGKILL 无法捕获；此处仅覆盖异常退出 / 未显式 await stop 的场景。
-        """
+        # atexit fallback: synchronously clean up leftover resources
+        # (best-effort when the event loop is already closed).
+        #
+        # SIGKILL cannot be caught; this only covers abnormal exits /
+        # paths that never awaited stop().
         try:
             self.token_meter.flush()
         except Exception:
@@ -259,7 +278,7 @@ class MCPServer:
 
 
 def main() -> None:
-    """CLI 入口：fusion-plugin-server 命令。"""
+    # CLI entry: the fusion-plugin-server command.
     from fusion_core.config import service_port
 
     parser = argparse.ArgumentParser(
@@ -282,8 +301,9 @@ def main() -> None:
         "--port",
         "-p",
         type=int,
-        # issue #38：端口单点解析 — env FUSION_PLUGINS_ECOSYSTEM_PORT 可固定
-        # (port-registry: 8765)；默认 0 保持 auto。
+        # issue #38: single-point port resolution — env
+        # FUSION_PLUGINS_ECOSYSTEM_PORT can pin it (port-registry: 8765);
+        # default 0 keeps auto.
         default=service_port("plugins-ecosystem", default=0),
         help="Port for SSE/HTTP transport (0=auto)",
     )
@@ -300,7 +320,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # issue #35：进程标题带产品名 + 传输/端口，ps 可区分实例
+    # issue #35: process title carries the product name + transport/port so
+    # ps can tell instances apart
     from fusion_plugins_ecosystem.proctitle import (
         plugin_server_title,
         set_process_title,
@@ -308,8 +329,9 @@ def main() -> None:
 
     set_process_title(plugin_server_title(args.transport, args.port))
 
-    # P3-6：结构化 JSON 日志 + correlation_id（见 logging_setup）。
-    # 替代旧 plain-text basicConfig，便于 ELK/Loki 聚合与请求关联。
+    # P3-6: structured JSON logging + correlation_id (see logging_setup).
+    # Replaces the old plain-text basicConfig for ELK/Loki aggregation and
+    # request correlation.
     from fusion_plugins_ecosystem.logging_setup import configure_structured_logging
 
     configure_structured_logging(level=getattr(logging, args.log_level))

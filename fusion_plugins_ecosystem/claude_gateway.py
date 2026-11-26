@@ -1,34 +1,35 @@
-"""Claude 全链路统一网关。
-
-集中式兼容层，把 PRD 的三层打通集中到一处：
-- Claude Desktop：通过 MCP 协议（stdio / SSE）对接
-- Claude Code (VS Code)：子代理调度 + 长任务 + 工具调用
-- MCP 协议：fusion-cowork 暴露 MCP Server，插件能力自动注册为 MCP Tools
-
-并覆盖 PRD 的双向互通：
-- 正向：Claude 调用 fusion 全部本地能力（MLX 推理、文件操作、量化工具）
-- 反向：fusion-cowork 主动拉起 Claude Code 子代理，完成项目批量重构、PR 生成
-
-以及火山方舟 Claude Coding Plan 套餐鉴权统一管理。
-
-设计原则：
-- ClaudeGateway 是 thin orchestrator，真实能力委托给：
-  · ClaudeSkillAdapter（插件 → Skill）
-  · MCPExporter（插件 → MCP Tools）
-  · PluginLifecycle（子代理执行 + 超时熔断 + 自动重启）
-  · DeskRuntime（MLX 推理、文件权限、API 密钥）
-- 所有开关由 EcosystemConfig 驱动，默认全开（原生完整兼容）
-"""
+# Claude full-chain unified gateway.
+#
+# Centralized compatibility layer that consolidates the PRD's three layers:
+# - Claude Desktop: connected via MCP protocol (stdio / SSE)
+# - Claude Code (VS Code): subagent dispatch + long tasks + tool calls
+# - MCP protocol: fusion-cowork exposes an MCP Server, plugin capabilities
+#   are auto-registered as MCP Tools
+#
+# Covers the PRD's bidirectional interop:
+# - Forward: Claude calls all local fusion capabilities (MLX inference,
+#   file operations, quantization tools)
+# - Reverse: fusion-cowork proactively spawns Claude Code subagents for
+#   batch refactoring and PR generation
+#
+# Plus unified Volcengine Ark Claude Coding Plan credential management.
+#
+# Design principles:
+# - ClaudeGateway is a thin orchestrator; real capability is delegated to:
+#   · ClaudeSkillAdapter (plugin → Skill)
+#   · MCPExporter (plugin → MCP Tools)
+#   · PluginLifecycle (subagent execution + timeout meltdown + auto-restart)
+#   · DeskRuntime (MLX inference, file permissions, API keys)
+# - All switches are driven by EcosystemConfig, all on by default
+#   (fully compatible out of the box)
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
@@ -37,45 +38,45 @@ from fusion_plugins_ecosystem.registry import (
     PluginCapability,
     PluginRegistry,
 )
+from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
 from fusion_plugins_ecosystem.token_meter import TokenKind, TokenMeter
 
 logger = logging.getLogger(__name__)
 
 
-# Claude 接入方式（对应 PRD「支持网页版 Claude、Claude Desktop 客户端、
-# VS Code Claude Code 插件三种接入方式」）
-CLAUDE_DESKTOP = "claude_desktop"  # Claude Desktop 客户端
-CLAUDE_CODE = "claude_code"  # VS Code Claude Code 插件
-CLAUDE_WEB = "claude_web"  # 网页版 Claude
-CLAUDE_VOLCENGINE = "claude_volcengine"  # 火山方舟 Claude Coding Plan
+# Claude client types (per PRD "support web Claude, Claude Desktop client,
+# and the VS Code Claude Code plugin as the three client types")
+CLAUDE_DESKTOP = "claude_desktop"  # Claude Desktop client
+CLAUDE_CODE = "claude_code"  # VS Code Claude Code plugin
+CLAUDE_WEB = "claude_web"  # Web Claude
+CLAUDE_VOLCENGINE = "claude_volcengine"  # Volcengine Ark Claude Coding Plan
 
 
 @dataclass
 class SubagentTask:
-    """Claude Code 子代理任务描述（反向互通）。"""
+    # Claude Code subagent task description (reverse interop).
 
-    name: str  # 任务名称（如 "batch-refactor"）
-    plugin_id: str  # 执行插件 ID
-    arguments: dict[str, Any]  # 插件入参
-    timeout_seconds: int | None = None  # 超时（None 继承 config）
+    name: str  # task name (e.g. "batch-refactor")
+    plugin_id: str  # plugin to execute
+    arguments: dict[str, Any]  # plugin input arguments
+    timeout_seconds: int | None = None  # timeout (None inherits from config)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ClaudeGateway:
-    """Claude 全链路统一网关。
-
-    用法：
-        gateway = ClaudeGateway(registry, lifecycle, desk, config)
-        # 正向：暴露给 Claude
-        skills = gateway.export_skills()                # Claude Skill
-        mcp_tools = gateway.list_mcp_tools()            # MCP Tools
-        mcp_response = await gateway.invoke_mcp_tool(...)  # MCP tools/call
-        # 反向：拉起 Claude Code 子代理
-        result = await gateway.dispatch_subagent(task)
-        # 鉴权
-        gateway.store_credentials("volcengine_claude", "sk-xxx")
-        key = gateway.get_credentials("volcengine_claude")
-    """
+    # Claude full-chain unified gateway.
+    #
+    # Usage:
+    #     gateway = ClaudeGateway(registry, lifecycle, desk, config)
+    #     # Forward: expose to Claude
+    #     skills = gateway.export_skills()                # Claude Skill
+    #     mcp_tools = gateway.list_mcp_tools()            # MCP Tools
+    #     mcp_response = await gateway.invoke_mcp_tool(...)  # MCP tools/call
+    #     # Reverse: spawn a Claude Code subagent
+    #     result = await gateway.dispatch_subagent(task)
+    #     # Credentials
+    #     gateway.store_credentials("volcengine_claude", "sk-xxx")
+    #     key = gateway.get_credentials("volcengine_claude")
 
     def __init__(
         self,
@@ -88,8 +89,9 @@ class ClaudeGateway:
         self.registry = registry
         self.desk: DeskRuntime = desk or registry.desk
         self.config: EcosystemConfig = config or EcosystemConfig()
-        # P3-1：lifecycle 注入 config，使 _maybe_restart 的指数退避生效
-        # （config=None 时退避退化为 0，重启无间隔）。
+        # P3-1: inject config into lifecycle so _maybe_restart's exponential
+        # backoff takes effect (with config=None the backoff degrades to 0,
+        # i.e. restarts with no delay).
         self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(
             registry, config=self.config
         )
@@ -98,19 +100,17 @@ class ClaudeGateway:
             max_records=self.config.max_token_records,
             persist_path=self.config.token_persist_path,
         )
-        # 委托适配器
+        # Delegate adapters
         self._skill_adapter = SkillAdapter(registry)
         self._mcp_exporter = MCPExporter(registry, self.desk)
 
-    # ── 正向：Claude 调用 fusion 能力 ──
+    # ── Forward: Claude calls fusion capabilities ──
 
     def export_skills(self) -> list[dict[str, Any]]:
-        """导出全部插件为 Claude Skill 列表。
-
-        受 config.auto_export_claude_skill 开关控制。
-        """
+        # Export all plugins as a Claude Skill list.
+        # Gated by config.auto_export_claude_skill.
         if not self.config.auto_export_claude_skill:
-            logger.info("claude_gateway: Skill 自动导出已关闭")
+            logger.info("claude_gateway: Skill auto-export is disabled")
             return []
         skills: list[dict[str, Any]] = []
         for manifest in self.registry.list():
@@ -120,10 +120,8 @@ class ClaudeGateway:
         return skills
 
     def export_default_mounted_skills(self) -> list[dict[str, Any]]:
-        """导出默认挂载插件 Skill（对应 PRD「默认挂载给 Claude 会话」）。
-
-        受 config.default_mount_compressor 开关控制。
-        """
+        # Export default-mounted plugin Skills (per PRD "mount by default
+        # into Claude sessions"). Gated by config.default_mount_compressor.
         if not self.config.default_mount_compressor:
             return []
         skills: list[dict[str, Any]] = []
@@ -134,12 +132,10 @@ class ClaudeGateway:
         return skills
 
     def list_mcp_tools(self) -> list[dict[str, Any]]:
-        """列出 MCP Tools（供给 Claude Desktop / Claude Code 对接）。
-
-        受 config.enable_claude_mcp 开关控制。
-        """
+        # List MCP Tools (for Claude Desktop / Claude Code integration).
+        # Gated by config.enable_claude_mcp.
         if not self.config.enable_claude_mcp:
-            logger.info("claude_gateway: MCP 对外暴露已关闭")
+            logger.info("claude_gateway: MCP exposure is disabled")
             return []
         return self._mcp_exporter.list_tools()
 
@@ -148,30 +144,28 @@ class ClaudeGateway:
         plugin_id: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        """MCP tools/call 转发：Claude 通过 MCP 调用 fusion 插件。
-
-        受 config.enable_claude_mcp 开关控制；关闭时返回 isError=True。
-        """
+        # MCP tools/call forwarding: Claude calls a fusion plugin via MCP.
+        # Gated by config.enable_claude_mcp; returns isError=True when off.
         if not self.config.enable_claude_mcp:
             return {
                 "content": [
                     {
                         "type": "text",
-                        "text": "MCP 对外暴露已关闭",
+                        "text": "MCP exposure is disabled",
                     }
                 ],
                 "isError": True,
             }
-        # 校验插件是否具备 MCP_TOOL 能力
+        # Verify the plugin has the MCP_TOOL capability
         manifest = self.registry.get(plugin_id)
         if manifest is None:
-            return self._mcp_error(plugin_id, f"插件 {plugin_id!r} 未注册")
+            return self._mcp_error(plugin_id, f"plugin {plugin_id!r} is not registered")
         if PluginCapability.MCP_TOOL not in manifest.capabilities:
             return self._mcp_error(
                 plugin_id,
-                f"插件 {plugin_id!r} 不具备 MCP_TOOL 能力",
+                f"plugin {plugin_id!r} does not have the MCP_TOOL capability",
             )
-        # 委托 lifecycle 执行（带超时熔断 + 自动重启）
+        # Delegate to lifecycle execution (with timeout meltdown + auto-restart)
         try:
             await self.lifecycle.enable(plugin_id)
             with self.token_meter.measure(
@@ -182,11 +176,12 @@ class ClaudeGateway:
                 result = await self.lifecycle.execute(plugin_id, arguments)
             return self._mcp_success(plugin_id, result)
         except Exception as exc:
-            # P1-7：原始异常详情仅入 desk.log，对外返回通用消息防信息泄露
+            # P1-7: raw exception detail goes only to desk.log; a generic
+            # message is returned externally to prevent information leakage
             self.desk.log(
                 plugin_id,
                 "ERROR",
-                "MCP tools/call 执行失败",
+                "MCP tools/call execution failed",
                 error=str(exc),
             )
             logger.error(
@@ -195,30 +190,32 @@ class ClaudeGateway:
                 exc,
                 exc_info=True,
             )
-            return self._mcp_error(plugin_id, "执行失败")
+            return self._mcp_error(plugin_id, "execution failed")
 
     def gateway_info(self) -> dict[str, Any]:
-        """返回 MCP 网关元信息（供 Claude Desktop / Claude Code 配置对接）。"""
+        # Return MCP gateway metadata (for Claude Desktop / Claude Code setup).
         info = self._mcp_exporter.gateway_info()
         info["skills_count"] = len(self.export_skills())
         info["default_mounted_count"] = len(self.export_default_mounted_skills())
         info["config"] = self.config.to_dict()
         return info
 
-    # ── 反向：fusion-cowork 拉起 Claude Code 子代理 ──
+    # ── Reverse: fusion-cowork spawns Claude Code subagents ──
 
     async def dispatch_subagent(self, task: SubagentTask) -> dict[str, Any]:
-        """拉起 Claude Code 子代理执行任务（反向互通）。
-
-         对应 PRD「fusion-cowork 可主动拉起 Claude Code 子代理，完成项目
-        批量重构、PR 生成、代码优化」。
-
-         受 config.subagent_timeout_destroy 控制：超时后自动销毁。
-        """
+        # Spawn a Claude Code subagent to execute a task (reverse interop).
+        #
+        # Per PRD "fusion-cowork can proactively spawn Claude Code subagents
+        # for batch refactoring, PR generation, and code optimization".
+        #
+        # Controlled by config.subagent_timeout_destroy: auto-destroy on
+        # timeout.
         manifest = self.registry.get(task.plugin_id)
         if manifest is None:
-            raise KeyError(f"子代理任务 {task.name!r} 的插件 {task.plugin_id!r} 未注册")
-        # 计算 timeout：task > manifest > config
+            raise KeyError(
+                f"plugin {task.plugin_id!r} of subagent task {task.name!r} is not registered"
+            )
+        # Resolve timeout: task > manifest > config
         timeout = (
             task.timeout_seconds
             or manifest.timeout_seconds
@@ -251,18 +248,20 @@ class ClaudeGateway:
             self.desk.log(
                 task.plugin_id,
                 "ERROR",
-                "子代理任务执行超时",
+                "subagent task timed out",
                 task=task.name,
                 error=str(exc),
             )
-            # 仅超时销毁：字段名 subagent_timeout_destroy 语义为「超时后销毁」，
-            # 崩溃走保留路径供排查（P2-5，旧实现对所有异常都 unload，语义与命名相反）。
+            # Destroy on timeout only: the field name subagent_timeout_destroy
+            # means "destroy after timeout"; crashes follow the preserve path
+            # for troubleshooting (P2-5: the old implementation unloaded on
+            # every exception, the opposite of the field's naming).
             if self.config.subagent_timeout_destroy:
                 self.lifecycle.unload(task.plugin_id)
                 self.desk.log(
                     task.plugin_id,
                     "WARN",
-                    "子代理超时，已自动销毁",
+                    "subagent timed out, destroyed automatically",
                     task=task.name,
                 )
             return {
@@ -275,11 +274,12 @@ class ClaudeGateway:
             self.desk.log(
                 task.plugin_id,
                 "ERROR",
-                "子代理任务执行崩溃",
+                "subagent task crashed",
                 task=task.name,
                 error=str(exc),
             )
-            # 崩溃保留实例（CRASHED 状态），便于排查；销毁仅由超时分支触发
+            # Preserve the instance on crash (CRASHED state) for
+            # troubleshooting; destroy is triggered only by the timeout branch
             return {
                 "task": task.name,
                 "plugin_id": task.plugin_id,
@@ -288,23 +288,24 @@ class ClaudeGateway:
             }
 
     def list_subagent_capable_plugins(self) -> list[str]:
-        """列出具备 SUBAGENT 能力的插件 ID（供 Claude Code 子代理调度面板）。"""
+        # List plugin IDs with the SUBAGENT capability (for the Claude Code
+        # subagent dispatch panel).
         return [
             m.id
             for m in self.registry.list()
             if PluginCapability.SUBAGENT in m.capabilities
         ]
 
-    # ── 火山方舟 Claude Coding Plan 鉴权 ──
+    # ── Volcengine Ark Claude Coding Plan credentials ──
 
     def store_credentials(self, provider: str, api_key: str) -> None:
-        """存储 Claude API 密钥到 Desk 配置中心。
-
-        兼容火山方舟 Claude Coding Plan 套餐鉴权：
-        provider="volcengine_claude" 存火山方舟 API key。
-
-        受 config.enable_volcengine_claude_plan 控制（仅对火山方舟 provider）。
-        """
+        # Store a Claude API key in the Desk credential center.
+        #
+        # Supports Volcengine Ark Claude Coding Plan credentials:
+        # provider="volcengine_claude" stores the Volcengine Ark API key.
+        #
+        # Controlled by config.enable_volcengine_claude_plan (Volcengine
+        # provider only).
         if (
             provider == "volcengine_claude"
             and not self.config.enable_volcengine_claude_plan
@@ -312,7 +313,7 @@ class ClaudeGateway:
             self.desk.log(
                 "claude_gateway",
                 "WARN",
-                "火山方舟 Claude Coding Plan 鉴权已关闭，密钥未存储",
+                "Volcengine Ark Claude Coding Plan auth is disabled, key not stored",
                 provider=provider,
             )
             return
@@ -320,15 +321,14 @@ class ClaudeGateway:
         self.desk.log(
             "claude_gateway",
             "INFO",
-            "Claude API 密钥已存储",
+            "Claude API key stored",
             provider=provider,
         )
 
     def get_credentials(self, provider: str) -> str | None:
-        """读取 Claude API 密钥。
-
-        受 config.enable_volcengine_claude_plan 控制（仅对火山方舟 provider）。
-        """
+        # Read a Claude API key.
+        # Controlled by config.enable_volcengine_claude_plan (Volcengine
+        # provider only).
         if (
             provider == "volcengine_claude"
             and not self.config.enable_volcengine_claude_plan
@@ -337,10 +337,10 @@ class ClaudeGateway:
         return self.desk.get_api_key(provider)
 
     def has_credentials(self, provider: str) -> bool:
-        """检查是否已配置指定 provider 的密钥。"""
+        # Check whether a key is configured for the given provider.
         return self.get_credentials(provider) is not None
 
-    # ── fusion-mlx 作为 Claude 视觉/图像生成后端 ──
+    # ── fusion-mlx as Claude vision/image-generation backend ──
 
     async def mlx_visual_backend(
         self,
@@ -348,12 +348,10 @@ class ClaudeGateway:
         messages: list[dict],
         **kwargs: Any,
     ) -> Any:
-        """调用 fusion-mlx 本地推理作为 Claude 视觉/图像生成后端。
-
-        受 config.enable_mixed_quantization 控制。
-        """
+        # Call fusion-mlx local inference as the Claude vision/image
+        # generation backend. Controlled by config.enable_mixed_quantization.
         if not self.config.enable_mixed_quantization:
-            raise RuntimeError("混合量化 + MLX 后端已关闭")
+            raise RuntimeError("mixed quantization + MLX backend is disabled")
         with self.token_meter.measure(
             "mlx_visual_backend",
             TokenKind.MLX_INFERENCE,
@@ -361,12 +359,12 @@ class ClaudeGateway:
         ):
             return await self.desk.mlx_chat(model, messages, **kwargs)
 
-    # ── 内部辅助 ──
+    # ── Internal helpers ──
 
     @staticmethod
     def _mcp_success(plugin_id: str, result: Any) -> dict[str, Any]:
-        """构造 MCP tools/call 成功响应。"""
-        # 将 dict 结果序列化为 text content；其他类型直接 str()
+        # Build a successful MCP tools/call response.
+        # Serialize dict results to text content; other types via str()
         if isinstance(result, dict):
             text = json.dumps(result, ensure_ascii=False, default=str)
         else:
@@ -378,7 +376,7 @@ class ClaudeGateway:
 
     @staticmethod
     def _mcp_error(plugin_id: str, message: str) -> dict[str, Any]:
-        """构造 MCP tools/call 错误响应。"""
+        # Build an error MCP tools/call response.
         return {
             "content": [
                 {

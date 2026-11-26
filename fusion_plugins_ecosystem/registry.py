@@ -1,21 +1,22 @@
-"""插件注册中心。
-
-标准化插件元数据、参数 schema、能力声明。所有生态插件（caveman 压缩、
-量化工具、代码分析、本地文件检索）都通过本中心注册。
-
-设计原则：
-- 注册中心不持有插件实例，只持有 manifest（声明式）
-- 实例化由 PluginLifecycle 按需进行，便于热重载
-- manifest 同时驱动 Claude Skill 自动生成
-"""
+# Plugin registry.
+#
+# Standardizes plugin metadata, parameter schemas, and capability
+# declarations. All ecosystem plugins (caveman compression, quantization
+# tools, code analysis, local file search) register through this center.
+#
+# Design principles:
+# - The registry holds no plugin instances, only manifests (declarative)
+# - Instantiation is done on demand by PluginLifecycle for easy hot reload
+# - The manifest also drives automatic Claude Skill generation
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.schema import PluginParamType, SandboxMode
@@ -24,11 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 def _version_key(version: str) -> tuple:
-    """将语义版本字符串解析为可比较的元组（E5）。
-
-    "1.2.0" -> (1, 2, 0)；非数字段按字符串保留。解析失败回退原字符串，
-    保证不抛异常、不改变既有「不同版本即拒绝」语义。
-    """
+    # Parse a semantic version string into a comparable tuple (E5).
+    #
+    # "1.2.0" -> (1, 2, 0); non-numeric segments are kept as strings.
+    # On parse failure it falls back to the original segments, guaranteeing
+    # no exception and preserving the existing "different version = reject"
+    # semantics.
     parts = []
     for seg in str(version).split("."):
         if seg.isdigit():
@@ -39,36 +41,38 @@ def _version_key(version: str) -> tuple:
 
 
 class PluginCategory(str, Enum):
-    """插件分类（对应 PRD「Claude Code 专属插件分类」）。"""
+    # Plugin categories (per PRD "Claude Code exclusive plugin categories").
 
-    CODING_PLAN = "coding_plan"  # coding-plan 加速插件
-    CONTEXT_COMPRESS = "context_compress"  # 代码上下文压缩（caveman 等）
-    MLX_INFERENCE = "mlx_inference"  # 本地 MLX 模型推理插件
-    TERMINAL_PROXY = "terminal_proxy"  # 终端命令代理插件
-    FILE_INDEX = "file_index"  # 本地文件检索
-    QUANTIZATION = "quantization"  # 混合量化工具
-    VISUAL_BACKEND = "visual_backend"  # Claude 视觉/图像生成后端
-    CONNECTOR = "connector"  # 外部 MCP 连接器工具（connector pack 桥接）
+    CODING_PLAN = "coding_plan"  # coding-plan accelerator plugins
+    CONTEXT_COMPRESS = "context_compress"  # code context compression (caveman etc.)
+    MLX_INFERENCE = "mlx_inference"  # local MLX model inference plugins
+    TERMINAL_PROXY = "terminal_proxy"  # terminal command proxy plugins
+    FILE_INDEX = "file_index"  # local file search
+    QUANTIZATION = "quantization"  # mixed quantization tools
+    VISUAL_BACKEND = "visual_backend"  # Claude vision/image generation backend
+    CONNECTOR = "connector"  # external MCP connector tools (connector pack bridge)
     CUSTOM = "custom"
 
 
 class PluginCapability(str, Enum):
-    """插件能力声明，驱动 MCP Tools / Claude Skill 自动暴露。"""
+    # Plugin capability declarations, drive MCP Tools / Claude Skill
+    # auto-exposure.
 
-    MCP_TOOL = "mcp_tool"  # 暴露为 MCP Tool
-    CLAUDE_SKILL = "claude_skill"  # 自动转 Claude Skill
-    SUBAGENT = "subagent"  # Claude Code 子代理
-    FILE_ACCESS = "file_access"  # 本地文件读写
-    VRAM_CONSUMER = "vram_consumer"  # 占用显存，需 Desk 调度
-    LONG_TASK = "long_task"  # 长任务，需超时熔断
+    MCP_TOOL = "mcp_tool"  # exposed as an MCP Tool
+    CLAUDE_SKILL = "claude_skill"  # auto-converted to a Claude Skill
+    SUBAGENT = "subagent"  # Claude Code subagent
+    FILE_ACCESS = "file_access"  # local file read/write
+    VRAM_CONSUMER = "vram_consumer"  # consumes vRAM, needs Desk scheduling
+    LONG_TASK = "long_task"  # long task, needs timeout meltdown
 
 
 @dataclass(frozen=True)
 class PluginParam:
-    """插件参数 schema（用于 Claude Skill 参数描述 + Desk 配置面板）。"""
+    # Plugin parameter schema (for Claude Skill parameter descriptions +
+    # the Desk config panel).
 
     name: str
-    type: PluginParamType | str  # PluginParamType 枚举，向后兼容字符串
+    type: PluginParamType | str  # PluginParamType enum, str kept for backward compat
     description: str
     required: bool = False
     default: Any = None
@@ -87,34 +91,35 @@ class PluginParam:
 
 @dataclass(frozen=True)
 class PluginManifest:
-    """插件清单（声明式，不含实例，不可变）。"""
+    # Plugin manifest (declarative, no instances, immutable).
 
-    id: str  # 全局唯一，如 "caveman_compress"
-    name: str  # 用户友好名称
+    id: str  # globally unique, e.g. "caveman_compress"
+    name: str  # user-friendly name
     version: str
     category: PluginCategory
     description: str
     capabilities: tuple[PluginCapability, ...] = ()
     params: tuple[PluginParam, ...] = ()
-    # 插件入口（可调用对象或 dotted path）
+    # Plugin entry point (callable or dotted path)
     entry_point: Callable[..., Any] | str | None = None
-    # 默认是否挂载给 Claude 会话（对应 PRD「内置 caveman 默认挂载」）
+    # Whether it is mounted to Claude sessions by default (per PRD "builtin
+    # caveman mounted by default")
     default_mounted: bool = False
-    # 长任务超时秒数（None 表示继承 Desk 默认）
+    # Long-task timeout in seconds (None inherits the Desk default)
     timeout_seconds: int | None = None
-    # 显存占用预估（MB），0 表示不占用
+    # Estimated vRAM usage (MB), 0 = none
     vram_mb: int = 0
-    # 依赖的其他插件 ID（拓扑序加载）
+    # Other plugin IDs this one depends on (loaded in topological order)
     depends_on: tuple[str, ...] = ()
-    # 沙箱运行模式
+    # Sandbox run mode
     sandbox_mode: SandboxMode = SandboxMode.INLINE
-    # 插件级最大重启次数（None 表示继承全局 MAX_RESTART）
+    # Plugin-level max restart count (None inherits the global MAX_RESTART)
     max_restart: int | None = None
-    # MCP 工具输出 JSON Schema（MCP 2026-07-28 outputSchema）
+    # MCP tool output JSON Schema (MCP 2026-07-28 outputSchema)
     output_schema: dict[str, Any] | None = None
-    # MCP 工具行为注解
+    # MCP tool behavior annotations
     mcp_annotations: Any = None
-    # 子代理使用的 Claude 模型（None 表示使用默认模型）
+    # Claude model used by the subagent (None = default model)
     agent_model: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -145,13 +150,12 @@ class PluginManifest:
 
 
 class PluginRegistry:
-    """插件注册中心。
-
-    用法：
-        registry = PluginRegistry(desk)
-        registry.register(manifest)
-        registry.register_builtin()    # 注册内置 caveman 等
-    """
+    # Plugin registry.
+    #
+    # Usage:
+    #     registry = PluginRegistry(desk)
+    #     registry.register(manifest)
+    #     registry.register_builtin()    # register builtin caveman etc.
 
     def __init__(self, desk: DeskRuntime | None = None) -> None:
         self._manifests: dict[str, PluginManifest] = {}
@@ -159,37 +163,39 @@ class PluginRegistry:
         self.desk: DeskRuntime = desk or DeskRuntime()
 
     def register(self, manifest: PluginManifest) -> None:
-        """注册插件清单。相同 ID + 相同版本幂等；不同版本拒绝。"""
+        # Register a plugin manifest. Same ID + same version is idempotent;
+        # a different version is rejected.
         existing = self._manifests.get(manifest.id)
         if existing is not None:
-            # E5：语义版本比较，"1.0" 与 "1.0.0" 视为等价（幂等忽略）
+            # E5: semantic version comparison, "1.0" and "1.0.0" are
+            # equivalent (idempotently ignored)
             if _version_key(existing.version) == _version_key(manifest.version):
                 logger.debug(
-                    "registry: 插件 %s v%s 重复注册（幂等忽略）",
+                    "registry: plugin %s v%s re-registered (idempotent, ignored)",
                     manifest.id,
                     manifest.version,
                 )
                 return
             raise ValueError(
-                f"插件 {manifest.id!r} 版本冲突: 已注册 v{existing.version}, 尝试注册 v{manifest.version}"
+                f"plugin {manifest.id!r} version conflict: registered v{existing.version}, got v{manifest.version}"
             )
         self._manifests[manifest.id] = manifest
         self.desk.registered_plugin_ids.add(manifest.id)
-        logger.info("registry: 插件 %s v%s 已注册", manifest.id, manifest.version)
+        logger.info("registry: plugin %s v%s registered", manifest.id, manifest.version)
 
     def unregister(self, plugin_id: str) -> None:
-        """注销插件。"""
+        # Unregister a plugin.
         if plugin_id in self._manifests:
             del self._manifests[plugin_id]
             self.desk.registered_plugin_ids.discard(plugin_id)
-            logger.info("registry: 插件 %s 已注销", plugin_id)
+            logger.info("registry: plugin %s unregistered", plugin_id)
 
     def get(self, plugin_id: str) -> PluginManifest | None:
-        """获取插件清单。"""
+        # Get a plugin manifest.
         return self._manifests.get(plugin_id)
 
     def list(self, category: PluginCategory | None = None) -> list[PluginManifest]:
-        """列出插件（可按分类过滤）。"""
+        # List plugins (optionally filtered by category).
         result = list(self._manifests.values())
         if category is not None:
             result = [m for m in result if m.category == category]
@@ -198,22 +204,21 @@ class PluginRegistry:
     def list_as_dicts(
         self, category: PluginCategory | None = None
     ) -> list[dict[str, Any]]:
-        """列出插件为 JSON 友好字典（供 Swift/Kotlin/TS 消费端）。"""
+        # List plugins as JSON-friendly dicts (for Swift/Kotlin/TS consumers).
         return [m.to_dict() for m in self.list(category=category)]
 
     def resolve_load_order(self, plugin_ids: list[str] | None = None) -> list[str]:
-        """按依赖拓扑排序返回加载顺序。
-
-        Args:
-            plugin_ids: 需要加载的插件 ID 列表，None 表示全部。
-
-        Returns:
-            排序后的插件 ID 列表（依赖在前）。
-
-        Raises:
-            ValueError: 存在循环依赖。
-            KeyError: 依赖的插件未注册。
-        """
+        # Return the load order sorted by dependency topology.
+        #
+        # Args:
+        #     plugin_ids: plugin IDs to load; None means all.
+        #
+        # Returns:
+        #     Sorted plugin ID list (dependencies first).
+        #
+        # Raises:
+        #     ValueError: circular dependency.
+        #     KeyError: a dependent plugin is not registered.
         targets = set(plugin_ids) if plugin_ids else set(self._manifests.keys())
         visited: set[str] = set()
         order: list[str] = []
@@ -223,10 +228,10 @@ class PluginRegistry:
             if pid in visited:
                 return
             if pid in in_stack:
-                raise ValueError(f"循环依赖: {' → '.join(in_stack)} → {pid}")
+                raise ValueError(f"circular dependency: {' → '.join(in_stack)} → {pid}")
             manifest = self._manifests.get(pid)
             if manifest is None:
-                raise KeyError(f"依赖插件 {pid!r} 未注册")
+                raise KeyError(f"dependent plugin {pid!r} is not registered")
             in_stack.add(pid)
             for dep in manifest.depends_on:
                 visit(dep)
@@ -239,12 +244,13 @@ class PluginRegistry:
         return order
 
     def register_builtin(self) -> None:
-        """注册内置插件（显式聚合清单）。
-
-        新增内置插件时在此追加。不再用 pkgutil+dir() 扫描：dir() 会拾起
-        被导入到模块命名空间的 *_MANIFEST 符号（误注册非内置插件）、顺序
-        不稳定、且无法在导入期静态发现新增模块（P2-6）。
-        """
+        # Register builtin plugins (explicit aggregate list).
+        #
+        # Append new builtin plugins here. No longer uses pkgutil+dir()
+        # scanning: dir() picks up *_MANIFEST symbols imported into the
+        # module namespace (accidentally registering non-builtin plugins),
+        # the order is unstable, and newly added modules cannot be
+        # statically discovered at import time (P2-6).
         from fusion_plugins_ecosystem.builtin.caveman_compress import (
             CAVEMAN_MANIFEST,
         )
@@ -261,5 +267,6 @@ class PluginRegistry:
         )
 
     def default_mounted(self) -> list[PluginManifest]:
-        """返回所有 default_mounted=True 的插件（默认挂载给 Claude 会话）。"""
+        # Return all plugins with default_mounted=True (mounted to Claude
+        # sessions by default).
         return [m for m in self._manifests.values() if m.default_mounted]

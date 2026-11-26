@@ -1,15 +1,14 @@
-"""插件沙箱：进程隔离执行。
-
-PluginSandbox (宿主侧) 通过子进程运行插件，
-SandboxWorker (子进程侧) 通过 stdin/stdout JSON 消息与宿主通信。
-
-IPC 协议：
-    宿主 → 子进程: {"type": "call", "id": "uuid", "method": "execute", "args": {...}}
-    子进程 → 宿主: {"type": "result", "id": "uuid", "result": {...}}
-    子进程 → 宿主: {"type": "heartbeat", "timestamp": 1234567890}
-    子进程 → 宿主: {"type": "log", "level": "INFO", "message": "..."}
-    子进程 → 宿主: {"type": "error", "id": "uuid", "error": "..."}
-"""
+# Plugin sandbox: process-isolated execution.
+#
+# PluginSandbox (host side) runs plugins in subprocesses; SandboxWorker
+# (subprocess side) talks to the host via stdin/stdout JSON messages.
+#
+# IPC protocol:
+#     host → subprocess: {"type": "call", "id": "uuid", "method": "execute", "args": {...}}
+#     subprocess → host: {"type": "result", "id": "uuid", "result": {...}}
+#     subprocess → host: {"type": "heartbeat", "timestamp": 1234567890}
+#     subprocess → host: {"type": "log", "level": "INFO", "message": "..."}
+#     subprocess → host: {"type": "error", "id": "uuid", "error": "..."}
 
 from __future__ import annotations
 
@@ -25,30 +24,34 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# P0-2：SIGKILL 后回收等待上限。超出即放弃等待（进程可能处不可中断 D-state），
-# 避免无超时 await 永久挂起调用链。
+# P0-2: upper bound for waiting to reap after SIGKILL. Past this, give up
+# waiting (the process may be in uninterruptible D-state) to avoid an
+# unbounded await hanging the whole call chain.
 _KILL_REAP_TIMEOUT = 5
 
-# P1-8/E6：日志级别白名单，防 worker 发非法 level 字符串经 getattr 解析到非日志方法。
+# P1-8/E6: log level whitelist, prevents a worker sending an invalid level
+# string from resolving to a non-log method via getattr.
 _VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 
 @dataclass(frozen=True)
 class ResourceLimits:
-    """子进程资源限制。"""
+    # Resource limits for the subprocess.
 
     vram_budget_mb: int = 0
     memory_limit_mb: int = 512
-    # P3-5：默认 0=不限。RLIMIT_CPU 是累计 CPU 秒，1.0 会 SIGXCPU 杀掉合法计算插件
-    # （MLX 推理/压缩）。墙钟上限已由 timeout_seconds + heartbeat 覆盖；需 CPU 封顶
-    # 的插件在 manifest 显式声明 cpu_limit。worker 脚本 cpu_limit>0 才 setrlimit。
+    # P3-5: default 0 = unlimited. RLIMIT_CPU counts cumulative CPU seconds;
+    # 1.0 would SIGXCPU-kill legitimate compute plugins (MLX inference /
+    # compression). Wall-clock caps are already covered by timeout_seconds +
+    # heartbeat; plugins needing a CPU cap declare cpu_limit explicitly in
+    # the manifest. The worker script only setrlimits when cpu_limit > 0.
     cpu_limit: float = 0.0
     timeout_seconds: int = 600
     grace_period_seconds: int = 10
 
 
 class SandboxHealth(str, Enum):
-    """沙箱健康状态。"""
+    # Sandbox health states.
 
     ALIVE = "alive"
     DEAD = "dead"
@@ -58,7 +61,7 @@ class SandboxHealth(str, Enum):
 
 @dataclass
 class SandboxProcess:
-    """运行中的沙箱子进程信息。"""
+    # Info about a running sandbox subprocess.
 
     plugin_id: str
     process: asyncio.subprocess.Process
@@ -72,14 +75,13 @@ class SandboxProcess:
 
 
 class PluginSandbox:
-    """插件沙箱管理器（宿主侧）。
-
-    用法：
-        sandbox = PluginSandbox()
-        await sandbox.spawn("my_plugin", entry_point, config)
-        result = await sandbox.call("my_plugin", "execute", {"input": "hello"})
-        await sandbox.kill("my_plugin")
-    """
+    # Plugin sandbox manager (host side).
+    #
+    # Usage:
+    #     sandbox = PluginSandbox()
+    #     await sandbox.spawn("my_plugin", entry_point, config)
+    #     result = await sandbox.call("my_plugin", "execute", {"input": "hello"})
+    #     await sandbox.kill("my_plugin")
 
     def __init__(
         self,
@@ -88,15 +90,17 @@ class PluginSandbox:
     ) -> None:
         self._processes: dict[str, SandboxProcess] = {}
         self.default_limits = default_limits or ResourceLimits()
-        # R1：宿主 DeskRuntime 句柄，供 worker 资源代理 RPC 回调
+        # R1: host DeskRuntime handle, used for worker resource-proxy RPC callbacks
         self.desk = desk
 
     async def _handle_rpc(self, proc: SandboxProcess, msg: dict) -> None:
-        """处理 worker 回调宿主的资源请求（R1：PROCESS 沙箱资源代理）。
-
-        worker 内 _DeskProxy 的 acquire_vram/mlx_chat/check_file_permission/
-        get_api_key 通过 stdout 发 rpc 消息回调宿主，宿主执行后经 stdin 回写结果。
-        """
+        # Handle resource requests where the worker calls back to the host
+        # (R1: PROCESS sandbox resource proxy).
+        #
+        # The worker-side _DeskProxy's acquire_vram/mlx_chat/
+        # check_file_permission/get_api_key send rpc messages back to the
+        # host via stdout; the host executes them and writes the result
+        # back over stdin.
         rpc_id = msg.get("id", "")
         method = msg.get("method", "")
         args = msg.get("args", {})
@@ -104,7 +108,9 @@ class PluginSandbox:
         error: str | None = None
         try:
             if self.desk is None:
-                raise RuntimeError("宿主 DeskRuntime 未注入，无法代理资源请求")
+                raise RuntimeError(
+                    "host DeskRuntime not injected, cannot proxy resource requests"
+                )
             if method == "acquire_vram":
                 result = self.desk.acquire_vram(
                     args.get("plugin_id", proc.plugin_id),
@@ -121,17 +127,17 @@ class PluginSandbox:
             elif method == "get_api_key":
                 result = self.desk.get_api_key(args.get("provider", ""))
             elif method == "mlx_chat":
-                # 异步方法，需 await
+                # Async method, needs await
                 result = await self.desk.mlx_chat(
                     args.get("model", ""),
                     args.get("messages", []),
                     **args.get("kwargs", {}),
                 )
             else:
-                raise RuntimeError(f"未知 rpc 方法 {method!r}")
+                raise RuntimeError(f"unknown rpc method {method!r}")
         except Exception as exc:
             error = str(exc)
-            logger.warning("sandbox: rpc %s 失败: %s", method, exc)
+            logger.warning("sandbox: rpc %s failed: %s", method, exc)
         reply = {"type": "rpc_result", "id": rpc_id}
         if error is not None:
             reply["error"] = error
@@ -142,7 +148,7 @@ class PluginSandbox:
             proc.process.stdin.write(line.encode("utf-8"))
             await proc.process.stdin.drain()
         except Exception as exc:
-            logger.warning("sandbox: rpc 回写失败: %s", exc)
+            logger.warning("sandbox: rpc reply write failed: %s", exc)
 
     async def spawn(
         self,
@@ -151,7 +157,7 @@ class PluginSandbox:
         config: dict[str, Any] | None = None,
         limits: ResourceLimits | None = None,
     ) -> None:
-        """启动沙箱子进程。"""
+        # Spawn the sandbox subprocess.
         if plugin_id in self._processes:
             logger.warning("sandbox: plugin %s already spawned, killing old", plugin_id)
             await self.kill(plugin_id)
@@ -188,13 +194,13 @@ class PluginSandbox:
         logger.info("sandbox: spawned %s (pid=%d)", plugin_id, proc.pid)
         if self.desk is not None:
             self.desk.metrics.counter(
-                "sandbox_spawns_total", "PROCESS 沙箱子进程 spawn 总数"
+                "sandbox_spawns_total", "total PROCESS sandbox subprocess spawns"
             ).inc(plugin=plugin_id, status="spawned")
 
     async def call(
         self, plugin_id: str, method: str, args: dict[str, Any] | None = None
     ) -> Any:
-        """调用沙箱内插件方法。"""
+        # Call a plugin method inside the sandbox.
         proc = self._processes.get(plugin_id)
         if proc is None:
             raise KeyError(f"sandbox: plugin {plugin_id!r} not spawned")
@@ -225,10 +231,11 @@ class PluginSandbox:
             return await asyncio.wait_for(future, timeout=proc.limits.timeout_seconds)
         except TimeoutError:
             proc.pending_calls.pop(call_id, None)
-            # 超时后必须 kill worker：否则孤儿进程残留，下次 call 复用卡死进程（P0-4）。
-            # _invoke_sandbox 在 health!=alive 时会 respawn。
+            # The worker must be killed after a timeout: otherwise an orphan
+            # process lingers and the next call reuses the stuck process
+            # (P0-4). _invoke_sandbox respawns when health != alive.
             self.desk_log(
-                proc, "ERROR", f"call {call_id} 超时，kill worker 并等待 respawn"
+                proc, "ERROR", f"call {call_id} timed out, killing worker and waiting for respawn"
             )
             await self.kill(plugin_id)
             raise TimeoutError(
@@ -239,12 +246,13 @@ class PluginSandbox:
     def desk_log(
         self, proc: SandboxProcess, level: str, message: str, **kw: Any
     ) -> None:
-        """沙箱侧日志经宿主 logger 输出（worker 自身日志已通过 IPC 回传）。"""
+        # Sandbox-side logs go through the host logger (worker's own logs
+        # are already relayed via IPC).
         log_method = getattr(logger, level.lower(), logger.info)
         log_method("sandbox:%s: %s %s", proc.plugin_id, message, kw or "")
 
     async def kill(self, plugin_id: str) -> None:
-        """终止沙箱子进程。"""
+        # Terminate the sandbox subprocess.
         proc = self._processes.pop(plugin_id, None)
         if proc is None:
             return
@@ -268,15 +276,16 @@ class PluginSandbox:
                 )
             except TimeoutError:
                 proc.process.kill()
-                # P0-2：SIGKILL 后等待回收加超时，避免 worker 进入不可中断 D-state
-                # 时此 await 永久挂起、连带拖垮 execute/_watch_loop。
+                # P0-2: bound the post-SIGKILL reap wait so this await never
+                # hangs forever if the worker enters uninterruptible
+                # D-state, taking down execute/_watch_loop with it.
                 try:
                     await asyncio.wait_for(
                         proc.process.wait(), timeout=_KILL_REAP_TIMEOUT
                     )
                 except TimeoutError:
                     logger.error(
-                        "sandbox: %s SIGKILL 后 %ss 未回收，放弃等待（可能 D-state）",
+                        "sandbox: %s not reaped %ss after SIGKILL, giving up (possible D-state)",
                         plugin_id,
                         _KILL_REAP_TIMEOUT,
                     )
@@ -287,19 +296,19 @@ class PluginSandbox:
         logger.info("sandbox: killed %s", plugin_id)
 
     def health(self, plugin_id: str) -> SandboxHealth:
-        """查询沙箱健康状态。"""
+        # Query the sandbox health state.
         proc = self._processes.get(plugin_id)
         if proc is None:
             return SandboxHealth.DEAD
         return proc.health
 
     async def shutdown_all(self) -> None:
-        """关闭所有沙箱子进程。"""
+        # Shut down all sandbox subprocesses.
         for plugin_id in list(self._processes.keys()):
             await self.kill(plugin_id)
 
     async def _read_loop(self, proc: SandboxProcess) -> None:
-        """读取子进程 stdout 消息。"""
+        # Read messages from the subprocess stdout.
         try:
             while proc.health == SandboxHealth.ALIVE:
                 line = await proc.process.stdout.readline()
@@ -307,7 +316,7 @@ class PluginSandbox:
                     proc.health = SandboxHealth.DEAD
                     logger.warning("sandbox: %s stdout EOF", proc.plugin_id)
                     self._fail_pending(
-                        proc, RuntimeError(f"sandbox {proc.plugin_id!r} 进程已退出")
+                        proc, RuntimeError(f"sandbox {proc.plugin_id!r} process exited")
                     )
                     break
                 text = line.decode("utf-8").strip()
@@ -321,10 +330,11 @@ class PluginSandbox:
                     )
                     continue
 
-                # P1-8：非 dict 消息（如 worker 误 print(5)）不击杀整个沙箱，跳过即可
+                # P1-8: non-dict messages (e.g. a worker accidentally
+                # print(5)-ing) do not kill the whole sandbox, just skip
                 if not isinstance(msg, dict):
                     logger.warning(
-                        "sandbox: %s 非 dict 消息已丢弃: %s",
+                        "sandbox: %s dropped non-dict message: %s",
                         proc.plugin_id,
                         text[:100],
                     )
@@ -340,7 +350,8 @@ class PluginSandbox:
                 elif msg_type == "log":
                     self._handle_log(proc, msg)
                 elif msg_type == "rpc":
-                    # R1：PROCESS 沙箱资源代理 RPC，worker 回调宿主 DeskRuntime
+                    # R1: PROCESS sandbox resource-proxy RPC, worker calls
+                    # back into the host DeskRuntime
                     await self._handle_rpc(proc, msg)
                 else:
                     logger.warning(
@@ -354,7 +365,7 @@ class PluginSandbox:
             self._fail_pending(proc, e)
 
     async def _heartbeat_monitor(self, proc: SandboxProcess) -> None:
-        """监控子进程心跳。"""
+        # Monitor the subprocess heartbeat.
         try:
             while proc.health == SandboxHealth.ALIVE:
                 await asyncio.sleep(proc.limits.timeout_seconds / 4)
@@ -387,17 +398,19 @@ class PluginSandbox:
     def _handle_log(self, proc: SandboxProcess, msg: dict) -> None:
         level = str(msg.get("level", "INFO")).upper()
         message = msg.get("message", "")
-        # E6：level 白名单，防 worker 发非法字符串经 getattr 解析到非日志方法崩循环
+        # E6: level whitelist, prevents a worker sending an invalid string
+        # from resolving to a non-log method via getattr and crashing the loop
         if level not in _VALID_LOG_LEVELS:
             level = "INFO"
         log_method = getattr(logger, level.lower(), logger.info)
         log_method("sandbox:%s: %s", proc.plugin_id, message)
 
     async def _drain_stderr(self, proc: SandboxProcess) -> None:
-        """持续读取子进程 stderr，防止 PIPE 缓冲区写满导致子进程阻塞。
-
-        子进程的日志已通过 stdout IPC 回传，stderr 只捕获意外的 traceback。
-        """
+        # Continuously drain the subprocess stderr so the PIPE buffer never
+        # fills up and blocks the subprocess.
+        #
+        # The subprocess's logs are already relayed via stdout IPC; stderr
+        # only captures unexpected tracebacks.
         try:
             while proc.health == SandboxHealth.ALIVE:
                 line = await proc.process.stderr.readline()
@@ -412,7 +425,8 @@ class PluginSandbox:
             logger.debug("sandbox: %s stderr drain ended: %s", proc.plugin_id, e)
 
     def _fail_pending(self, proc: SandboxProcess, exc: BaseException) -> None:
-        """进程异常退出时，让所有等待中的调用以异常结束，避免调用方永久挂起。"""
+        # When the process exits abnormally, fail all in-flight calls with an
+        # exception so callers never hang forever.
         for _call_id, future in list(proc.pending_calls.items()):
             if not future.done():
                 future.set_exception(exc)
@@ -421,15 +435,19 @@ class PluginSandbox:
     def _build_worker_script(
         self, entry_point: Any, config: dict, limits: ResourceLimits
     ) -> str:
-        """构建子进程 worker 脚本。
-
-        修复要点：
-        - 入口调用签名对齐 inline 契约 entry(desk, params)，desk 为 _DeskProxy
-        - stdout 输出加锁，心跳线程与主循环不再竞争交错
-        - 日志经 _DeskProxy.log 通过 stdout IPC 回传宿主，不再写 stderr 避免管道阻塞
-        - 持久事件循环 + 每次调用独立 task（按 call_id 调度），支持并发分发与取消（P1-8）：
-          旧版 for-line-in-stdin 串行，调用 A 阻塞则调用 B 排队，且无法取消卡死调用。
-        """
+        # Build the subprocess worker script.
+        #
+        # Fix highlights:
+        # - Entry call signature aligned with the inline contract
+        #   entry(desk, params), where desk is a _DeskProxy
+        # - stdout writes are locked so the heartbeat thread and the main
+        #   loop no longer race and interleave
+        # - Logs go through _DeskProxy.log back to the host via stdout IPC
+        #   instead of stderr to avoid pipe blocking
+        # - Persistent event loop + one task per call (dispatched by call_id)
+        #   supports concurrent dispatch and cancellation (P1-8): the old
+        #   for-line-in-stdin version was serial, a blocked call A queued
+        #   call B, and stuck calls could not be cancelled.
         entry_str = ""
         if callable(entry_point):
             mod = getattr(entry_point, "__module__", "")
@@ -442,13 +460,16 @@ class PluginSandbox:
         return (
             "import sys,json,time,importlib,resource,threading,asyncio,inspect\n"
             f"_ENTRY={entry_str!r}\n"
-            # P0-3：config 经 repr 序列化为 Python 字面量而非 json.dumps。
-            # json 的 true/false/null 不是合法 Python 标识符，嵌入 worker 脚本会
-            # NameError: name 'true' is not defined → 所有携带 bool/None 配置的
-            # PROCESS 插件 spawn 即崩。repr() 输出 True/False/None 合法 Python。
+            # P0-3: config is serialized to a Python literal via repr instead
+            # of json.dumps. JSON's true/false/null are not valid Python
+            # identifiers; embedding them in the worker script raises
+            # NameError: name 'true' is not defined, crashing the spawn of
+            # every PROCESS plugin whose config carries bool/None. repr()
+            # emits True/False/None, which is valid Python.
             f"_CONFIG={config!r}\n"
             f"_MEM_LIMIT_MB={limits.memory_limit_mb}\n"
-            # E2：CPU 限时（秒，向上取整），0 表示不限。RLIMIT_CPU 触发 SIGXCPU
+            # E2: CPU limit (seconds, rounded up), 0 = unlimited.
+            # RLIMIT_CPU triggers SIGXCPU
             f"_CPU_LIMIT_SEC={int(limits.cpu_limit) if limits.cpu_limit > 0 else 0}\n"
             "_OUT_LOCK=threading.Lock()\n"
             "def _send(msg):\n"
@@ -458,8 +479,10 @@ class PluginSandbox:
             "        sys.stdout.flush()\n"
             "def _log(level,message,**extra):\n"
             "    _send({'type':'log','level':level,'message':message,'extra':extra})\n"
-            # R1：资源代理 RPC 状态。_rpc_futures[rid]=Future，rpc 回包按 id 唤醒。
-            # 用 concurrent.futures.Future（线程安全），_stdin_reader 线程解析回包后 set_result。
+            # R1: resource-proxy RPC state. _rpc_futures[rid]=Future; rpc
+            # replies wake the future by id. Uses concurrent.futures.Future
+            # (thread-safe); the _stdin_reader thread parses replies and
+            # calls set_result.
             "import concurrent.futures as _cf\n"
             "_rpc_futures={}\n"
             "_rpc_counter=[0]\n"
@@ -476,7 +499,7 @@ class PluginSandbox:
             "        return fut.result(timeout=_RPC_TIMEOUT)\n"
             "    except _cf.TimeoutError:\n"
             "        _rpc_futures.pop(rid,None)\n"
-            "        raise TimeoutError('资源代理 RPC 超时: %s'%method)\n"
+            "        raise TimeoutError('resource proxy RPC timeout: %s'%method)\n"
             "class _DeskProxy:\n"
             "    def log(self,plugin_id,level,message,**kw):\n"
             "        _log(level,message,**kw)\n"
@@ -496,8 +519,10 @@ class PluginSandbox:
             "    resource.setrlimit(resource.RLIMIT_AS,(_MEM_LIMIT_MB*1024*1024,hard))\n"
             "except Exception as e:\n"
             "    _log('WARNING','setrlimit RLIMIT_AS failed: %s'%e)\n"
-            # E2：CPU 限时（秒）。超限触发 SIGXCPU，worker 被 OS 终止，宿主侧
-            # _read_loop 收到 EOF 走 CRASHED 路径，避免插件独占 CPU 卡死宿主。
+            # E2: CPU limit (seconds). Exceeding it triggers SIGXCPU; the OS
+            # terminates the worker, the host-side _read_loop sees EOF and
+            # takes the CRASHED path, preventing a plugin from monopolizing
+            # the CPU and wedging the host.
             "if _CPU_LIMIT_SEC>0:\n"
             "    try:\n"
             "        soft,hard=resource.getrlimit(resource.RLIMIT_CPU)\n"
@@ -513,7 +538,7 @@ class PluginSandbox:
             "    return importlib.import_module(_ENTRY)\n"
             "_entry_obj=_load_entry()\n"
             "if _entry_obj is None:\n"
-            "    _log('ERROR','插件入口未配置，无法执行')\n"
+            "    _log('ERROR','plugin entry point not configured, cannot execute')\n"
             "def _heartbeat_loop():\n"
             "    def _tick():\n"
             "        while True:\n"
@@ -522,25 +547,28 @@ class PluginSandbox:
             "    t=threading.Thread(target=_tick,daemon=True)\n"
             "    t.start()\n"
             "_heartbeat_loop()\n"
-            # 持久事件循环：每个 call 起独立 task，并发分发；按 call_id 索引结果。
+            # Persistent event loop: one independent task per call, concurrent
+            # dispatch; results indexed by call_id.
             "async def _execute(call_id,args):\n"
             "    if not _entry_obj:\n"
-            "        _send({'type':'error','id':call_id,'error':'插件入口未配置'})\n"
+            "        _send({'type':'error','id':call_id,'error':'plugin entry point not configured'})\n"
             "        return\n"
             "    try:\n"
             "        if inspect.iscoroutinefunction(_entry_obj):\n"
             "            result=await _entry_obj(desk,args)\n"
             "        elif callable(_entry_obj):\n"
-            # 同步入口丢线程池，不阻塞事件循环（与宿主 _invoke_inline to_thread 同理）
+            # Sync entry points go to the thread pool so the event loop is
+            # not blocked (same idea as the host's _invoke_inline to_thread)
             "            result=await asyncio.to_thread(_entry_obj,desk,args)\n"
             "        else:\n"
             "            result=str(_entry_obj)\n"
             "        _send({'type':'result','id':call_id,'result':result})\n"
-            # BaseException 覆盖 SystemExit（插件 sys.exit 场景），转为 error 回传而非静默死 task
+            # BaseException covers SystemExit (plugin calling sys.exit),
+            # converted to an error reply instead of a silently dead task
             "    except BaseException as e:\n"
             "        _send({'type':'error','id':call_id,'error':str(e)})\n"
             "async def _main():\n"
-            # loop=asyncio.get_event_loop() 保证后续 add_reader 可用
+            # loop=asyncio.get_event_loop() ensures add_reader works afterwards
             "    loop=asyncio.get_event_loop()\n"
             "    loop.run_in_executor(None,_stdin_reader,loop)\n"
             "    while True:\n"
@@ -570,7 +598,7 @@ class PluginSandbox:
             "            asyncio.run_coroutine_threadsafe(_execute(call_id,args),loop)\n"
             "        else:\n"
             "            _send({'type':'error','id':call_id,'error':f'Unknown method {method}'})\n"
-            "    _log('ERROR','worker stdin EOF，退出')\n"
+            "    _log('ERROR','worker stdin EOF, exiting')\n"
             "    loop.call_soon_threadsafe(loop.stop)\n"
             "asyncio.run(_main())\n"
         )
