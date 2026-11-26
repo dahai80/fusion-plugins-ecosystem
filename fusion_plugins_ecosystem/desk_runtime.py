@@ -1,14 +1,12 @@
-"""fusion-cowork runtime 对接层。
-
-封装 fusion-cowork 的真实 runtime 句柄：
-- NodeRegistry：节点类型注册表
-- TaskScheduler：定时任务调度器
-- FusionMLXClient：本地 MLX 推理客户端
-- WorkflowEngine：工作流引擎
-
-插件生态通过 DeskRuntime 访问 cowork 的底层抽象，所有调用经此层中转，
-便于测试时注入 fake runtime。
-"""
+# fusion-cowork runtime adapter layer.
+# Wraps the real fusion-cowork runtime handles:
+# - NodeRegistry: node type registry
+# - TaskScheduler: scheduled task scheduler
+# - FusionMLXClient: local MLX inference client
+# - WorkflowEngine: workflow engine
+# The plugin ecosystem reaches cowork's underlying abstractions through
+# DeskRuntime; every call is relayed via this layer so tests can inject
+# a fake runtime.
 
 from __future__ import annotations
 
@@ -25,21 +23,21 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# 日志环形缓冲区上限（避免无限增长）
+# Log ring buffer cap (avoid unbounded growth)
 _LOG_BUFFER_MAX = 2000
 
-# API 密钥加密前缀（R6：config_center 内不再明文落盘）
+# API key encryption prefix (R6: no plaintext keys at rest in config_center)
 _KEY_ENC_PREFIX = "enc:"
 
 
+# Derive a machine-local key for API key symmetric encryption (Fernet).
+# Key material = hostname + current user + env salt FUSION_PLUGIN_KEY_SALT.
+# Protects against plaintext key leakage from config files under a
+# single-host threat model; not decryptable across machines/users.
 def _derive_key() -> bytes:
-    """派生本机密钥用于 API 密钥对称加密（Fernet）。
-
-    密钥源 = 主机名 + 当前用户 + 环境盐 FUSION_PLUGIN_KEY_SALT。
-    单机本机威胁模型下防止配置文件明文泄露密钥；跨机/跨用户不可解密。
-    """
-    # issue #36：默认盐字面量已移除（config-conventions §3）——unset 即空，不再静默
-    # 落回可猜测常量。prod 缺盐 fail-fast；dev 空盐宽松放行但醒目告警。
+    # issue #36: default salt literal removed (config-conventions §3) — unset
+    # means empty, no silent fallback to a guessable constant. Prod missing
+    # salt fail-fasts; dev empty salt is allowed but warns loudly.
     salt = os.environ.get("FUSION_PLUGIN_KEY_SALT", "")
     if not salt:
         if os.environ.get("FUSION_PROFILE", "dev") == "prod":
@@ -49,42 +47,44 @@ def _derive_key() -> bytes:
                 "service user. See architecture/config-conventions.md §3."
             )
         logger.warning(
-            "desk_runtime: FUSION_PLUGIN_KEY_SALT 未设置，密钥派生使用空盐（dev 宽松）；"
-            "生产环境必须设置（architecture/config-conventions.md §3）"
+            "desk_runtime: FUSION_PLUGIN_KEY_SALT not set, key derivation uses an "
+            "empty salt (lenient in dev); must be set in production "
+            "(architecture/config-conventions.md §3)"
         )
     material = f"{salt}|{socket.gethostname()}|{os.getuid()}"
     digest = hashlib.sha256(material.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest)
 
 
+# Resolve the real path safely; fall back to normpath if realpath fails (never raises).
 def _safe_realpath(path: str) -> str:
-    """安全解析真实路径，realpath 失败时回退 normpath（不抛异常）。"""
     try:
         return os.path.realpath(path)
     except (OSError, ValueError):
         return os.path.normpath(path)
 
 
+# Production strict mode: with FUSION_PLUGIN_STRICT_ENCRYPTION=1, key
+# encryption failure is a hard error — never fall back to plaintext at rest
+# (violates R6 design intent). Tests/offline default to lenient fallback.
 def _strict_encryption() -> bool:
-    """生产严格模式：FUSION_PLUGIN_STRICT_ENCRYPTION=1 时密钥加密失败视为硬错误，
-    不回退明文落盘（违背 R6 设计意图）。测试/离线默认宽松回退。"""
     return os.environ.get("FUSION_PLUGIN_STRICT_ENCRYPTION", "") == "1"
 
 
+# Encrypt an API key, returning ciphertext with the enc: prefix.
+# P2-4: in strict mode, missing cryptography or encryption failure raises
+# instead of falling back to plaintext; lenient mode (default, for
+# tests/offline) falls back to plaintext with a warning.
 def _encrypt_key(plaintext: str) -> str:
-    """加密 API 密钥，返回 enc: 前缀密文。
-
-    P2-4：严格模式下 cryptography 缺失或加密失败抛错而非回退明文；
-    宽松模式（默认，兼容测试/离线）回退明文并告警。
-    """
     try:
         from cryptography.fernet import Fernet
     except ImportError:
         if _strict_encryption():
             raise RuntimeError(
-                "desk_runtime: 严格模式下 cryptography 未安装，拒绝明文存储 API 密钥"
-            )
-        logger.warning("desk_runtime: cryptography 未安装，API 密钥以明文存储")
+                "desk_runtime: strict mode with cryptography not installed, "
+                "refusing to store API key in plaintext"
+            ) from None
+        logger.warning("desk_runtime: cryptography not installed, storing API key in plaintext")
         return plaintext
     try:
         return _KEY_ENC_PREFIX + Fernet(_derive_key()).encrypt(
@@ -93,14 +93,15 @@ def _encrypt_key(plaintext: str) -> str:
     except Exception as exc:
         if _strict_encryption():
             raise RuntimeError(
-                f"desk_runtime: 严格模式下 API 密钥加密失败，拒绝回退明文: {exc}"
-            )
-        logger.warning("desk_runtime: API 密钥加密失败，回退明文: %s", exc)
+                f"desk_runtime: strict mode API key encryption failed, refusing plaintext fallback: {exc}"
+            ) from exc
+        logger.warning("desk_runtime: API key encryption failed, falling back to plaintext: %s", exc)
         return plaintext
 
 
+# Decrypt an API key; values without the enc: prefix are treated as legacy
+# plaintext and returned as-is (backward compatible).
 def _decrypt_key(stored: str | None) -> str | None:
-    """解密 API 密钥；非 enc: 前缀视为历史明文直接返回（向后兼容）。"""
     if stored is None:
         return None
     if not stored.startswith(_KEY_ENC_PREFIX):
@@ -108,7 +109,7 @@ def _decrypt_key(stored: str | None) -> str | None:
     try:
         from cryptography.fernet import Fernet
     except ImportError:
-        logger.warning("desk_runtime: cryptography 未安装，无法解密 API 密钥")
+        logger.warning("desk_runtime: cryptography not installed, cannot decrypt API key")
         return None
     try:
         return (
@@ -117,7 +118,7 @@ def _decrypt_key(stored: str | None) -> str | None:
             .decode("utf-8")
         )
     except Exception as exc:
-        logger.warning("desk_runtime: API 密钥解密失败: %s", exc)
+        logger.warning("desk_runtime: API key decryption failed: %s", exc)
         return None
 
 
@@ -131,14 +132,12 @@ except ImportError:
 
 
 @dataclass
+# fusion-cowork runtime handle wrapper.
+# Injected by fusion-cowork at startup; the plugin ecosystem reaches it via
+# PluginRegistry.desk. When any field is None, the corresponding capability
+# degrades to a no-op (test or offline scenarios).
 class DeskRuntime:
-    """fusion-cowork runtime 句柄封装。
-
-    由 fusion-cowork 启动时注入，插件生态通过 PluginRegistry.desk 访问。
-    任意字段为 None 时，对应能力降级为 no-op（用于测试或离线场景）。
-    """
-
-    # fusion-cowork 节点注册表（fusion_cowork.NodeRegistry）
+    # fusion-cowork node registry (fusion_cowork.NodeRegistry)
     node_registry: Any | None = None
     # fusion-cowork 任务调度器（fusion_cowork.TaskScheduler）
     task_scheduler: Any | None = None

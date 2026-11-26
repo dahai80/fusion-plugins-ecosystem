@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 # P0-2：SIGKILL 后回收等待上限。超出即放弃等待（进程可能处不可中断 D-state），
@@ -224,7 +223,7 @@ class PluginSandbox:
 
         try:
             return await asyncio.wait_for(future, timeout=proc.limits.timeout_seconds)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.pending_calls.pop(call_id, None)
             # 超时后必须 kill worker：否则孤儿进程残留，下次 call 复用卡死进程（P0-4）。
             # _invoke_sandbox 在 health!=alive 时会 respawn。
@@ -235,7 +234,7 @@ class PluginSandbox:
             raise TimeoutError(
                 f"sandbox: plugin {plugin_id!r} call timed out after "
                 f"{proc.limits.timeout_seconds}s"
-            )
+            ) from None
 
     def desk_log(
         self, proc: SandboxProcess, level: str, message: str, **kw: Any
@@ -267,7 +266,7 @@ class PluginSandbox:
                 await asyncio.wait_for(
                     proc.process.wait(), timeout=proc.limits.grace_period_seconds
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 proc.process.kill()
                 # P0-2：SIGKILL 后等待回收加超时，避免 worker 进入不可中断 D-state
                 # 时此 await 永久挂起、连带拖垮 execute/_watch_loop。
@@ -275,7 +274,7 @@ class PluginSandbox:
                     await asyncio.wait_for(
                         proc.process.wait(), timeout=_KILL_REAP_TIMEOUT
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.error(
                         "sandbox: %s SIGKILL 后 %ss 未回收，放弃等待（可能 D-state）",
                         plugin_id,
@@ -414,7 +413,7 @@ class PluginSandbox:
 
     def _fail_pending(self, proc: SandboxProcess, exc: BaseException) -> None:
         """进程异常退出时，让所有等待中的调用以异常结束，避免调用方永久挂起。"""
-        for call_id, future in list(proc.pending_calls.items()):
+        for _call_id, future in list(proc.pending_calls.items()):
             if not future.done():
                 future.set_exception(exc)
         proc.pending_calls.clear()

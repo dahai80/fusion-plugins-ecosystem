@@ -270,7 +270,10 @@ for line in sys.stdin:
     elif m == "tools/list":
         res = {"tools": [{"name": "echo", "description": "echo tool"}]}
     elif m == "tools/call":
-        res = {"content": [{"type": "text", "text": "echo:" + json.dumps(req["params"]["arguments"])}], "isError": False}
+        res = {
+            "content": [{"type": "text", "text": "echo:" + json.dumps(req["params"]["arguments"])}],
+            "isError": False,
+        }
     else:
         res = {}
     out = {"jsonrpc": "2.0", "id": req.get("id"), "result": res}
