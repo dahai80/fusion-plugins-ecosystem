@@ -21,7 +21,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
@@ -41,7 +41,7 @@ MCP_CLIENT_VERSION = "2025-06-18"
 
 
 # Connector tool risk level (drives the approval gate).
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"

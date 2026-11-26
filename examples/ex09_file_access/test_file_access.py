@@ -14,9 +14,8 @@ import os
 import tempfile
 
 import fusion_plugins_ecosystem as fpe
-from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-
 from examples.ex09_file_access.file_plugin import READ_FILE_MANIFEST
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
 
 def _make_lifecycle(desk: DeskRuntime) -> fpe.PluginLifecycle:

@@ -32,7 +32,7 @@ def read_file_plugin(desk, params):
     if not os.path.isfile(path):
         desk.log("read_file_plugin", "WARN", "not a file", path=path)
         return {"error": "not a file", "path": path}
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         content = fh.read()
     desk.log("read_file_plugin", "INFO", "read", path=path, chars=len(content))
     return {"path": path, "content": content, "chars": len(content)}

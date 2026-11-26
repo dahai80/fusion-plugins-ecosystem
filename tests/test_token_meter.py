@@ -214,7 +214,8 @@ def test_token_kind_values() -> None:
 
 
 def test_wal_append_roundtrip(tmp_path) -> None:
-    """record -> flush -> a fresh meter loads the same records (WAL compacted into a snapshot; single file recoverable)."""
+    """record -> flush -> a fresh meter loads the same records (WAL compacted
+    into a snapshot; single file recoverable)."""
     import json
     import os
 
@@ -236,7 +237,8 @@ def test_wal_append_roundtrip(tmp_path) -> None:
 def test_wal_replay_dedups_after_snapshot(tmp_path) -> None:
     """Crash-recovery dedup: wal rows already covered by snapshot.last_seq are not loaded twice.
 
-    Simulates: write snapshot(last_seq=1) + wal containing rows with seq<=1 -> load keeps only the non-duplicate records.
+    Simulates: write snapshot(last_seq=1) + wal containing rows with seq<=1 ->
+    load keeps only the non-duplicate records.
     """
     import json
 

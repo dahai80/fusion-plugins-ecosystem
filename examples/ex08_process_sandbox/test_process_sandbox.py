@@ -11,9 +11,8 @@ examples.ex08_process_sandbox.process_plugin.
 from __future__ import annotations
 
 import fusion_plugins_ecosystem as fpe
-from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-
 from examples.ex08_process_sandbox.process_plugin import ISOLATED_WORKER_MANIFEST
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
 
 def _make_lifecycle() -> fpe.PluginLifecycle:

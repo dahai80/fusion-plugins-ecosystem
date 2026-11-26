@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 
 import fusion_plugins_ecosystem as fpe
-
 from examples.ex02_async.async_plugin import ASYNC_FETCH_MANIFEST, async_fetch
 
 

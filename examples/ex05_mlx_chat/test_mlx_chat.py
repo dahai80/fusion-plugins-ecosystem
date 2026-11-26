@@ -8,9 +8,8 @@ For a LIVE run, start the engine first:
 from __future__ import annotations
 
 import fusion_plugins_ecosystem as fpe
-from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-
 from examples.ex05_mlx_chat.mlx_plugin import MLX_CHAT_MANIFEST
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
 
 def _make_desk(reply_text: str) -> DeskRuntime:

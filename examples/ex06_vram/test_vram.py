@@ -7,9 +7,8 @@ Default DeskRuntime has vram_total_mb=0 (unlimited) so acquire always ok.
 from __future__ import annotations
 
 import fusion_plugins_ecosystem as fpe
-from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-
 from examples.ex06_vram.vram_plugin import HEAVY_COMPUTE_MANIFEST
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
 
 def _make_registry() -> tuple[fpe.PluginRegistry, fpe.PluginLifecycle]:

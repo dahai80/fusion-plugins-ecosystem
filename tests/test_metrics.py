@@ -163,7 +163,8 @@ async def test_http_metrics_endpoint_exposes_exposition() -> None:
 
 
 async def test_http_metrics_endpoint_no_provider_falls_through() -> None:
-    """Without metrics_provider, GET /metrics does not short-circuit and falls to endpoint validation -> 404 (issue #62)."""
+    """Without metrics_provider, GET /metrics does not short-circuit and falls
+    to endpoint validation -> 404 (issue #62)."""
     from fusion_plugins_ecosystem.transport import HTTPTransport
 
     t = HTTPTransport(handler=None, host="127.0.0.1", port=0)

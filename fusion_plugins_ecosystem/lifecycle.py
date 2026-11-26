@@ -15,7 +15,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
@@ -31,7 +31,7 @@ _LAST_ERROR_MAX = 300
 
 
 # Plugin runtime state.
-class PluginState(str, Enum):
+class PluginState(StrEnum):
     REGISTERED = "registered"  # registered, not loaded
     LOADED = "loaded"  # loaded, not enabled
     ENABLED = "enabled"  # running

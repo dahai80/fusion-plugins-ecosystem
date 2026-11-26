@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import fusion_plugins_ecosystem as fpe
+from examples.ex01_echo.echo_plugin import ECHO_MANIFEST
 from fusion_plugins_ecosystem.lifecycle import PluginState
 from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
-
-from examples.ex01_echo.echo_plugin import ECHO_MANIFEST
 
 
 async def test_echo_register_enable_execute():
