@@ -146,10 +146,7 @@ async def run(duration, interval):
         return None
     await lifecycle.enable("soak_mlx")
 
-    print(
-        f"[soak] model={MODEL} duration={duration}s interval={interval}s "
-        f"max_records={meter._max_records}"
-    )
+    print(f"[soak] model={MODEL} duration={duration}s interval={interval}s max_records={meter._max_records}")
     samples = []
     rss_samples = []
     calls_done = 0
@@ -163,9 +160,7 @@ async def run(duration, interval):
     while time.perf_counter() < deadline:
         i += 1
         with meter.measure("soak_mlx", TokenKind.MLX_INFERENCE):
-            result = await lifecycle.execute(
-                "soak_mlx", {"prompt": "reply with exactly: ok", "max_tokens": 8}
-            )
+            result = await lifecycle.execute("soak_mlx", {"prompt": "reply with exactly: ok", "max_tokens": 8})
         if isinstance(result, dict) and result.get("reply"):
             calls_done += 1
         if time.perf_counter() - t_last_sample >= interval:
@@ -181,9 +176,7 @@ async def run(duration, interval):
     # 首样本含模型预热 page-fault，不看首尾差；看后半段最大-最小 RSS。
     last = samples[-1]
     rss_series = [s["rss_mb"] for s in samples]
-    half = (
-        rss_series[len(rss_series) // 2 :] if len(rss_series) >= 4 else rss_series[-2:]
-    )
+    half = rss_series[len(rss_series) // 2 :] if len(rss_series) >= 4 else rss_series[-2:]
     rss_plateau_delta = (max(half) - min(half)) if half else 0.0
     verdict = {
         "rss_first_mb": rss_series[0],
@@ -208,9 +201,7 @@ async def run(duration, interval):
     print(f"\n[verdict] {'STABLE' if ok else 'DRIFT DETECTED'}")
     print("======================")
 
-    await lifecycle._sandbox.shutdown_all() if hasattr(
-        lifecycle._sandbox, "shutdown_all"
-    ) else None
+    await lifecycle._sandbox.shutdown_all() if hasattr(lifecycle._sandbox, "shutdown_all") else None
     await client.close()
     return {"samples": samples, "verdict": verdict, "stable": ok}
 

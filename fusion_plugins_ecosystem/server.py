@@ -85,9 +85,7 @@ class MCPServer:
         self.handler.restore_config()
         # A3：应用配置日志级别到根 logger（CLI --log-level 优先，此处补可编程入口）
         if self.config.log_level and self.config.log_level != "INFO":
-            logging.getLogger().setLevel(
-                getattr(logging, self.config.log_level, logging.INFO)
-            )
+            logging.getLogger().setLevel(getattr(logging, self.config.log_level, logging.INFO))
         self._transport: Any = None
         self._running = False
         # 停止信号：start() 等待、stop() 触发，跨协程保活/停机
@@ -137,9 +135,7 @@ class MCPServer:
         host = kwargs.get("host", self.config.mcp_host)
         port = kwargs.get("port", self.config.mcp_port)
         # R6：SSE/HTTP 远程传输鉴权 token（环境变量注入，不落盘配置）
-        auth_token = kwargs.get(
-            "auth_token", os.environ.get("FUSION_PLUGIN_AUTH_TOKEN")
-        )
+        auth_token = kwargs.get("auth_token", os.environ.get("FUSION_PLUGIN_AUTH_TOKEN"))
 
         # P0-1：远程传输非 loopback 绑定必须鉴权，防止对外裸奔全部 RPC
         if transport_type in ("sse", "http") and not _is_loopback_host(host):
@@ -150,9 +146,7 @@ class MCPServer:
                 )
                 logger.error(msg)
                 raise RuntimeError(msg)
-            logger.warning(
-                "远程传输 %s 绑定 %s 已启用 Bearer 鉴权", transport_type, host
-            )
+            logger.warning("远程传输 %s 绑定 %s 已启用 Bearer 鉴权", transport_type, host)
 
         self._transport = create_transport(
             transport_type,

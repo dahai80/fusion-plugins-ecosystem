@@ -7,12 +7,9 @@ with restart_count incremented, as long as under max_restart.
 
 from __future__ import annotations
 
-import asyncio
-
 import fusion_plugins_ecosystem as fpe
-from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
-
 from examples.ex07_long_task.long_task_plugin import SLOW_WORKER_MANIFEST
+from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
 
 def _make_lifecycle() -> fpe.PluginLifecycle:
@@ -43,8 +40,8 @@ async def test_timeout_triggers_meltdown_and_restart():
             {"work_seconds": 0.3},
             timeout_override=0.05,
         )
-        assert False, "expected asyncio.TimeoutError"
-    except asyncio.TimeoutError:
+        raise AssertionError("expected asyncio.TimeoutError")
+    except TimeoutError:
         pass
 
     # _maybe_restart reloaded the plugin → ENABLED with restart_count=1

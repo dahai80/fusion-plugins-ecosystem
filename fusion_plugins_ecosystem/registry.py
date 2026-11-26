@@ -12,10 +12,11 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.schema import PluginParamType, SandboxMode
@@ -137,9 +138,7 @@ class PluginManifest:
             "sandbox_mode": self.sandbox_mode.value,
             "max_restart": self.max_restart,
             "output_schema": self.output_schema,
-            "mcp_annotations": self.mcp_annotations.to_dict()
-            if self.mcp_annotations
-            else None,
+            "mcp_annotations": self.mcp_annotations.to_dict() if self.mcp_annotations else None,
             "agent_model": self.agent_model,
         }
 
@@ -170,9 +169,7 @@ class PluginRegistry:
                     manifest.version,
                 )
                 return
-            raise ValueError(
-                f"插件 {manifest.id!r} 版本冲突: 已注册 v{existing.version}, 尝试注册 v{manifest.version}"
-            )
+            raise ValueError(f"插件 {manifest.id!r} 版本冲突: 已注册 v{existing.version}, 尝试注册 v{manifest.version}")
         self._manifests[manifest.id] = manifest
         self.desk.registered_plugin_ids.add(manifest.id)
         logger.info("registry: 插件 %s v%s 已注册", manifest.id, manifest.version)
@@ -195,9 +192,7 @@ class PluginRegistry:
             result = [m for m in result if m.category == category]
         return result
 
-    def list_as_dicts(
-        self, category: PluginCategory | None = None
-    ) -> list[dict[str, Any]]:
+    def list_as_dicts(self, category: PluginCategory | None = None) -> list[dict[str, Any]]:
         """列出插件为 JSON 友好字典（供 Swift/Kotlin/TS 消费端）。"""
         return [m.to_dict() for m in self.list(category=category)]
 

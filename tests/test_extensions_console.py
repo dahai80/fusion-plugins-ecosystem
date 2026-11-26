@@ -310,9 +310,7 @@ async def test_harness_live_check_no_creds(console, server):
     console.install_connector(_conn_doc(server))
     out = await console.harness("erp-json")
     assert out["conformant"] is False
-    assert any(
-        "missing credential" in p or "live check failed" in p for p in out["problems"]
-    )
+    assert any("missing credential" in p or "live check failed" in p for p in out["problems"])
 
 
 async def test_harness_live_check_ok(console, server):

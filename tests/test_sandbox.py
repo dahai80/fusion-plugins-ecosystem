@@ -22,7 +22,6 @@ from fusion_plugins_ecosystem.sandbox import (
 )
 from fusion_plugins_ecosystem.schema import SandboxMode
 
-
 # ── 模块级入口（PROCESS 沙箱通过 importlib 导入，不能用闭包/局部函数）──
 
 
@@ -61,9 +60,7 @@ def test_resource_limits_defaults() -> None:
 
 
 def test_resource_limits_custom() -> None:
-    limits = ResourceLimits(
-        memory_limit_mb=1024, timeout_seconds=300, vram_budget_mb=256
-    )
+    limits = ResourceLimits(memory_limit_mb=1024, timeout_seconds=300, vram_budget_mb=256)
     assert limits.memory_limit_mb == 1024
     assert limits.timeout_seconds == 300
     assert limits.vram_budget_mb == 256
@@ -191,9 +188,7 @@ async def test_sandbox_call_dead_plugin_raises() -> None:
 
 async def test_sandbox_spawn_creates_process() -> None:
     sandbox = PluginSandbox()
-    with patch(
-        "fusion_plugins_ecosystem.sandbox.asyncio.create_subprocess_exec"
-    ) as mock_exec:
+    with patch("fusion_plugins_ecosystem.sandbox.asyncio.create_subprocess_exec") as mock_exec:
         mock_process = MagicMock()
         mock_process.pid = 12345
         mock_process.stdin = MagicMock()
@@ -215,9 +210,7 @@ async def test_sandbox_spawn_kills_old_first() -> None:
     sp = SandboxProcess(plugin_id="p1", process=mock_proc, limits=ResourceLimits())
     sandbox._processes["p1"] = sp
 
-    with patch(
-        "fusion_plugins_ecosystem.sandbox.asyncio.create_subprocess_exec"
-    ) as mock_exec:
+    with patch("fusion_plugins_ecosystem.sandbox.asyncio.create_subprocess_exec") as mock_exec:
         mock_process = MagicMock()
         mock_process.pid = 99999
         mock_process.stdin = MagicMock()
@@ -246,9 +239,7 @@ def test_build_worker_script_callable_entry() -> None:
     def my_entry(config, params):
         return "ok"
 
-    script = sandbox._build_worker_script(
-        my_entry, {}, ResourceLimits(memory_limit_mb=1024)
-    )
+    script = sandbox._build_worker_script(my_entry, {}, ResourceLimits(memory_limit_mb=1024))
     assert "_ENTRY=" in script
     assert "_MEM_LIMIT_MB=1024" in script
     # _MEM_LIMIT_MB must be resolved at script generation time, not at runtime

@@ -33,9 +33,7 @@ def _env(tmp_path, monkeypatch):
     from fusion_plugins_ecosystem import shell_registry
 
     monkeypatch.setattr(shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key")
-    monkeypatch.setenv(
-        "FUSION_PLUGIN_MARKETPLACE_INDEX", str(tmp_path / "market_index.json")
-    )
+    monkeypatch.setenv("FUSION_PLUGIN_MARKETPLACE_INDEX", str(tmp_path / "market_index.json"))
 
 
 @pytest.fixture()
@@ -174,9 +172,7 @@ class TestOAuth:
         assert by_id["bank.order.push"]["sensitive"] is True
         assert scopes["credential_fields"] == ["api_key"]
         # 只授权一个读 scope
-        out = await populated.oauth_complete(
-            "bank-api", ["bank.flow.fetch"], {"api_key": "k1"}
-        )
+        out = await populated.oauth_complete("bank-api", ["bank.flow.fetch"], {"api_key": "k1"})
         assert out["completed"] is True
         assert out["granted_scopes"] == ["bank.flow.fetch"]
         assert out["sensitive_scopes_per_use"] == ["bank.order.push"]
@@ -203,9 +199,7 @@ class TestOAuth:
         await populated.install_bundle("finance-kit")
         await populated.oauth_complete("bank-api", [], {"api_key": "k"})
         bundles = populated.list_bundles()["bundles"]
-        item = next(
-            i for b in bundles for i in b["items"] if i.get("ref") == "bank-api"
-        )
+        item = next(i for b in bundles for i in b["items"] if i.get("ref") == "bank-api")
         assert item["state"] == "enabled"
 
 
@@ -241,15 +235,11 @@ class TestUpdate:
         assert populated._plugin_enabled("invoice-skill") is True
         assert populated._plugin_enabled("tax-agent") is False
         # 版本已前移，二次 preview 无更新
-        assert (
-            populated.bundle_update_preview("finance-kit")["update_available"] is False
-        )
+        assert populated.bundle_update_preview("finance-kit")["update_available"] is False
 
     async def test_update_none_available(self, populated):
         await populated.install_bundle("finance-kit")
-        assert (
-            populated.bundle_update_preview("finance-kit")["update_available"] is False
-        )
+        assert populated.bundle_update_preview("finance-kit")["update_available"] is False
         out = await populated.bundle_update_apply("finance-kit", [])
         assert out["updated"] is False
 
@@ -272,14 +262,10 @@ class TestUninstall:
     async def test_blast_radius_reverse_lookup(self, populated):
         await populated.install_bundle("finance-kit")
         # excel-skill 被一个 cowork 节点引用
-        populated.desk.node_registry = _FakeNodeRegistry(
-            [_FakeNode("月度对账", "使用 node.excel-skill 读取表格")]
-        )
+        populated.desk.node_registry = _FakeNodeRegistry([_FakeNode("月度对账", "使用 node.excel-skill 读取表格")])
         pv = populated.uninstall_preview("finance-kit")
         assert pv["safe_to_remove"] is False
-        assert pv["in_use_by"] == [
-            {"node": "月度对账", "refs": ["excel-skill", "node.excel-skill"]}
-        ]
+        assert pv["in_use_by"] == [{"node": "月度对账", "refs": ["excel-skill", "node.excel-skill"]}]
         assert "node.excel-skill" in pv["capabilities_affected"]
 
     async def test_uninstall_removes_items(self, populated):
@@ -388,9 +374,7 @@ class TestEndpoints:
             json={"scopes": ["bank.flow.fetch"], "credentials": {"api_key": "k"}},
         )
         assert r.json()["completed"] is True
-        assert client.get("/api/hub/connectors/bank-api/policy").json()[
-            "per_use_scopes"
-        ] == ["bank.order.push"]
+        assert client.get("/api/hub/connectors/bank-api/policy").json()["per_use_scopes"] == ["bank.order.push"]
 
         pv = client.get("/api/hub/bundles/finance-kit/uninstall-preview").json()
         assert pv["safe_to_remove"] is True

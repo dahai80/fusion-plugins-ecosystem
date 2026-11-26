@@ -110,9 +110,7 @@ def build_runtime():
 async def one_call(lifecycle, meter, i):
     start = time.perf_counter()
     with meter.measure("bench_mlx", TokenKind.MLX_INFERENCE):
-        result = await lifecycle.execute(
-            "bench_mlx", {"prompt": "reply with exactly: ok", "max_tokens": 8}
-        )
+        result = await lifecycle.execute("bench_mlx", {"prompt": "reply with exactly: ok", "max_tokens": 8})
     elapsed = time.perf_counter() - start
     return elapsed, result
 
@@ -158,9 +156,7 @@ async def run(concurrency, total):
     print(f"token records          : {len(meter.all_records())}")
     print("========================")
 
-    await lifecycle._sandbox.shutdown_all() if hasattr(
-        lifecycle._sandbox, "shutdown_all"
-    ) else None
+    await lifecycle._sandbox.shutdown_all() if hasattr(lifecycle._sandbox, "shutdown_all") else None
     return {
         "model": MODEL,
         "concurrency": concurrency,

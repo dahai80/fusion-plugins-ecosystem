@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 # P0-2：SIGKILL 后回收等待上限。超出即放弃等待（进程可能处不可中断 D-state），
@@ -180,21 +179,17 @@ class PluginSandbox:
         )
 
         sandbox_proc.reader_task = asyncio.create_task(self._read_loop(sandbox_proc))
-        sandbox_proc.heartbeat_task = asyncio.create_task(
-            self._heartbeat_monitor(sandbox_proc)
-        )
+        sandbox_proc.heartbeat_task = asyncio.create_task(self._heartbeat_monitor(sandbox_proc))
         sandbox_proc.stderr_task = asyncio.create_task(self._drain_stderr(sandbox_proc))
 
         self._processes[plugin_id] = sandbox_proc
         logger.info("sandbox: spawned %s (pid=%d)", plugin_id, proc.pid)
         if self.desk is not None:
-            self.desk.metrics.counter(
-                "sandbox_spawns_total", "PROCESS 沙箱子进程 spawn 总数"
-            ).inc(plugin=plugin_id, status="spawned")
+            self.desk.metrics.counter("sandbox_spawns_total", "PROCESS 沙箱子进程 spawn 总数").inc(
+                plugin=plugin_id, status="spawned"
+            )
 
-    async def call(
-        self, plugin_id: str, method: str, args: dict[str, Any] | None = None
-    ) -> Any:
+    async def call(self, plugin_id: str, method: str, args: dict[str, Any] | None = None) -> Any:
         """调用沙箱内插件方法。"""
         proc = self._processes.get(plugin_id)
         if proc is None:
@@ -224,22 +219,17 @@ class PluginSandbox:
 
         try:
             return await asyncio.wait_for(future, timeout=proc.limits.timeout_seconds)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.pending_calls.pop(call_id, None)
             # 超时后必须 kill worker：否则孤儿进程残留，下次 call 复用卡死进程（P0-4）。
             # _invoke_sandbox 在 health!=alive 时会 respawn。
-            self.desk_log(
-                proc, "ERROR", f"call {call_id} 超时，kill worker 并等待 respawn"
-            )
+            self.desk_log(proc, "ERROR", f"call {call_id} 超时，kill worker 并等待 respawn")
             await self.kill(plugin_id)
             raise TimeoutError(
-                f"sandbox: plugin {plugin_id!r} call timed out after "
-                f"{proc.limits.timeout_seconds}s"
-            )
+                f"sandbox: plugin {plugin_id!r} call timed out after {proc.limits.timeout_seconds}s"
+            ) from None
 
-    def desk_log(
-        self, proc: SandboxProcess, level: str, message: str, **kw: Any
-    ) -> None:
+    def desk_log(self, proc: SandboxProcess, level: str, message: str, **kw: Any) -> None:
         """沙箱侧日志经宿主 logger 输出（worker 自身日志已通过 IPC 回传）。"""
         log_method = getattr(logger, level.lower(), logger.info)
         log_method("sandbox:%s: %s %s", proc.plugin_id, message, kw or "")
@@ -257,25 +247,19 @@ class PluginSandbox:
             proc.heartbeat_task.cancel()
         if proc.stderr_task and not proc.stderr_task.done():
             proc.stderr_task.cancel()
-        self._fail_pending(
-            proc, RuntimeError(f"sandbox: plugin {plugin_id!r} was killed")
-        )
+        self._fail_pending(proc, RuntimeError(f"sandbox: plugin {plugin_id!r} was killed"))
 
         try:
             proc.process.terminate()
             try:
-                await asyncio.wait_for(
-                    proc.process.wait(), timeout=proc.limits.grace_period_seconds
-                )
-            except asyncio.TimeoutError:
+                await asyncio.wait_for(proc.process.wait(), timeout=proc.limits.grace_period_seconds)
+            except TimeoutError:
                 proc.process.kill()
                 # P0-2：SIGKILL 后等待回收加超时，避免 worker 进入不可中断 D-state
                 # 时此 await 永久挂起、连带拖垮 execute/_watch_loop。
                 try:
-                    await asyncio.wait_for(
-                        proc.process.wait(), timeout=_KILL_REAP_TIMEOUT
-                    )
-                except asyncio.TimeoutError:
+                    await asyncio.wait_for(proc.process.wait(), timeout=_KILL_REAP_TIMEOUT)
+                except TimeoutError:
                     logger.error(
                         "sandbox: %s SIGKILL 后 %ss 未回收，放弃等待（可能 D-state）",
                         plugin_id,
@@ -307,9 +291,7 @@ class PluginSandbox:
                 if not line:
                     proc.health = SandboxHealth.DEAD
                     logger.warning("sandbox: %s stdout EOF", proc.plugin_id)
-                    self._fail_pending(
-                        proc, RuntimeError(f"sandbox {proc.plugin_id!r} 进程已退出")
-                    )
+                    self._fail_pending(proc, RuntimeError(f"sandbox {proc.plugin_id!r} 进程已退出"))
                     break
                 text = line.decode("utf-8").strip()
                 if not text:
@@ -317,9 +299,7 @@ class PluginSandbox:
                 try:
                     msg = json.loads(text)
                 except json.JSONDecodeError:
-                    logger.warning(
-                        "sandbox: %s invalid JSON: %s", proc.plugin_id, text[:100]
-                    )
+                    logger.warning("sandbox: %s invalid JSON: %s", proc.plugin_id, text[:100])
                     continue
 
                 # P1-8：非 dict 消息（如 worker 误 print(5)）不击杀整个沙箱，跳过即可
@@ -344,9 +324,7 @@ class PluginSandbox:
                     # R1：PROCESS 沙箱资源代理 RPC，worker 回调宿主 DeskRuntime
                     await self._handle_rpc(proc, msg)
                 else:
-                    logger.warning(
-                        "sandbox: unknown msg type %r from %s", msg_type, proc.plugin_id
-                    )
+                    logger.warning("sandbox: unknown msg type %r from %s", msg_type, proc.plugin_id)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -364,9 +342,7 @@ class PluginSandbox:
                 elapsed = time.time() - proc.last_heartbeat
                 if elapsed > proc.limits.timeout_seconds:
                     proc.health = SandboxHealth.TIMEOUT
-                    logger.warning(
-                        "sandbox: %s heartbeat timeout (%.0fs)", proc.plugin_id, elapsed
-                    )
+                    logger.warning("sandbox: %s heartbeat timeout (%.0fs)", proc.plugin_id, elapsed)
                     await self.kill(proc.plugin_id)
                     break
         except asyncio.CancelledError:
@@ -414,14 +390,12 @@ class PluginSandbox:
 
     def _fail_pending(self, proc: SandboxProcess, exc: BaseException) -> None:
         """进程异常退出时，让所有等待中的调用以异常结束，避免调用方永久挂起。"""
-        for call_id, future in list(proc.pending_calls.items()):
+        for _call_id, future in list(proc.pending_calls.items()):
             if not future.done():
                 future.set_exception(exc)
         proc.pending_calls.clear()
 
-    def _build_worker_script(
-        self, entry_point: Any, config: dict, limits: ResourceLimits
-    ) -> str:
+    def _build_worker_script(self, entry_point: Any, config: dict, limits: ResourceLimits) -> str:
         """构建子进程 worker 脚本。
 
         修复要点：

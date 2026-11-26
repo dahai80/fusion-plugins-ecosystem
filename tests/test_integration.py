@@ -5,7 +5,6 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-
 from fusion_plugins_ecosystem.agent_adapter import AgentAdapter
 from fusion_plugins_ecosystem.claude_gateway import ClaudeGateway
 from fusion_plugins_ecosystem.config import EcosystemConfig

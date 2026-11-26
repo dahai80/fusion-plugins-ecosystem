@@ -270,7 +270,10 @@ for line in sys.stdin:
     elif m == "tools/list":
         res = {"tools": [{"name": "echo", "description": "echo tool"}]}
     elif m == "tools/call":
-        res = {"content": [{"type": "text", "text": "echo:" + json.dumps(req["params"]["arguments"])}], "isError": False}
+        res = {
+            "content": [{"type": "text", "text": "echo:" + json.dumps(req["params"]["arguments"])}],
+            "isError": False,
+        }
     else:
         res = {}
     out = {"jsonrpc": "2.0", "id": req.get("id"), "result": res}
@@ -411,11 +414,7 @@ async def test_http_client_unreachable_raises() -> None:
 def test_sse_response_parsing() -> None:
     raw = 'data: {"jsonrpc":"2.0","id":7,"result":{"ok":1}}\n\n'
     body = {"jsonrpc": "2.0", "id": 7, "method": "x"}
-    lines = [
-        line.strip()[len("data:") :].strip()
-        for line in raw.splitlines()
-        if line.strip().startswith("data:")
-    ]
+    lines = [line.strip()[len("data:") :].strip() for line in raw.splitlines() if line.strip().startswith("data:")]
     assert len(lines) == 1
     resp = json.loads(lines[0])
     assert resp["id"] == body["id"] and resp["result"]["ok"] == 1

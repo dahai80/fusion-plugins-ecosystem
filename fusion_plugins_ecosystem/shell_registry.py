@@ -22,7 +22,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from fusion_core.config import admin_key, gateway_base_url
 
@@ -93,10 +93,8 @@ def shell_registration_enabled() -> bool:
     return bool(admin_key())
 
 
-def load_manifest() -> Dict[str, Any]:
-    path = Path(
-        os.environ.get(MANIFEST_PATH_ENV, "").strip() or _default_manifest_path()
-    )
+def load_manifest() -> dict[str, Any]:
+    path = Path(os.environ.get(MANIFEST_PATH_ENV, "").strip() or _default_manifest_path())
     if not path.exists():
         raise FileNotFoundError(f"shell manifest 不存在: {path}")
     manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -124,9 +122,7 @@ def load_manifest() -> Dict[str, Any]:
     return manifest
 
 
-async def _registry_loop_body(
-    client: Any, manifest: Dict[str, Any], interval: float
-) -> None:
+async def _registry_loop_body(client: Any, manifest: dict[str, Any], interval: float) -> None:
     module_id = str(manifest["id"])
     gateway = gateway_base_url().rstrip("/")
     adm = admin_key()
@@ -172,14 +168,10 @@ async def _registry_loop_body(
                     logger.info("shell 心跳 404, 重注册 %s", module_id)
                     registered = False
                 elif resp.status_code == 401 and module_key:
-                    logger.warning(
-                        "shell 心跳 401 (签发密钥失效), 重注册 %s", module_id
-                    )
+                    logger.warning("shell 心跳 401 (签发密钥失效), 重注册 %s", module_id)
                     registered = False
                 elif resp.status_code != 200:
-                    raise RuntimeError(
-                        f"shell 心跳失败: {resp.status_code} {resp.text[:200]}"
-                    )
+                    raise RuntimeError(f"shell 心跳失败: {resp.status_code} {resp.text[:200]}")
         except asyncio.CancelledError:
             logger.info("shell 注册循环已取消 (module=%s)", module_id)
             raise
@@ -195,9 +187,7 @@ def _safe_json(resp: Any) -> Any:
         return None
 
 
-async def shell_registry_loop(
-    client: Any = None, interval: float = REGISTER_INTERVAL_SECONDS
-) -> None:
+async def shell_registry_loop(client: Any = None, interval: float = REGISTER_INTERVAL_SECONDS) -> None:
     """注册一次, 心跳保活; 网关重启 (404) 后重注册。失败仅告警重试, 不影响服务。"""
     try:
         manifest = load_manifest()

@@ -93,9 +93,7 @@ class Marketplace:
             for p in list_builtin_packs()
         ]
 
-    def load_index(
-        self, source: str | None = None
-    ) -> tuple[list[MarketplaceEntry], list[str]]:
+    def load_index(self, source: str | None = None) -> tuple[list[MarketplaceEntry], list[str]]:
         """加载市场索引，返回 (有效条目, 警告)。
 
         source：本地 JSON 路径或 HTTPS URL；None 用构造参数；两者皆空时
@@ -182,8 +180,7 @@ class Marketplace:
             return self._install_connector_pack(entry)
         if entry.kind == "bundle":
             raise ValueError(
-                f"marketplace: bundle {entry.id!r} 安装走 ExtensionsConsole "
-                "install_bundle（跨注册表编排，issue #42）"
+                f"marketplace: bundle {entry.id!r} 安装走 ExtensionsConsole install_bundle（跨注册表编排，issue #42）"
             )
         return self._install_skill_package(entry)
 
@@ -248,9 +245,7 @@ class Marketplace:
         """列出已安装包：连接器包 + 技能包目录。"""
         installed: list[dict[str, Any]] = []
         for pack in self.connector_registry.list_packs():
-            installed.append(
-                {"kind": "connector_pack", "id": pack.id, "version": pack.version}
-            )
+            installed.append({"kind": "connector_pack", "id": pack.id, "version": pack.version})
         if os.path.isdir(self.install_root):
             for name in sorted(os.listdir(self.install_root)):
                 path = os.path.join(self.install_root, name)

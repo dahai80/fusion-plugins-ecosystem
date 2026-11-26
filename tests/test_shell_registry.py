@@ -65,9 +65,7 @@ class _FakeClient:
 
 
 async def _drive(client, manifest, rounds=0.08):
-    task = asyncio.create_task(
-        shell_registry._registry_loop_body(client, manifest, interval=0.01)
-    )
+    task = asyncio.create_task(shell_registry._registry_loop_body(client, manifest, interval=0.01))
     await asyncio.sleep(rounds)
     task.cancel()
     try:
@@ -106,10 +104,7 @@ class TestIssuedKeyExtraction:
 
     def test_gateway_writeShellKeyResponse_shape(self):
         # 真实网关签发响应 (#261 K1 writeShellKeyResponse)
-        assert (
-            _extract_issued_key({"code": "ok", "key_id": "k1", "raw_key": "fm-x"})
-            == "fm-x"
-        )
+        assert _extract_issued_key({"code": "ok", "key_id": "k1", "raw_key": "fm-x"}) == "fm-x"
 
     def test_nested_data(self):
         assert _extract_issued_key({"data": {"api_key": "fm-2"}}) == "fm-2"
@@ -211,32 +206,24 @@ class TestRegistryLoop:
         client = _FakeClient([_response(200, {}), _response(200, {})])
         await _drive(client, {"id": "fusion-plugins-ecosystem"})
         beat = client.calls[1]
-        assert beat["url"].endswith(
-            "/api/v1/shell/manifests/fusion-plugins-ecosystem/heartbeat"
-        )
+        assert beat["url"].endswith("/api/v1/shell/manifests/fusion-plugins-ecosystem/heartbeat")
         assert beat["headers"]["Authorization"] == "Bearer fm-issued-key-0001"
 
     async def test_heartbeat_404_triggers_reregistration(self, monkeypatch):
         monkeypatch.setenv("FUSION_GATEWAY_BASE_URL", "http://gw")
         monkeypatch.setenv("FUSION_ADMIN_KEY", "admin-secret")
-        client = _FakeClient(
-            [_response(200, {}), _response(404), _response(200, {}), _response(200, {})]
-        )
+        client = _FakeClient([_response(200, {}), _response(404), _response(200, {}), _response(200, {})])
         await _drive(client, {"id": "fusion-plugins-ecosystem"})
         urls = [c["url"] for c in client.calls]
         assert urls[0].endswith("/api/v1/shell/manifests")
         assert urls[1].endswith("/heartbeat")
         assert urls[2].endswith("/api/v1/shell/manifests")
 
-    async def test_heartbeat_401_with_module_key_triggers_reregistration(
-        self, monkeypatch
-    ):
+    async def test_heartbeat_401_with_module_key_triggers_reregistration(self, monkeypatch):
         monkeypatch.setenv("FUSION_GATEWAY_BASE_URL", "http://gw")
         monkeypatch.setenv("FUSION_ADMIN_KEY", "admin-secret")
         save_module_key("fm-rotated-away")
-        client = _FakeClient(
-            [_response(200, {}), _response(401), _response(200, {}), _response(200, {})]
-        )
+        client = _FakeClient([_response(200, {}), _response(401), _response(200, {}), _response(200, {})])
         await _drive(client, {"id": "fusion-plugins-ecosystem"})
         # 重注册走 admin key
         assert client.calls[2]["headers"]["Authorization"] == "Bearer admin-secret"

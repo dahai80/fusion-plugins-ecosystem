@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from fusion_plugins_ecosystem.claude_adapter import ClaudeSkillAdapter
 from fusion_plugins_ecosystem.registry import (
     PluginCapability,

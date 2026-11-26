@@ -148,13 +148,9 @@ class SkillAdapter:
             parts.append("\n## Parameters\n")
             for param in manifest.params:
                 req = " (required)" if param.required else ""
-                parts.append(
-                    f"- **{param.name}** `{param.type.value}`{req}: {param.description}"
-                )
+                parts.append(f"- **{param.name}** `{param.type.value}`{req}: {param.description}")
                 if param.enum:
-                    parts.append(
-                        f"  - Options: {', '.join(str(e) for e in param.enum)}"
-                    )
+                    parts.append(f"  - Options: {', '.join(str(e) for e in param.enum)}")
                 if param.default is not None:
                     parts.append(f"  - Default: `{param.default}`")
 
@@ -174,9 +170,7 @@ class SkillAdapter:
         required: list[str] = []
         for param in manifest.params:
             prop: dict[str, Any] = {
-                "type": PARAM_TYPE_TO_JSON_SCHEMA.get(
-                    param.type, PluginParamType.STRING
-                ),
+                "type": PARAM_TYPE_TO_JSON_SCHEMA.get(param.type, PluginParamType.STRING),
                 "description": param.description,
             }
             if param.enum is not None:

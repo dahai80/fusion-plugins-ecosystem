@@ -20,9 +20,9 @@ from fusion_plugins_ecosystem.registry import (
     PluginRegistry,
 )
 from fusion_plugins_ecosystem.schema import (
+    _PARAM_TYPE_MAP,
     MCP_PROTOCOL_VERSION,
     MCPAnnotations,
-    _PARAM_TYPE_MAP,
 )
 
 logger = logging.getLogger(__name__)

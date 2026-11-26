@@ -15,7 +15,8 @@ import json
 import logging
 import sys
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from fusion_plugins_ecosystem.logging_setup import (
     reset_correlation_id,
@@ -94,12 +95,8 @@ class StdioTransport(Transport):
         self._reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(self._reader)
         await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-        write_transport, write_protocol = await loop.connect_write_pipe(
-            asyncio.streams.FlowControlMixin, sys.stdout
-        )
-        self._writer = asyncio.StreamWriter(
-            write_transport, write_protocol, self._reader, loop
-        )
+        write_transport, write_protocol = await loop.connect_write_pipe(asyncio.streams.FlowControlMixin, sys.stdout)
+        self._writer = asyncio.StreamWriter(write_transport, write_protocol, self._reader, loop)
         self._read_task = asyncio.create_task(self._read_loop())
         logger.info("StdioTransport started")
 
@@ -205,9 +202,7 @@ class SSETransport(Transport):
         if self._running:
             return
         self._running = True
-        self._server = await asyncio.start_server(
-            self._handle_connection, self._host, self._port
-        )
+        self._server = await asyncio.start_server(self._handle_connection, self._host, self._port)
         actual_port = self.port
         logger.info("SSETransport started on %s:%d", self._host, actual_port)
 
@@ -224,9 +219,7 @@ class SSETransport(Transport):
     async def send(self, message: dict[str, Any]) -> None:
         # 广播已禁用：JSON-RPC 响应是 per-request 的，POST 分支已同步回写。
         # 跨客户端广播会造成数据泄露（P0-2）。服务端主动通知用 send_to_session。
-        logger.warning(
-            "SSETransport: send() 广播已禁用，使用 send_to_session 按会话路由"
-        )
+        logger.warning("SSETransport: send() 广播已禁用，使用 send_to_session 按会话路由")
 
     async def send_to_session(self, session_id: str, message: dict[str, Any]) -> None:
         queue = self._sessions.get(session_id)
@@ -245,9 +238,7 @@ class SSETransport(Transport):
                 _SSE_QUEUE_MAXSIZE,
             )
 
-    async def _handle_connection(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             request_text, headers = await _read_http_head(reader)
             if request_text is None:
@@ -300,9 +291,7 @@ class SSETransport(Transport):
                     writer.close()
                     await writer.wait_closed()
                     return
-                body = await asyncio.wait_for(
-                    reader.read(content_length), timeout=_READ_TIMEOUT
-                )
+                body = await asyncio.wait_for(reader.read(content_length), timeout=_READ_TIMEOUT)
                 try:
                     request = json.loads(body.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as e:
@@ -323,9 +312,7 @@ class SSETransport(Transport):
                         writer.write(
                             b"HTTP/1.1 200 OK\r\n"
                             b"Content-Type: application/json\r\n"
-                            b"Content-Length: "
-                            + str(len(resp_bytes)).encode()
-                            + b"\r\n"
+                            b"Content-Length: " + str(len(resp_bytes)).encode() + b"\r\n"
                             b"\r\n" + resp_bytes
                         )
                         await writer.drain()
@@ -333,7 +320,7 @@ class SSETransport(Transport):
                 await _write_simple_response(writer, 400, b"Bad Request")
             writer.close()
             await writer.wait_closed()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("SSETransport: 连接读取超时")
             try:
                 await _write_simple_response(writer, 408, b"Request Timeout")
@@ -372,7 +359,7 @@ class SSETransport(Transport):
                     break
                 writer.write(data.encode("utf-8"))
                 await writer.drain()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             writer.write(b": keepalive\n\n")
             await writer.drain()
         except Exception as e:
@@ -418,9 +405,7 @@ class HTTPTransport(Transport):
         if self._running:
             return
         self._running = True
-        self._server = await asyncio.start_server(
-            self._handle_request, self._host, self._port
-        )
+        self._server = await asyncio.start_server(self._handle_request, self._host, self._port)
         actual_port = self.port
         logger.info("HTTPTransport started on %s:%d", self._host, actual_port)
 
@@ -434,9 +419,7 @@ class HTTPTransport(Transport):
     async def send(self, message: dict[str, Any]) -> None:
         logger.debug("HTTPTransport send: direct push not supported")
 
-    async def _handle_request(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             request_text, headers = await _read_http_head(reader)
             if request_text is None:
@@ -489,9 +472,7 @@ class HTTPTransport(Transport):
                 await writer.wait_closed()
                 return
 
-            body = await asyncio.wait_for(
-                reader.read(content_length), timeout=_READ_TIMEOUT
-            )
+            body = await asyncio.wait_for(reader.read(content_length), timeout=_READ_TIMEOUT)
             try:
                 request = json.loads(body.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
@@ -519,7 +500,7 @@ class HTTPTransport(Transport):
                     await writer.drain()
             writer.close()
             await writer.wait_closed()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("HTTPTransport: 连接读取超时")
             try:
                 await _write_simple_response(writer, 408, b"Request Timeout")
@@ -545,7 +526,7 @@ async def _read_http_head(
     """
     try:
         request_line = await asyncio.wait_for(reader.readline(), timeout=_READ_TIMEOUT)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise
     if not request_line:
         return None, {}
@@ -553,10 +534,8 @@ async def _read_http_head(
     headers: dict[str, str] = {}
     for _ in range(_MAX_HEADERS):
         try:
-            header_line = await asyncio.wait_for(
-                reader.readline(), timeout=_READ_TIMEOUT
-            )
-        except asyncio.TimeoutError:
+            header_line = await asyncio.wait_for(reader.readline(), timeout=_READ_TIMEOUT)
+        except TimeoutError:
             raise
         if len(header_line) > _MAX_HEADER_LINE:
             logger.warning("transport: header 行过长，拒绝请求")
@@ -609,9 +588,7 @@ def _request_path(request_text: str) -> str:
     return parts[1] if len(parts) >= 2 else "/"
 
 
-async def _write_simple_response(
-    writer: asyncio.StreamWriter, status: int, message: bytes
-) -> None:
+async def _write_simple_response(writer: asyncio.StreamWriter, status: int, message: bytes) -> None:
     """写一个无 body 的简单 HTTP 错误响应。"""
     reason = {
         400: b"Bad Request",
@@ -659,9 +636,7 @@ def _is_metrics_request(request_text: str) -> bool:
     return parts[1].rstrip("/") == "/metrics"
 
 
-async def _write_metrics_response(
-    writer: asyncio.StreamWriter, exposition: str
-) -> None:
+async def _write_metrics_response(writer: asyncio.StreamWriter, exposition: str) -> None:
     """写 Prometheus 文本暴露格式响应（未鉴权，供 scrape 拉取）。"""
     body = exposition.encode("utf-8")
     writer.write(

@@ -33,9 +33,7 @@ async def test_mlx_chat_parses_choices_content():
     lifecycle = fpe.PluginLifecycle(registry)
 
     await lifecycle.enable("mlx_chat_plugin")
-    result = await lifecycle.execute(
-        "mlx_chat_plugin", {"prompt": "say hi", "max_tokens": 8}
-    )
+    result = await lifecycle.execute("mlx_chat_plugin", {"prompt": "say hi", "max_tokens": 8})
 
     assert result["model"] == "Qwen2.5-0.5B-Instruct"
     assert result["reply"] == "hello from mlx"

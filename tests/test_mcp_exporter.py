@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from fusion_plugins_ecosystem.mcp_exporter import MCPExporter
 from fusion_plugins_ecosystem.registry import (
     PluginCapability,

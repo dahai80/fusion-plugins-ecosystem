@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import fusion_plugins_ecosystem as fpe
-from fusion_plugins_ecosystem.claude_gateway import ClaudeGateway, SubagentTask
-
 from examples.ex04_subagent.subagent_plugin import BATCH_REFACTOR_MANIFEST
+from fusion_plugins_ecosystem.claude_gateway import ClaudeGateway, SubagentTask
 
 
 def test_subagent_capability_listed():
@@ -50,7 +49,7 @@ async def test_dispatch_subagent_unknown_plugin_raises():
     task = SubagentTask(name="x", plugin_id="does_not_exist", arguments={})
     try:
         await gw.dispatch_subagent(task)
-        assert False, "expected KeyError"
+        raise AssertionError("expected KeyError")
     except KeyError as exc:
         assert "does_not_exist" in str(exc)
 
@@ -83,9 +82,7 @@ async def test_dispatch_subagent_propagates_execution_error():
     registry.register(boom_manifest)
     gw = ClaudeGateway(registry, fpe.PluginLifecycle(registry))
 
-    task = SubagentTask(
-        name="crash-1", plugin_id="boom_subagent", arguments={}, timeout_seconds=10
-    )
+    task = SubagentTask(name="crash-1", plugin_id="boom_subagent", arguments={}, timeout_seconds=10)
     result = await gw.dispatch_subagent(task)
 
     assert result["task"] == "crash-1"

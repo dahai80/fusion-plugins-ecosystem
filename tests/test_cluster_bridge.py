@@ -38,9 +38,7 @@ def shared_state(tmp_path, monkeypatch):
 
 
 def _store(node_id: str, state_path: str, heartbeat_timeout: float = 30.0):
-    return DistributedStateStore(
-        state_path=state_path, node_id=node_id, heartbeat_timeout=heartbeat_timeout
-    )
+    return DistributedStateStore(state_path=state_path, node_id=node_id, heartbeat_timeout=heartbeat_timeout)
 
 
 # ── 跨节点可见性 ──
@@ -119,9 +117,7 @@ def test_evict_stale_node_cleans_state_and_vram(shared_state):
     now = time.time()
     store_b.invalidate_cache()
     for node in store_b.list_all_nodes():
-        if node.node_id != store_b.node_id and not node.is_alive(
-            now, store_b.heartbeat_timeout
-        ):
+        if node.node_id != store_b.node_id and not node.is_alive(now, store_b.heartbeat_timeout):
             store_b.remove_node(node.node_id)
             evicted.append(node.node_id)
 

@@ -22,13 +22,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
@@ -37,6 +35,7 @@ from fusion_plugins_ecosystem.registry import (
     PluginCapability,
     PluginRegistry,
 )
+from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
 from fusion_plugins_ecosystem.token_meter import TokenKind, TokenMeter
 
 logger = logging.getLogger(__name__)
@@ -90,9 +89,7 @@ class ClaudeGateway:
         self.config: EcosystemConfig = config or EcosystemConfig()
         # P3-1：lifecycle 注入 config，使 _maybe_restart 的指数退避生效
         # （config=None 时退避退化为 0，重启无间隔）。
-        self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(
-            registry, config=self.config
-        )
+        self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(registry, config=self.config)
         self.token_meter: TokenMeter = token_meter or TokenMeter(
             self.desk,
             max_records=self.config.max_token_records,
@@ -219,11 +216,7 @@ class ClaudeGateway:
         if manifest is None:
             raise KeyError(f"子代理任务 {task.name!r} 的插件 {task.plugin_id!r} 未注册")
         # 计算 timeout：task > manifest > config
-        timeout = (
-            task.timeout_seconds
-            or manifest.timeout_seconds
-            or self.config.subagent_timeout_seconds
-        )
+        timeout = task.timeout_seconds or manifest.timeout_seconds or self.config.subagent_timeout_seconds
         try:
             await self.lifecycle.enable(task.plugin_id)
             model_hint = manifest.agent_model or ""
@@ -247,7 +240,7 @@ class ClaudeGateway:
                 "state": "completed",
                 "result": result,
             }
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             self.desk.log(
                 task.plugin_id,
                 "ERROR",
@@ -289,11 +282,7 @@ class ClaudeGateway:
 
     def list_subagent_capable_plugins(self) -> list[str]:
         """列出具备 SUBAGENT 能力的插件 ID（供 Claude Code 子代理调度面板）。"""
-        return [
-            m.id
-            for m in self.registry.list()
-            if PluginCapability.SUBAGENT in m.capabilities
-        ]
+        return [m.id for m in self.registry.list() if PluginCapability.SUBAGENT in m.capabilities]
 
     # ── 火山方舟 Claude Coding Plan 鉴权 ──
 
@@ -305,10 +294,7 @@ class ClaudeGateway:
 
         受 config.enable_volcengine_claude_plan 控制（仅对火山方舟 provider）。
         """
-        if (
-            provider == "volcengine_claude"
-            and not self.config.enable_volcengine_claude_plan
-        ):
+        if provider == "volcengine_claude" and not self.config.enable_volcengine_claude_plan:
             self.desk.log(
                 "claude_gateway",
                 "WARN",
@@ -329,10 +315,7 @@ class ClaudeGateway:
 
         受 config.enable_volcengine_claude_plan 控制（仅对火山方舟 provider）。
         """
-        if (
-            provider == "volcengine_claude"
-            and not self.config.enable_volcengine_claude_plan
-        ):
+        if provider == "volcengine_claude" and not self.config.enable_volcengine_claude_plan:
             return None
         return self.desk.get_api_key(provider)
 

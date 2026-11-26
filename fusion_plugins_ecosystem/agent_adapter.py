@@ -55,9 +55,7 @@ class AgentAdapter:
             logger.warning("agent_adapter: plugin %s not found", plugin_id)
             return None
         if PluginCapability.SUBAGENT not in manifest.capabilities:
-            logger.info(
-                "agent_adapter: %s lacks SUBAGENT capability, skipping", plugin_id
-            )
+            logger.info("agent_adapter: %s lacks SUBAGENT capability, skipping", plugin_id)
             return None
         return self._build_agent_md(manifest)
 
@@ -97,9 +95,7 @@ class AgentAdapter:
             parts.append("\n## Configuration\n")
             for param in manifest.params:
                 req = " (required)" if param.required else ""
-                parts.append(
-                    f"- **{param.name}** `{param.type.value}`{req}: {param.description}"
-                )
+                parts.append(f"- **{param.name}** `{param.type.value}`{req}: {param.description}")
 
         parts.append("\n## Behavior\n")
         parts.append(

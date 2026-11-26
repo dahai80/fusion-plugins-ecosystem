@@ -12,8 +12,8 @@
 
 from __future__ import annotations
 
-from fusion_plugins_ecosystem.desk_runtime import DeskRuntime, _LOG_BUFFER_MAX
-from fusion_plugins_ecosystem.jsonrpc import MCPHandler, _MAX_SESSIONS
+from fusion_plugins_ecosystem.desk_runtime import _LOG_BUFFER_MAX, DeskRuntime
+from fusion_plugins_ecosystem.jsonrpc import _MAX_SESSIONS, MCPHandler
 from fusion_plugins_ecosystem.registry import (
     PluginCapability,
     PluginCategory,
@@ -49,7 +49,7 @@ def test_token_meter_cap_holds_under_sustained_record():
     desk = DeskRuntime()
     meter = TokenMeter(desk, max_records=500)
 
-    for i in range(50_000):
+    for _i in range(50_000):
         meter.record(
             TokenRecord(
                 plugin_id="soak_p",
@@ -94,7 +94,7 @@ def test_session_calls_list_bounded_under_sustained_touch():
     reg = _registry()
     handler = MCPHandler(registry=reg)
 
-    for i in range(5_000):
+    for _i in range(5_000):
         handler._touch_session("sess-stable", "soak_p")
 
     session = handler.get_session("sess-stable")
@@ -110,7 +110,7 @@ def test_counter_sustained_inc_monotonic_no_drift():
     desk = DeskRuntime()
     counter = desk.metrics.counter("soak_total", "soak total")
 
-    for i in range(100_000):
+    for _i in range(100_000):
         counter.inc()
     assert counter.total() == 100_000
 
@@ -120,7 +120,7 @@ def test_counter_labeled_sustained_inc_no_drift():
     desk = DeskRuntime()
     counter = desk.metrics.counter("soak_labeled", "soak labeled")
 
-    for i in range(10_000):
+    for _i in range(10_000):
         counter.inc(plugin="p_a")
         counter.inc(plugin="p_b")
     assert counter.value(plugin="p_a") == 10_000
@@ -142,7 +142,7 @@ async def test_lifecycle_sustained_execute_no_residual():
 
     active_gauge = reg.desk.metrics.gauge("active_plugins", "active")
 
-    for i in range(500):
+    for _i in range(500):
         await lifecycle.execute("soak_p", {})
 
     # 全部执行完成，活跃插件数稳定为 1（已启用，无并发残留）
@@ -157,7 +157,7 @@ def test_token_meter_sustained_record_query_consistent():
     desk = DeskRuntime()
     meter = TokenMeter(desk, max_records=10_000)
 
-    for i in range(8_000):
+    for _i in range(8_000):
         meter.record(
             TokenRecord(
                 plugin_id="soak_p",

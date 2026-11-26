@@ -208,16 +208,11 @@ class PluginLifecycle:
                 )
             except Exception:
                 pass
-            raise RuntimeError(
-                f"非法状态转换 {inst.state.value} → {new_state.value} "
-                f"(plugin={inst.manifest.id})"
-            )
+            raise RuntimeError(f"非法状态转换 {inst.state.value} → {new_state.value} (plugin={inst.manifest.id})")
         inst.state = new_state
         inst.start_time = time.time()
 
-    def load(
-        self, plugin_id: str, _loading_chain: frozenset[str] | None = None
-    ) -> PluginInstance:
+    def load(self, plugin_id: str, _loading_chain: frozenset[str] | None = None) -> PluginInstance:
         """加载插件（实例化 entry_point），自动先加载依赖。"""
         with self._instances_lock:
             manifest = self.registry.get(plugin_id)
@@ -311,9 +306,7 @@ class PluginLifecycle:
     def _update_active_gauge(self) -> None:
         """同步活跃插件数 gauge（统计 ENABLED 态实例数）。"""
         with self._instances_lock:
-            active = sum(
-                1 for i in self._instances.values() if i.state == PluginState.ENABLED
-            )
+            active = sum(1 for i in self._instances.values() if i.state == PluginState.ENABLED)
         self.desk.metrics.gauge("active_plugins", "当前 ENABLED 态插件数").set(active)
 
     def unload(self, plugin_id: str) -> None:
@@ -370,16 +363,12 @@ class PluginLifecycle:
                         "INFO",
                         f"幂等命中 plugin={plugin_id} key={idem_key}，跳过重复执行",
                     )
-                    self.desk.metrics.counter(
-                        "plugin_executions_total", "插件执行总数（按结果分桶）"
-                    ).inc(plugin=plugin_id, status="idempotent_hit")
+                    self.desk.metrics.counter("plugin_executions_total", "插件执行总数（按结果分桶）").inc(
+                        plugin=plugin_id, status="idempotent_hit"
+                    )
                     return hit[1]
                 # 清过期条目（惰性，避免独立清扫线程）
-                stale = [
-                    k
-                    for k, (ts, _) in self._idem_cache.items()
-                    if now - ts >= self._IDEM_TTL
-                ]
+                stale = [k for k, (ts, _) in self._idem_cache.items() if now - ts >= self._IDEM_TTL]
                 for k in stale:
                     del self._idem_cache[k]
 
@@ -387,9 +376,7 @@ class PluginLifecycle:
             inst = self._instances.get(plugin_id)
             if inst is None or inst.state != PluginState.ENABLED:
                 raise RuntimeError(f"插件 {plugin_id!r} 未启用，无法执行")
-            timeout = (
-                timeout_override or inst.manifest.timeout_seconds or self._cfg_timeout()
-            )
+            timeout = timeout_override or inst.manifest.timeout_seconds or self._cfg_timeout()
             inst.last_heartbeat = time.time()
 
         try:
@@ -406,11 +393,11 @@ class PluginLifecycle:
             if idem_key:
                 with self._idem_lock:
                     self._idem_cache[(plugin_id, str(idem_key))] = (time.time(), result)
-            self.desk.metrics.counter(
-                "plugin_executions_total", "插件执行总数（按结果分桶）"
-            ).inc(plugin=plugin_id, status="success")
+            self.desk.metrics.counter("plugin_executions_total", "插件执行总数（按结果分桶）").inc(
+                plugin=plugin_id, status="success"
+            )
             return result
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # PROCESS 模式：超时必须 kill worker，否则孤儿进程残留、重启复用卡死进程（P1-6）
             if inst.manifest.sandbox_mode == SandboxMode.PROCESS:
                 await self._sandbox.kill(plugin_id)
@@ -419,12 +406,12 @@ class PluginLifecycle:
                 inst.error_count += 1
                 inst.last_error = f"执行超时 ({timeout}s)"
             self.desk.log(plugin_id, "ERROR", "插件执行超时，已熔断", timeout=timeout)
-            self.desk.metrics.counter(
-                "plugin_executions_total", "插件执行总数（按结果分桶）"
-            ).inc(plugin=plugin_id, status="timeout")
-            self.desk.metrics.counter(
-                "plugin_errors_total", "插件执行错误总数（按类型分桶）"
-            ).inc(plugin=plugin_id, kind="timeout")
+            self.desk.metrics.counter("plugin_executions_total", "插件执行总数（按结果分桶）").inc(
+                plugin=plugin_id, status="timeout"
+            )
+            self.desk.metrics.counter("plugin_errors_total", "插件执行错误总数（按类型分桶）").inc(
+                plugin=plugin_id, kind="timeout"
+            )
             await self._maybe_restart(plugin_id)
             raise
         except Exception as exc:
@@ -433,12 +420,12 @@ class PluginLifecycle:
                 inst.error_count += 1
                 inst.last_error = str(exc)
             self.desk.log(plugin_id, "ERROR", "插件执行崩溃", error=str(exc))
-            self.desk.metrics.counter(
-                "plugin_executions_total", "插件执行总数（按结果分桶）"
-            ).inc(plugin=plugin_id, status="error")
-            self.desk.metrics.counter(
-                "plugin_errors_total", "插件执行错误总数（按类型分桶）"
-            ).inc(plugin=plugin_id, kind=type(exc).__name__)
+            self.desk.metrics.counter("plugin_executions_total", "插件执行总数（按结果分桶）").inc(
+                plugin=plugin_id, status="error"
+            )
+            self.desk.metrics.counter("plugin_errors_total", "插件执行错误总数（按类型分桶）").inc(
+                plugin=plugin_id, kind=type(exc).__name__
+            )
             # P3-3：加载期不可调用属配置错误，重启无意义且浪费预算，跳过自动重启
             if not isinstance(exc, PluginLoadError):
                 await self._maybe_restart(plugin_id)
@@ -463,9 +450,7 @@ class PluginLifecycle:
 
         config_default = self.config.sandbox_default_mode
         if config_default not in ("inline", "process"):
-            raise RuntimeError(
-                f"lifecycle: 非法 sandbox_default_mode={config_default!r}"
-            )
+            raise RuntimeError(f"lifecycle: 非法 sandbox_default_mode={config_default!r}")
         if config_default == "process":
             return await self._invoke_sandbox(inst, params)
 
@@ -486,9 +471,7 @@ class PluginLifecycle:
                 return await asyncio.to_thread(instance, self.desk, params)
         raise PluginLoadError(f"插件 {inst.manifest.id!r} 入口不可调用")
 
-    async def _invoke_sandbox(
-        self, inst: PluginInstance, params: dict[str, Any]
-    ) -> Any:
+    async def _invoke_sandbox(self, inst: PluginInstance, params: dict[str, Any]) -> Any:
         """沙箱进程调用插件入口。"""
         plugin_id = inst.manifest.id
         if self._sandbox.health(plugin_id) != "alive":
@@ -501,8 +484,7 @@ class PluginLifecycle:
                 entry_point=inst.manifest.entry_point,
                 config=spawn_config,
                 limits=ResourceLimits(
-                    timeout_seconds=inst.manifest.timeout_seconds
-                    or self._cfg_timeout(),
+                    timeout_seconds=inst.manifest.timeout_seconds or self._cfg_timeout(),
                 ),
             )
         return await self._sandbox.call(plugin_id, "execute", params)
@@ -518,9 +500,7 @@ class PluginLifecycle:
             if inst is None:
                 return
             max_restart = (
-                inst.manifest.max_restart
-                if inst.manifest.max_restart is not None
-                else self._cfg_max_restart()
+                inst.manifest.max_restart if inst.manifest.max_restart is not None else self._cfg_max_restart()
             )
             if inst.restart_count >= max_restart:
                 self.desk.log(plugin_id, "ERROR", "达到最大重启次数，插件保持崩溃状态")
@@ -559,9 +539,7 @@ class PluginLifecycle:
                 new_inst.last_error = f"自动重启失败: {exc}"
             self.desk.log(plugin_id, "ERROR", "插件自动重启失败", error=str(exc))
 
-    async def _enable_with_retry(
-        self, plugin_id: str, max_attempts: int = 3, backoff: float = 1.0
-    ) -> PluginInstance:
+    async def _enable_with_retry(self, plugin_id: str, max_attempts: int = 3, backoff: float = 1.0) -> PluginInstance:
         """带暂态重试的 enable（P3-6c）。
 
         仅 vRAM 申请失败这类暂态错误重试（显存争用可能瞬态释放）；
@@ -616,13 +594,10 @@ class PluginLifecycle:
                     candidates = [
                         (pid, inst)
                         for pid, inst in self._instances.items()
-                        if inst.state == PluginState.ENABLED
-                        and inst.manifest.sandbox_mode == SandboxMode.PROCESS
+                        if inst.state == PluginState.ENABLED and inst.manifest.sandbox_mode == SandboxMode.PROCESS
                     ]
                 for plugin_id, inst in candidates:
-                    threshold = (
-                        inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
-                    )
+                    threshold = inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
                     if now - inst.last_heartbeat > threshold:
                         with self._instances_lock:
                             if inst.state != PluginState.ENABLED:
@@ -651,6 +626,4 @@ class PluginLifecycle:
 
     def list_by_state(self, state: PluginState) -> list[dict[str, Any]]:
         """按状态过滤返回插件快照列表。"""
-        return [
-            inst.to_dict() for inst in self._instances.values() if inst.state == state
-        ]
+        return [inst.to_dict() for inst in self._instances.values() if inst.state == state]

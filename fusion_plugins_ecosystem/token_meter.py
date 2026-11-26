@@ -101,11 +101,7 @@ class TokenMeter:
             self._save()
         # 异常检测：PLUGIN_LOCAL 但 input/output tokens 为 0 且 wall_seconds 很长
         # 对应「子代理跑 40 分钟无 token 消耗」痛点
-        if (
-            rec.kind == TokenKind.PLUGIN_LOCAL
-            and rec.total_tokens == 0
-            and rec.wall_seconds > 60
-        ):
+        if rec.kind == TokenKind.PLUGIN_LOCAL and rec.total_tokens == 0 and rec.wall_seconds > 60:
             logger.warning(
                 "token_meter: 插件 %s 执行 %.1f 秒但无 token 消耗，疑似卡死",
                 rec.plugin_id,
@@ -226,9 +222,7 @@ class TokenMeter:
         removed = [r for r in self._records if r.timestamp < cutoff]
         self._records = kept
         self._rebuild_by_plugin(removed)
-        logger.info(
-            "token_meter: 按时间淘汰 %d 条记录（>%ss）", len(removed), max_age_seconds
-        )
+        logger.info("token_meter: 按时间淘汰 %d 条记录（>%ss）", len(removed), max_age_seconds)
 
     def _rebuild_by_plugin(self, removed: list[TokenRecord]) -> None:
         """根据 removed 集合，一次性重建受影响 plugin 的 _by_plugin 列表。
@@ -315,9 +309,7 @@ class TokenMeter:
         max_seq = self._next_seq - 1
         snapshot = {"last_seq": max_seq, "records": data}
         payload = json.dumps(snapshot, ensure_ascii=False, indent=2)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent), prefix=".token_meter_", suffix=".tmp"
-        )
+        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), prefix=".token_meter_", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(payload)
@@ -436,7 +428,7 @@ class _MeasureContext:
         self.metadata = metadata
         self._start: float | None = None
 
-    def __enter__(self) -> "_MeasureContext":
+    def __enter__(self) -> _MeasureContext:
         self._start = time.time()
         return self
 
@@ -475,7 +467,7 @@ class AsyncMeasureContext:
         self.metadata = metadata or {}
         self._start: float | None = None
 
-    async def __aenter__(self) -> "AsyncMeasureContext":
+    async def __aenter__(self) -> AsyncMeasureContext:
         self._start = time.time()
         return self
 
