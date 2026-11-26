@@ -21,12 +21,7 @@ from fusion_plugins_ecosystem.tool_manifest import (
     parse_tool_manifest,
 )
 
-BUILTIN_MANIFEST = (
-    Path(__file__).parent.parent
-    / "fusion_plugins_ecosystem"
-    / "builtin"
-    / "caveman_compress.tool.json"
-)
+BUILTIN_MANIFEST = Path(__file__).parent.parent / "fusion_plugins_ecosystem" / "builtin" / "caveman_compress.tool.json"
 
 
 def _sample(**over) -> dict:

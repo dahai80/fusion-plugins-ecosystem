@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from fusion_plugins_ecosystem.config import EcosystemConfig
 
 
@@ -73,9 +72,7 @@ def test_to_dict_returns_dict_type() -> None:
 
 
 def test_from_dict_unknown_key_ignored() -> None:
-    restored, warnings = EcosystemConfig.from_dict(
-        {"unknown_key": "value", "enable_claude_mcp": False}
-    )
+    restored, warnings = EcosystemConfig.from_dict({"unknown_key": "value", "enable_claude_mcp": False})
     assert restored.enable_claude_mcp is False
 
 
@@ -185,9 +182,7 @@ def test_from_dict_int_out_of_range_warns() -> None:
 
 
 def test_from_dict_int_invalid_type_warns() -> None:
-    restored, warnings = EcosystemConfig.from_dict(
-        {"subagent_timeout_seconds": "not_a_number"}
-    )
+    restored, warnings = EcosystemConfig.from_dict({"subagent_timeout_seconds": "not_a_number"})
     assert len(warnings) > 0
 
 

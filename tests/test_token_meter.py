@@ -5,13 +5,11 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock
 
-
 from fusion_plugins_ecosystem.token_meter import (
     TokenKind,
     TokenMeter,
     TokenRecord,
 )
-
 
 # ── TokenRecord ──
 

@@ -227,9 +227,7 @@ SECRET_PATTERNS = [
         "possible hardcoded Bearer token",
     ),
     (
-        re.compile(
-            r"(?i)(password|passwd|secret|token)\s*[:=]\s*['\"][^'\"\s]{8,}['\"]"
-        ),
+        re.compile(r"(?i)(password|passwd|secret|token)\s*[:=]\s*['\"][^'\"\s]{8,}['\"]"),
         "possible hardcoded password",
     ),
 ]
@@ -310,9 +308,7 @@ def load_doc(path: str) -> Doc:
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         text = fh.read()
     meta, body_start, total = parse_frontmatter(text)
-    return Doc(
-        path=path, meta=meta, body_start=body_start, body_lines=total - body_start
-    )
+    return Doc(path=path, meta=meta, body_start=body_start, body_lines=total - body_start)
 
 
 # ---------------------------------------------------------------- checks
@@ -333,9 +329,7 @@ def check_frontmatter(doc: Doc, rel: str, out: List[Finding]) -> None:
 
     for key in REQUIRED_KEYS:
         if key not in doc.meta:
-            out.append(
-                Finding("ERROR", "FM-KEY", rel, 1, f"missing required key {key}")
-            )
+            out.append(Finding("ERROR", "FM-KEY", rel, 1, f"missing required key {key}"))
 
     def val(k: str) -> Optional[str]:
         v = doc.meta.get(k)
@@ -378,9 +372,7 @@ def check_frontmatter(doc: Doc, rel: str, out: List[Finding]) -> None:
 
     up = val("updated")
     if up and not re.match(r"^\d{4}-\d{2}-\d{2}$", up):
-        out.append(
-            Finding("ERROR", "FM-DATE", rel, 1, f"updated must be YYYY-MM-DD: {up}")
-        )
+        out.append(Finding("ERROR", "FM-DATE", rel, 1, f"updated must be YYYY-MM-DD: {up}"))
 
     doc_id = val("doc_id")
     if doc_id and not re.match(r"^[a-z0-9-]+/[a-z0-9-]+(/[a-z0-9-]+)?$", doc_id):
@@ -407,11 +399,7 @@ def check_frontmatter(doc: Doc, rel: str, out: List[Finding]) -> None:
 
     sot = doc.meta.get("source_of_truth")
     if not isinstance(sot, list) or not sot:
-        out.append(
-            Finding(
-                "ERROR", "FM-SOT", rel, 1, "source_of_truth must be a non-empty list"
-            )
-        )
+        out.append(Finding("ERROR", "FM-SOT", rel, 1, "source_of_truth must be a non-empty list"))
 
 
 def check_sot_paths(doc: Doc, rel: str, repo_root: str, out: List[Finding]) -> None:
@@ -472,14 +460,10 @@ def check_redlines(text: str, rel: str, out: List[Finding]) -> None:
         # wording cannot hide in examples)
         for w in FORBIDDEN_ZH:
             if w in line:
-                out.append(
-                    Finding("ERROR", "RED-MKT", rel, idx, f"marketing/vague word: {w}")
-                )
+                out.append(Finding("ERROR", "RED-MKT", rel, idx, f"marketing/vague word: {w}"))
         for w in FORBIDDEN_EN:
             if re.search(r"\b" + re.escape(w) + r"\b", line, re.I):
-                out.append(
-                    Finding("ERROR", "RED-MKT", rel, idx, f"marketing word: {w}")
-                )
+                out.append(Finding("ERROR", "RED-MKT", rel, idx, f"marketing word: {w}"))
 
         # leftover placeholders (frontmatter lines are exempt; template files
         # are exempt via --skip-placeholder; code fences are skipped because
@@ -497,9 +481,7 @@ def check_redlines(text: str, rel: str, out: List[Finding]) -> None:
                 if i < len(segs) - 1:
                     in_inline = not in_inline  # toggle only at real backticks
             prose = "".join(prose_parts)
-            prose = re.sub(
-                r"<!--.*?-->", " ", prose
-            )  # HTML comments are markers, not prose
+            prose = re.sub(r"<!--.*?-->", " ", prose)  # HTML comments are markers, not prose
             for m in PLACEHOLDER_RE.finditer(prose):
                 inner = m.group(1).strip()
                 if not inner or inner in HTML_SAFE:
@@ -511,11 +493,7 @@ def check_redlines(text: str, rel: str, out: List[Finding]) -> None:
                     continue  # comparison like r<5 or margin<4e-4, not a tag
                 if inner.startswith("//") or inner.endswith("/"):
                     continue
-                out.append(
-                    Finding(
-                        "ERROR", "RED-PH", rel, idx, f"leftover placeholder: <{inner}>"
-                    )
-                )
+                out.append(Finding("ERROR", "RED-PH", rel, idx, f"leftover placeholder: <{inner}>"))
 
         # secrets
         for pat, why in SECRET_PATTERNS:
@@ -626,11 +604,7 @@ def check_budget(doc: Doc, rel: str, out: List[Finding]) -> None:
             )
         )
     else:
-        out.append(
-            Finding(
-                "INFO", "BUDGET", rel, 0, f"body {doc.body_lines} lines / cap {limit}"
-            )
-        )
+        out.append(Finding("INFO", "BUDGET", rel, 0, f"body {doc.body_lines} lines / cap {limit}"))
 
 
 def check_bi_lingual(doc: Doc, rel: str, out: List[Finding]) -> None:
@@ -638,17 +612,9 @@ def check_bi_lingual(doc: Doc, rel: str, out: List[Finding]) -> None:
     title = doc.meta.get("title")
     if isinstance(title, str):
         if "zh" not in title or "en" not in title:
-            out.append(
-                Finding(
-                    "WARN", "I18N-TITLE", rel, 1, "title should be { zh: ..., en: ... }"
-                )
-            )
+            out.append(Finding("WARN", "I18N-TITLE", rel, 1, "title should be { zh: ..., en: ... }"))
     elif isinstance(title, list):
-        out.append(
-            Finding(
-                "WARN", "I18N-TITLE", rel, 1, "title failed to parse, check indentation"
-            )
-        )
+        out.append(Finding("WARN", "I18N-TITLE", rel, 1, "title failed to parse, check indentation"))
 
 
 def check_inventory(root: str, cls: str, entry: str, out: List[Finding]) -> None:
@@ -684,13 +650,7 @@ def check_inventory(root: str, cls: str, entry: str, out: List[Finding]) -> None
     for rel, need in TIER1_MIN_COUNT.get(key, []):
         d = os.path.join(root, rel)
         if os.path.isdir(d):
-            n = len(
-                [
-                    f
-                    for f in os.listdir(d)
-                    if f.endswith(".md") and not f.startswith("_")
-                ]
-            )
+            n = len([f for f in os.listdir(d) if f.endswith(".md") and not f.startswith("_")])
             if n < need:
                 out.append(
                     Finding(
@@ -709,9 +669,7 @@ def check_inventory(root: str, cls: str, entry: str, out: List[Finding]) -> None
 def iter_docs(root: str, skip_dirs: Tuple[str, ...]) -> List[str]:
     found = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            d for d in dirnames if d not in skip_dirs and not d.startswith(".")
-        ]
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs and not d.startswith(".")]
         for fn in filenames:
             if fn.endswith(".md"):
                 found.append(os.path.join(dirpath, fn))
@@ -734,9 +692,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="integration form developer/service/guided-ui/none",
     )
     ap.add_argument("--strict", action="store_true", help="treat WARN as failure too")
-    ap.add_argument(
-        "--skip-inventory", action="store_true", help="skip doc-set completeness checks"
-    )
+    ap.add_argument("--skip-inventory", action="store_true", help="skip doc-set completeness checks")
     ap.add_argument(
         "--skip-placeholder",
         action="store_true",
@@ -787,9 +743,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.skip_placeholder:
             # drop the placeholder findings for this file, keep every other redline
             check_redlines(text, rel, findings)
-            findings[:] = [
-                f for f in findings if not (f.code == "RED-PH" and f.file == rel)
-            ]
+            findings[:] = [f for f in findings if not (f.code == "RED-PH" and f.file == rel)]
         else:
             check_redlines(text, rel, findings)
 
@@ -806,9 +760,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f)
 
     print()
-    print(
-        f"scanned {len(docs_paths)} docs | ERROR {len(errs)} | WARN {len(warns)} | INFO {len(infos)}"
-    )
+    print(f"scanned {len(docs_paths)} docs | ERROR {len(errs)} | WARN {len(warns)} | INFO {len(infos)}")
 
     if errs:
         return 1

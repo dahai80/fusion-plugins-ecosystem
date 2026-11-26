@@ -141,9 +141,7 @@ def parse_tool_manifest(data: Any) -> ToolManifest:
     try:
         jsonschema.validate(data, TOOL_MANIFEST_JSON_SCHEMA)
     except jsonschema.ValidationError as e:
-        raise ToolManifestError(
-            f"manifest schema violation at {list(e.absolute_path)}: {e.message}"
-        ) from e
+        raise ToolManifestError(f"manifest schema violation at {list(e.absolute_path)}: {e.message}") from e
     names = [a["name"] for a in data["api"]]
     dupes = sorted({n for n in names if names.count(n) > 1})
     if dupes:
@@ -152,10 +150,7 @@ def parse_tool_manifest(data: Any) -> ToolManifest:
         _validate_json_schema_object(a["parameters"], f"api[{i}].{a['name']}")
     meta = data["meta"]
     api = tuple(
-        ToolApiSpec(
-            name=a["name"], description=a["description"], parameters=a["parameters"]
-        )
-        for a in data["api"]
+        ToolApiSpec(name=a["name"], description=a["description"], parameters=a["parameters"]) for a in data["api"]
     )
     return ToolManifest(
         identifier=data["identifier"],

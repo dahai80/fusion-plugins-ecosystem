@@ -121,8 +121,7 @@ def __getattr__(name: str) -> object:
             return obj
         except (ImportError, AttributeError) as exc:
             raise AttributeError(
-                f"module 'fusion_plugins_ecosystem' has no attribute {name!r} "
-                f"(lazy import {mod_name!r} failed: {exc})"
+                f"module 'fusion_plugins_ecosystem' has no attribute {name!r} (lazy import {mod_name!r} failed: {exc})"
             ) from None
     raise AttributeError(f"module 'fusion_plugins_ecosystem' has no attribute {name!r}")
 

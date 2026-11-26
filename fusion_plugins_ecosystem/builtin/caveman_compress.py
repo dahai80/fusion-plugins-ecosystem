@@ -121,8 +121,7 @@ CAVEMAN_MANIFEST = PluginManifest(
     category=PluginCategory.CONTEXT_COMPRESS,
     # i18n: user-facing
     description=(
-        "对输入文本做 caveman 风格 token 压缩："
-        "去除冗余空白/注释，合并重复空行，降低 Claude 会话 token 消耗。"
+        "对输入文本做 caveman 风格 token 压缩：去除冗余空白/注释，合并重复空行，降低 Claude 会话 token 消耗。"
     ),
     capabilities=(
         PluginCapability.MCP_TOOL,

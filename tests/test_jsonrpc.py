@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.jsonrpc import (
     MCPHandler,
@@ -182,9 +181,7 @@ async def test_tools_call_unknown_tool_returns_error() -> None:
 async def test_tools_call_disabled_plugin_returns_error() -> None:
     registry = _make_registry(_mcp_tool_manifest())
     handler = MCPHandler(registry=registry)
-    result = await handler._tools_call(
-        {"name": "test_tool", "arguments": {"input": "hi"}}
-    )
+    result = await handler._tools_call({"name": "test_tool", "arguments": {"input": "hi"}})
     assert result["isError"] is True
 
 

@@ -145,19 +145,13 @@ def test_connector_full_flow(client):
 
 
 def test_mcp_flow(client, mcp_server):
-    out = client.post(
-        "/api/extensions/mcp", json={"id": "erp-mcp", "url": mcp_server}
-    ).json()
+    out = client.post("/api/extensions/mcp", json={"id": "erp-mcp", "url": mcp_server}).json()
     assert out["registered"] is True
     assert out["candidate_tools"] == ["t1", "t2"]
-    probe_fail = client.post(
-        "/api/extensions/mcp", json={"id": "dead", "url": "http://127.0.0.1:1/mcp"}
-    ).json()
+    probe_fail = client.post("/api/extensions/mcp", json={"id": "dead", "url": "http://127.0.0.1:1/mcp"}).json()
     assert probe_fail["registered"] is False
 
-    tick = client.post(
-        "/api/extensions/mcp/erp-mcp/tick", json={"tools": ["t1"]}
-    ).json()
+    tick = client.post("/api/extensions/mcp/erp-mcp/tick", json={"tools": ["t1"]}).json()
     assert tick["ticked"] == ["mcp.erp-mcp.t1"]
     servers = client.get("/api/extensions/mcp").json()["servers"]
     assert servers[0]["ticked"] == ["t1"]
@@ -214,57 +208,28 @@ class TestApiAuth:
     def test_static_key_enforced(self, client, monkeypatch):
         monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_API_KEY", "static-secret")
         assert client.get("/api/whoami").status_code == 401
-        assert (
-            client.get(
-                "/api/whoami", headers={"Authorization": "Bearer static-secret"}
-            ).status_code
-            == 200
-        )
+        assert client.get("/api/whoami", headers={"Authorization": "Bearer static-secret"}).status_code == 200
 
     def test_x_api_key_header_accepted(self, client, monkeypatch):
         monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_API_KEY", "static-secret")
-        assert (
-            client.get(
-                "/api/whoami", headers={"x-api-key": "static-secret"}
-            ).status_code
-            == 200
-        )
+        assert client.get("/api/whoami", headers={"x-api-key": "static-secret"}).status_code == 200
 
     def test_module_key_accepted(self, client, monkeypatch, tmp_path):
         from fusion_plugins_ecosystem import shell_registry
 
-        monkeypatch.setattr(
-            shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key"
-        )
+        monkeypatch.setattr(shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key")
         shell_registry.save_module_key("fm-issued-key-0001")
         assert client.get("/api/whoami").status_code == 401
-        assert (
-            client.get(
-                "/api/whoami", headers={"Authorization": "Bearer fm-issued-key-0001"}
-            ).status_code
-            == 200
-        )
+        assert client.get("/api/whoami", headers={"Authorization": "Bearer fm-issued-key-0001"}).status_code == 200
 
     def test_static_and_module_key_dual_active(self, client, monkeypatch, tmp_path):
         from fusion_plugins_ecosystem import shell_registry
 
         monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_API_KEY", "static-secret")
-        monkeypatch.setattr(
-            shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key"
-        )
+        monkeypatch.setattr(shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key")
         shell_registry.save_module_key("fm-issued-key-0002")
-        assert (
-            client.get(
-                "/api/whoami", headers={"Authorization": "Bearer static-secret"}
-            ).status_code
-            == 200
-        )
-        assert (
-            client.get(
-                "/api/whoami", headers={"Authorization": "Bearer fm-issued-key-0002"}
-            ).status_code
-            == 200
-        )
+        assert client.get("/api/whoami", headers={"Authorization": "Bearer static-secret"}).status_code == 200
+        assert client.get("/api/whoami", headers={"Authorization": "Bearer fm-issued-key-0002"}).status_code == 200
 
     def test_static_page_not_gated(self, client, monkeypatch):
         monkeypatch.setenv("FUSION_PLUGINS_CONSOLE_API_KEY", "static-secret")

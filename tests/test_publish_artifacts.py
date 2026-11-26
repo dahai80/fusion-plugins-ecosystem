@@ -2,12 +2,11 @@
 # archives with pinned payloads; registry validator enforces schema v2 pins.
 
 import json
+import sys
 import tarfile
 from pathlib import Path
 
 import pytest
-
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from publish_artifacts import (  # noqa: E402
@@ -153,6 +152,4 @@ class TestApplyArtifacts:
         assert artifact["url"].endswith(".tar.gz")
         assert entry["version"] == __version__
         # unrelated entries untouched
-        assert "artifacts" not in next(
-            e for e in reg["entries"] if e["id"] == "web_search"
-        )
+        assert "artifacts" not in next(e for e in reg["entries"] if e["id"] == "web_search")

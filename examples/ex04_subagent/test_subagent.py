@@ -82,9 +82,7 @@ async def test_dispatch_subagent_propagates_execution_error():
     registry.register(boom_manifest)
     gw = ClaudeGateway(registry, fpe.PluginLifecycle(registry))
 
-    task = SubagentTask(
-        name="crash-1", plugin_id="boom_subagent", arguments={}, timeout_seconds=10
-    )
+    task = SubagentTask(name="crash-1", plugin_id="boom_subagent", arguments={}, timeout_seconds=10)
     result = await gw.dispatch_subagent(task)
 
     assert result["task"] == "crash-1"

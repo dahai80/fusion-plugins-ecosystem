@@ -87,10 +87,7 @@ class HookAdapter:
                         event=event,
                         plugin_id=manifest.id,
                         command=f"fusion-plugin-server --hook {manifest.id} --event {event}",
-                        description=(
-                            f"{event} hook for plugin {manifest.name} "
-                            f"({cap.value} capability)"
-                        ),
+                        description=(f"{event} hook for plugin {manifest.name} ({cap.value} capability)"),
                     )
                 )
         return hooks

@@ -419,11 +419,7 @@ async def test_http_client_unreachable_raises() -> None:
 def test_sse_response_parsing() -> None:
     raw = 'data: {"jsonrpc":"2.0","id":7,"result":{"ok":1}}\n\n'
     body = {"jsonrpc": "2.0", "id": 7, "method": "x"}
-    lines = [
-        line.strip()[len("data:") :].strip()
-        for line in raw.splitlines()
-        if line.strip().startswith("data:")
-    ]
+    lines = [line.strip()[len("data:") :].strip() for line in raw.splitlines() if line.strip().startswith("data:")]
     assert len(lines) == 1
     resp = json.loads(lines[0])
     assert resp["id"] == body["id"] and resp["result"]["ok"] == 1

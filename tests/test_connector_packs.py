@@ -78,9 +78,7 @@ def test_send_tools_gated_high_risk() -> None:
             if tool.read_only:
                 assert tool.risk == RiskLevel.LOW, f"{pack.id}.{tool.name}"
             else:
-                assert tool.risk in (RiskLevel.MEDIUM, RiskLevel.HIGH), (
-                    f"{pack.id}.{tool.name}"
-                )
+                assert tool.risk in (RiskLevel.MEDIUM, RiskLevel.HIGH), f"{pack.id}.{tool.name}"
 
 
 def test_notion_pack_http_transport() -> None:

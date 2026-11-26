@@ -5,15 +5,14 @@ from __future__ import annotations
 import pytest
 
 from fusion_plugins_ecosystem.schema import (
+    _PARAM_TYPE_MAP,
     MCP_PROTOCOL_VERSION,
     MCP_PROTOCOL_VERSIONS_SUPPORTED,
-    MCPAnnotations,
     PARAM_TYPE_TO_JSON_SCHEMA,
+    MCPAnnotations,
     PluginParamType,
     SandboxMode,
-    _PARAM_TYPE_MAP,
 )
-
 
 # ── PluginParamType ──
 

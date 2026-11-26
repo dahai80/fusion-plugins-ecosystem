@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-
 from fusion_plugins_ecosystem.agent_adapter import AgentAdapter
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.plugin_bundle import PluginBundle, PluginBundleGenerator
@@ -247,9 +246,7 @@ class TestPluginBundleGenerator:
         assert "mcp_tool" in data["capabilities"]
 
     def test_mcp_config_generated_for_mcp_tool(self) -> None:
-        reg = _make_registry(
-            _make_manifest("p1", capabilities=(PluginCapability.MCP_TOOL,))
-        )
+        reg = _make_registry(_make_manifest("p1", capabilities=(PluginCapability.MCP_TOOL,)))
         gen = PluginBundleGenerator(reg)
         bundle = gen.generate("p1")
         assert bundle is not None

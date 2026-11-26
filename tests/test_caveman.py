@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-
 from fusion_plugins_ecosystem.builtin.caveman_compress import (
     CAVEMAN_MANIFEST,
     _compress_text,
     caveman_compress,
 )
-
 
 # ── _compress_text ──
 

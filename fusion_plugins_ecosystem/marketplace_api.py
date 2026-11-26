@@ -139,9 +139,7 @@ class PluginMarketplaceAPI:
         # approved community submissions extend the catalog (community wins on
         # id collision only if absent from the built-in file)
         try:
-            community = json.loads(
-                (_extensions_dir() / COMMUNITY_FILE).read_text(encoding="utf-8")
-            )
+            community = json.loads((_extensions_dir() / COMMUNITY_FILE).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             community = {}
         for pid, manifest in (community.get("plugins") or {}).items():
@@ -168,9 +166,7 @@ class PluginMarketplaceAPI:
 
             mp = Marketplace(
                 connector_registry=None,
-                marketplace_index=(
-                    os.environ.get("FUSION_PLUGIN_MARKETPLACE_INDEX") or None
-                ),
+                marketplace_index=(os.environ.get("FUSION_PLUGIN_MARKETPLACE_INDEX") or None),
             )
             entries, warnings = mp.load_index()
             for w in warnings:
@@ -199,14 +195,10 @@ class PluginMarketplaceAPI:
     def _save_tenants_state(self, state: dict[str, Any]) -> None:
         self._write_json(TENANTS_FILE, state)
 
-    def _tenant_record(
-        self, tenants: dict[str, Any], tenant: str, plugin_id: str
-    ) -> dict[str, Any] | None:
+    def _tenant_record(self, tenants: dict[str, Any], tenant: str, plugin_id: str) -> dict[str, Any] | None:
         return (tenants.get(tenant) or {}).get(plugin_id)
 
-    def _record_install(
-        self, tenant: str, plugin_id: str, version: str, enabled: bool
-    ) -> None:
+    def _record_install(self, tenant: str, plugin_id: str, version: str, enabled: bool) -> None:
         tenants = self._tenants_state()
         tenants.setdefault(tenant, {})[plugin_id] = {
             "version": str(version),
@@ -263,9 +255,7 @@ class PluginMarketplaceAPI:
         pack = getattr(entry, "pack", None) or {}
         tools = pack.get("tools") or []
         high = any(str((t or {}).get("risk", "")).upper() == "HIGH" for t in tools)
-        return [
-            dict(CONNECTOR_PERMISSION_HIGH if high else CONNECTOR_PERMISSION_MEDIUM)
-        ]
+        return [dict(CONNECTOR_PERMISSION_HIGH if high else CONNECTOR_PERMISSION_MEDIUM)]
 
     def _base_row(self, plugin_id: str, manifest: Any) -> dict[str, Any]:
         m = manifest
@@ -278,18 +268,14 @@ class PluginMarketplaceAPI:
             "id": plugin_id,
             "name_en": getattr(m, "name", None) or (m or {}).get("name") or plugin_id,
             "name_cn": "",
-            "version": str(
-                getattr(m, "version", None) or (m or {}).get("version") or "0.0.0"
-            ),
+            "version": str(getattr(m, "version", None) or (m or {}).get("version") or "0.0.0"),
             "category": str(
                 getattr(m, "category", None)
                 and getattr(m.category, "value", m.category)
                 or (m or {}).get("category")
                 or "custom"
             ),
-            "description_en": getattr(m, "description", None)
-            or (m or {}).get("description")
-            or "",
+            "description_en": getattr(m, "description", None) or (m or {}).get("description") or "",
             "description_cn": "",
             "tags": [],
             "icon": _LIST_DEFAULT_ICON,
@@ -329,9 +315,7 @@ class PluginMarketplaceAPI:
         if meta.get("size_kb") is not None:
             row["size_kb"] = meta["size_kb"]
 
-    def list_plugins(
-        self, tenant: str | None = None, query: str = "", category: str = ""
-    ) -> dict[str, Any]:
+    def list_plugins(self, tenant: str | None = None, query: str = "", category: str = "") -> dict[str, Any]:
         t = self._normalize_tenant(tenant)
         rows: dict[str, dict[str, Any]] = {}
 
@@ -417,9 +401,7 @@ class PluginMarketplaceAPI:
             "plugins": out,
         }
 
-    def plugin_detail(
-        self, plugin_id: str, tenant: str | None = None
-    ) -> dict[str, Any]:
+    def plugin_detail(self, plugin_id: str, tenant: str | None = None) -> dict[str, Any]:
         t = self._normalize_tenant(tenant)
         listing = self.list_plugins(tenant=t)
         row = next((r for r in listing["plugins"] if r["id"] == plugin_id), None)
@@ -430,9 +412,7 @@ class PluginMarketplaceAPI:
         permissions: list[dict[str, str]] = list(row.get("permissions") or [])
         if manifest is not None:
             derived = [
-                CAPABILITY_PERMISSIONS[c.value]
-                for c in manifest.capabilities
-                if c.value in CAPABILITY_PERMISSIONS
+                CAPABILITY_PERMISSIONS[c.value] for c in manifest.capabilities if c.value in CAPABILITY_PERMISSIONS
             ]
             seen = {p["id"] for p in permissions}
             permissions = permissions + [p for p in derived if p["id"] not in seen]
@@ -442,9 +422,7 @@ class PluginMarketplaceAPI:
         if size_kb is None:
             size_kb = int(getattr(manifest, "vram_mb", 0) or 0) or None
         row["size_kb"] = size_kb
-        row["params"] = (
-            [p.to_dict() for p in manifest.params] if manifest is not None else []
-        )
+        row["params"] = [p.to_dict() for p in manifest.params] if manifest is not None else []
         row["tenant"] = t
         return row
 
@@ -453,9 +431,7 @@ class PluginMarketplaceAPI:
     def _market_entry_map(self) -> dict[str, Any]:
         return {e.id: e for e in self._index_entries()}
 
-    async def install(
-        self, plugin_id: str, tenant: str | None = None
-    ) -> dict[str, Any]:
+    async def install(self, plugin_id: str, tenant: str | None = None) -> dict[str, Any]:
         t = self._normalize_tenant(tenant)
         listing = self.list_plugins(tenant=t)
         row = next((r for r in listing["plugins"] if r["id"] == plugin_id), None)
@@ -464,11 +440,7 @@ class PluginMarketplaceAPI:
 
         available = row.get("available_version") or row["version"]
         record = self._tenant_record(self._tenants_state(), t, plugin_id)
-        if (
-            record is not None
-            and row["install_state"] == "installed"
-            and str(record.get("version")) == str(available)
-        ):
+        if record is not None and row["install_state"] == "installed" and str(record.get("version")) == str(available):
             logger.info("marketplace_api: %s already installed for %s", plugin_id, t)
             return {
                 "installed": True,
@@ -483,12 +455,8 @@ class PluginMarketplaceAPI:
             result = await self.console.install_bundle(plugin_id)
             version = str(result.get("version") or available)
             self._record_install(t, plugin_id, version, enabled=True)
-            action = (
-                "update" if row["install_state"] == "update_available" else "install"
-            )
-            logger.info(
-                "marketplace_api: %s %s v%s (tenant %s)", action, plugin_id, version, t
-            )
+            action = "update" if row["install_state"] == "update_available" else "install"
+            logger.info("marketplace_api: %s %s v%s (tenant %s)", action, plugin_id, version, t)
             return {
                 "installed": True,
                 "already": False,
@@ -502,9 +470,7 @@ class PluginMarketplaceAPI:
 
         manifest = self.console.registry.get(plugin_id)
         if manifest is None:
-            raise KeyError(
-                f"marketplace_api: plugin {plugin_id!r} has no installable source"
-            )
+            raise KeyError(f"marketplace_api: plugin {plugin_id!r} has no installable source")
         await self.console.lifecycle.enable(plugin_id)
         self._record_install(t, plugin_id, str(manifest.version), enabled=True)
         from fusion_plugins_ecosystem.audit_events import emit, new_trace_id
@@ -528,14 +494,10 @@ class PluginMarketplaceAPI:
             "action": "install",
         }
 
-    async def uninstall(
-        self, plugin_id: str, tenant: str | None = None
-    ) -> dict[str, Any]:
+    async def uninstall(self, plugin_id: str, tenant: str | None = None) -> dict[str, Any]:
         t = self._normalize_tenant(tenant)
         market_entries = self._market_entry_map()
-        had_record = (
-            self._tenant_record(self._tenants_state(), t, plugin_id) is not None
-        )
+        had_record = self._tenant_record(self._tenants_state(), t, plugin_id) is not None
         if plugin_id in market_entries:
             await self.console.uninstall_bundle(plugin_id)
         else:
@@ -581,23 +543,17 @@ class PluginMarketplaceAPI:
         category = manifest.get("category")
         valid_categories = {c.value for c in PluginCategory}
         if category not in valid_categories:
-            problems.append(
-                f"invalid category {category!r} (one of {sorted(valid_categories)})"
-            )
+            problems.append(f"invalid category {category!r} (one of {sorted(valid_categories)})")
         permissions = manifest.get("permissions")
         if permissions is not None:
-            if not isinstance(permissions, list) or not all(
-                isinstance(p, dict) and p.get("id") for p in permissions
-            ):
+            if not isinstance(permissions, list) or not all(isinstance(p, dict) and p.get("id") for p in permissions):
                 problems.append("permissions must be a list of {id, ...} objects")
         source_repo = manifest.get("source_repo")
         if source_repo is not None and not str(source_repo).startswith("https://"):
             problems.append("source_repo must be an https:// URL")
         return problems
 
-    def submit(
-        self, manifest: dict[str, Any], submitter: str = "anonymous"
-    ) -> dict[str, Any]:
+    def submit(self, manifest: dict[str, Any], submitter: str = "anonymous") -> dict[str, Any]:
         if not isinstance(manifest, dict):
             raise ValueError("manifest must be an object")
         problems = self._validate_submission(manifest)
@@ -612,11 +568,7 @@ class PluginMarketplaceAPI:
         submissions = self._read_json(SUBMISSIONS_FILE, {"submissions": []})
         submission_id = f"{pid}@{version}"
         existing = next(
-            (
-                s
-                for s in submissions["submissions"]
-                if s["submission_id"] == submission_id
-            ),
+            (s for s in submissions["submissions"] if s["submission_id"] == submission_id),
             None,
         )
         if existing is not None and existing["status"] == "approved":
@@ -658,24 +610,16 @@ class PluginMarketplaceAPI:
             subs = [s for s in subs if s.get("status") == status]
         return {"count": len(subs), "submissions": subs}
 
-    def review(
-        self, submission_id: str, approve: bool, reviewer: str = "admin"
-    ) -> dict[str, Any]:
+    def review(self, submission_id: str, approve: bool, reviewer: str = "admin") -> dict[str, Any]:
         submissions = self._read_json(SUBMISSIONS_FILE, {"submissions": []})
         record = next(
-            (
-                s
-                for s in submissions.get("submissions") or []
-                if s.get("submission_id") == submission_id
-            ),
+            (s for s in submissions.get("submissions") or [] if s.get("submission_id") == submission_id),
             None,
         )
         if record is None:
             raise KeyError(f"marketplace_api: unknown submission {submission_id!r}")
         if record.get("status") != "pending":
-            raise ValueError(
-                f"submission {submission_id} already {record.get('status')}"
-            )
+            raise ValueError(f"submission {submission_id} already {record.get('status')}")
         record["status"] = "approved" if approve else "rejected"
         record["reviewed_at"] = int(time.time())
         record["reviewer"] = str(reviewer)
