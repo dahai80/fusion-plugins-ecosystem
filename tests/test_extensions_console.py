@@ -1,4 +1,4 @@
-"""ExtensionsConsole 测试：连接器 install/enable/harness、MCP intake、插件 tick、resync。"""
+"""ExtensionsConsole tests: connector install/enable/harness, MCP intake, plugin tick, resync."""
 
 import json
 import threading
@@ -208,7 +208,7 @@ def _conn_doc(base_url="https://erp.example.com/api"):
     }
 
 
-# ── 连接器 ──
+# ── Connectors ──
 
 
 def test_install_connector_invalid(console):
@@ -242,7 +242,7 @@ async def test_enable_disable_connector(console):
     assert out["capabilities_disabled"] == ["connector__erp-json__erp.stock.fetch"]
     assert console.registry.get("connector__erp-json__erp.stock.fetch") is None
     assert console.list_capabilities()[0]["status"] == "disabled"
-    # 文档保留在磁盘（_disabled 标记）
+    # Doc kept on disk (marked _disabled)
     assert ec.get_connector("erp-json")["_disabled"] is True
 
 
@@ -262,7 +262,7 @@ def test_save_credentials(console):
 
 
 class _DeadVaultDesk(FakeDesk):
-    """模拟 standalone console：set/get 都是 no-op（无 config_center）。"""
+    """Simulates a standalone console: set/get are no-ops (no config_center)."""
 
     def set_api_key(self, provider, key):
         pass
@@ -272,7 +272,7 @@ class _DeadVaultDesk(FakeDesk):
 
 
 def test_standalone_console_builds_own_lifecycle():
-    """create_app 不传 lifecycle：console 自建，否则 tick/enable 全静默 no-op。"""
+    """create_app without a lifecycle: console builds its own, otherwise tick/enable silently no-op."""
     desk = FakeDesk()
     console = ExtensionsConsole(desk=desk)
     assert console.lifecycle is not None
@@ -288,7 +288,7 @@ def test_save_credentials_local_vault_fallback(tmp_path):
     assert _vault_credentials(desk, "erp-json") == {"api_key": "k-9"}
     vault_file = tmp_path / "extensions" / "vault.json"
     assert vault_file.exists()
-    assert "k-9" not in vault_file.read_text(encoding="utf-8")  # 密文落盘
+    assert "k-9" not in vault_file.read_text(encoding="utf-8")  # ciphertext on disk
 
 
 # ── harness ──
@@ -320,7 +320,7 @@ async def test_harness_live_check_ok(console, server):
     assert out == {"connector_id": "erp-json", "problems": [], "conformant": True}
 
 
-# ── 保险库头解析 ──
+# ── Vault header parsing ──
 
 
 def test_vault_headers_shapes():
@@ -337,7 +337,7 @@ def test_vault_headers_shapes():
         _vault_headers(desk, "missing")
 
 
-# ── REST 读操作执行（经桥接插件）──
+# ── REST read execution (via bridged plugin) ──
 
 
 async def test_bridged_rest_op_execution(console, server):
@@ -417,7 +417,7 @@ async def test_remove_mcp_server(console, mcp_server):
     assert console.registry.get("mcp__erp-mcp__erp.query") is None
 
 
-# ── 插件 tick / remove / install ──
+# ── Plugin tick / remove / install ──
 
 
 async def test_list_plugins_groups(console, mcp_server):
@@ -426,7 +426,7 @@ async def test_list_plugins_groups(console, mcp_server):
     await console.tick_mcp_tools("erp-mcp", ["erp.query"])
     data = console.list_plugins()
     row = next(p for p in data["plugins"] if p["name"] == "erp-mcp")
-    # 仅 ticked 工具桥接为插件（未 tick 的候选在 /mcp 工具清单里勾选）
+    # Only ticked tools bridge into plugins (unticked candidates are checkboxes in the /mcp tool list)
     assert row["nodes"] == ["erp.query"]
     assert row["ticked"] == ["erp.query"]
     assert data["require_signing"] is False
@@ -441,7 +441,7 @@ async def test_tick_nodes_reconcile(console, mcp_server):
     assert out["errors"] == []
     states = {s["plugin_id"]: s["state"] for s in console.lifecycle.list_states()}
     assert states["mcp__erp-mcp__erp.query"] == PluginState.ENABLED.value
-    # 未加载过的节点 disable 是 no-op（无实例）—— 至少不能是 ENABLED
+    # Disabling a never-loaded node is a no-op (no instance) — at minimum it must not be ENABLED
     assert states.get("mcp__erp-mcp__erp.push") != PluginState.ENABLED.value
     missing = await console.tick_nodes("ghost", [])
     assert missing["errors"] == ["plugin 'ghost' not found"]
@@ -477,7 +477,7 @@ async def test_install_plugin_declarative(console, tmp_path):
     assert out["installed"] is True
     assert out["plugin"] == "myplugin"
     assert console.registry.get("myplugin").version == "1.2.0"
-    # resync 重新注册自定义插件
+    # resync re-registers custom plugins
     console.registry.unregister("myplugin")
     await console.resync()
     assert console.registry.get("myplugin")
@@ -506,7 +506,7 @@ async def test_resync_rebuilds(console, mcp_server):
     console.register_mcp_server("erp-mcp", mcp_server, "mcp-cred")
     await console.tick_mcp_tools("erp-mcp", ["erp.query"])
 
-    # 模拟重启：清掉运行时桥接，resync 从磁盘事实重建
+    # Simulate restart: clear the runtime bridges, resync rebuilds from on-disk facts
     console.registry.unregister("connector__erp-json__erp.stock.fetch")
     console.registry.unregister("mcp__erp-mcp__erp.query")
     out = await console.resync()
@@ -515,14 +515,14 @@ async def test_resync_rebuilds(console, mcp_server):
     assert console.registry.get("connector__erp-json__erp.stock.fetch")
     assert console.registry.get("mcp__erp-mcp__erp.query")
 
-    # disabled 连接器不重建
+    # Disabled connectors are not rebuilt
     await console.disable_connector("erp-json")
     console.registry.unregister("connector__erp-json__erp.stock.fetch")
     out = await console.resync()
     assert "connector.erp-json.erp.stock.fetch" not in out["relisted"]
 
 
-# ── spine 派生 ──
+# ── Spine derivation ──
 
 
 async def test_spine_counts_by_source(console, mcp_server):

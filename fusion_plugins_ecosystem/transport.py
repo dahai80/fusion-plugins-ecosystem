@@ -1,12 +1,11 @@
-"""MCP 传输层。
-
-支持三种传输模式：
-- StdioTransport: stdin/stdout JSON-RPC，用于 Claude Desktop 子进程
-- SSETransport: HTTP + Server-Sent Events，用于远程客户端
-- HTTPTransport: Streamable HTTP (MCP 2026-07-28)
-
-每个传输实例绑定一个 MCPHandler 处理 JSON-RPC 请求。
-"""
+# MCP transport layer.
+#
+# Supports three transport modes:
+# - StdioTransport: stdin/stdout JSON-RPC, for the Claude Desktop subprocess
+# - SSETransport: HTTP + Server-Sent Events, for remote clients
+# - HTTPTransport: Streamable HTTP (MCP 2026-07-28)
+#
+# Each transport instance binds one MCPHandler to process JSON-RPC requests.
 
 from __future__ import annotations
 
@@ -27,7 +26,8 @@ logger = logging.getLogger(__name__)
 
 
 def _stamp_cid(request: dict[str, Any]) -> Any:
-    """从请求 _meta.cid 取或生成 correlation_id，stamp 到当前上下文。返回 token。"""
+    # Take or generate the correlation_id from the request's _meta.cid and
+    # stamp it into the current context. Returns the token.
     cid = None
     if isinstance(request, dict):
         meta = request.get("_meta")
@@ -38,21 +38,25 @@ def _stamp_cid(request: dict[str, Any]) -> Any:
     return set_correlation_id(str(cid))
 
 
-# 请求体硬上限（字节），防止伪造 Content-Length 导致 OOM
+# Hard cap on request body size (bytes), prevents a forged Content-Length
+# from causing OOM
 _MAX_BODY = 1 << 20  # 1 MiB
-# 单个 header 行最大长度（字节）
+# Max length of a single header line (bytes)
 _MAX_HEADER_LINE = 8192
-# 最多 header 行数
+# Max number of header lines
 _MAX_HEADERS = 100
-# 连接读取超时（秒）：请求行/headers/body 各阶段防止慢速攻击
+# Connection read timeout (seconds): guards request line/headers/body stages
+# against slow attacks
 _READ_TIMEOUT = 30.0
-# P3-6：单连接 SSE 事件队列容量上限。慢客户端读不过来时不再无限堆积内存，
-# 满队时 send_to_session 丢弃新事件并记日志（不阻塞 RPC 调用方）。
+# P3-6: capacity cap for a single connection's SSE event queue. Slow clients
+# no longer accumulate unbounded memory; when the queue is full,
+# send_to_session drops the new event and logs (without blocking the RPC
+# caller).
 _SSE_QUEUE_MAXSIZE = 256
 
 
 class Transport(ABC):
-    """MCP 传输抽象基类。"""
+    # MCP transport abstract base class.
 
     def __init__(self, handler: Callable[[dict], Any] | None = None) -> None:
         self._handler = handler
@@ -62,22 +66,24 @@ class Transport(ABC):
 
     @abstractmethod
     async def start(self) -> None:
-        """启动传输层。"""
+        # Start the transport.
+        ...
 
     @abstractmethod
     async def stop(self) -> None:
-        """停止传输层。"""
+        # Stop the transport.
+        ...
 
     @abstractmethod
     async def send(self, message: dict[str, Any]) -> None:
-        """发送消息。"""
+        # Send a message.
+        ...
 
 
 class StdioTransport(Transport):
-    """stdin/stdout 传输，用于 Claude Desktop 子进程模式。
-
-    协议格式：每行一个 JSON-RPC 消息，以 \\n 分隔。
-    """
+    # stdin/stdout transport, for the Claude Desktop subprocess mode.
+    #
+    # Protocol format: one JSON-RPC message per line, separated by \n.
 
     def __init__(self, handler: Callable[[dict], Any] | None = None) -> None:
         super().__init__(handler)
@@ -169,11 +175,10 @@ class StdioTransport(Transport):
 
 
 class SSETransport(Transport):
-    """HTTP + Server-Sent Events 传输。
-
-    客户端通过 HTTP POST 发送 JSON-RPC 请求，
-    服务端通过 SSE 事件流返回响应。
-    """
+    # HTTP + Server-Sent Events transport.
+    #
+    # Clients send JSON-RPC requests via HTTP POST; the server returns
+    # responses over the SSE event stream.
 
     def __init__(
         self,
@@ -217,23 +222,26 @@ class SSETransport(Transport):
         logger.info("SSETransport stopped")
 
     async def send(self, message: dict[str, Any]) -> None:
-        # 广播已禁用：JSON-RPC 响应是 per-request 的，POST 分支已同步回写。
-        # 跨客户端广播会造成数据泄露（P0-2）。服务端主动通知用 send_to_session。
-        logger.warning("SSETransport: send() 广播已禁用，使用 send_to_session 按会话路由")
+        # Broadcasting is disabled: JSON-RPC responses are per-request, and
+        # the POST branch already writes back synchronously. Cross-client
+        # broadcast would leak data (P0-2). Server-initiated notifications
+        # use send_to_session.
+        logger.warning("SSETransport: send() broadcast is disabled, use send_to_session to route per session")
 
     async def send_to_session(self, session_id: str, message: dict[str, Any]) -> None:
         queue = self._sessions.get(session_id)
         if queue is None:
-            logger.debug("SSETransport: session %s 不存在，丢弃消息", session_id)
+            logger.debug("SSETransport: session %s not found, dropping message", session_id)
             return
         data = json.dumps(message, ensure_ascii=False)
-        # P3-6：满队丢弃而非阻塞。慢客户端读不过来时 put_nowait 抛 QueueFull，
-        # 丢弃该事件并记日志，避免 send 调用方挂起 + 内存无界堆积。
+        # P3-6: drop on full queue instead of blocking. When a slow client
+        # cannot keep up, put_nowait raises QueueFull; drop the event and
+        # log, avoiding a hung send() caller plus unbounded memory growth.
         try:
             queue.put_nowait(f"data: {data}\n\n")
         except asyncio.QueueFull:
             logger.warning(
-                "SSETransport: session %s 事件队列已满（>%d），丢弃事件",
+                "SSETransport: session %s event queue full (>%d), dropping event",
                 session_id,
                 _SSE_QUEUE_MAXSIZE,
             )
@@ -246,14 +254,15 @@ class SSETransport(Transport):
                 await writer.wait_closed()
                 return
 
-            # P2-8：未鉴权健康探针短路
+            # P2-8: unauthenticated health-probe short circuit
             if _is_health_request(request_text):
                 await _write_health_response(writer)
                 writer.close()
                 await writer.wait_closed()
                 return
 
-            # 可观测性：未鉴权 GET /metrics 短路（Prometheus scrape）
+            # Observability: unauthenticated GET /metrics short circuit
+            # (Prometheus scrape)
             if _is_metrics_request(request_text) and self._metrics_provider:
                 await _write_metrics_response(writer, self._metrics_provider())
                 writer.close()
@@ -262,22 +271,24 @@ class SSETransport(Transport):
 
             content_length = _safe_content_length(headers)
 
-            # R6：SSE/HTTP 远程传输鉴权，Bearer token 匹配才放行
+            # R6: SSE/HTTP remote transport auth; pass only when the Bearer
+            # token matches
             if not _check_auth(self._auth_token, headers):
-                logger.warning("SSETransport: 鉴权失败，拒绝请求")
+                logger.warning("SSETransport: auth failed, rejecting request")
                 await _write_simple_response(writer, 401, b"Unauthorized")
                 writer.close()
                 await writer.wait_closed()
                 return
 
             if request_text.startswith("GET"):
-                # issue #62：SSE 握手仅在 /sse 路径；未知路径 404 快速失败，
-                # 不返回 200-then-hang（挂起会骗过健康探针，掩盖上游误路由）。
+                # issue #62: SSE handshake only on the /sse path; unknown
+                # paths fail fast with 404 instead of 200-then-hang (hanging
+                # fools health probes and masks upstream misrouting).
                 if _request_path(request_text).rstrip("/") == "/sse":
                     await self._handle_sse_handshake(writer)
                 else:
                     logger.warning(
-                        "SSETransport: GET %s 非 SSE 端点，返回 404",
+                        "SSETransport: GET %s is not an SSE endpoint, returning 404",
                         _request_path(request_text),
                     )
                     await _write_simple_response(writer, 404, b"Not Found")
@@ -321,7 +332,7 @@ class SSETransport(Transport):
             writer.close()
             await writer.wait_closed()
         except TimeoutError:
-            logger.warning("SSETransport: 连接读取超时")
+            logger.warning("SSETransport: connection read timed out")
             try:
                 await _write_simple_response(writer, 408, b"Request Timeout")
                 writer.close()
@@ -374,10 +385,9 @@ class SSETransport(Transport):
 
 
 class HTTPTransport(Transport):
-    """Streamable HTTP 传输（MCP 2026-07-28）。
-
-    单次 HTTP POST 请求/响应，支持批量操作。
-    """
+    # Streamable HTTP transport (MCP 2026-07-28).
+    #
+    # One HTTP POST request/response per call; supports batch operations.
 
     def __init__(
         self,
@@ -427,14 +437,15 @@ class HTTPTransport(Transport):
                 await writer.wait_closed()
                 return
 
-            # P2-8：未鉴权健康探针短路
+            # P2-8: unauthenticated health-probe short circuit
             if _is_health_request(request_text):
                 await _write_health_response(writer)
                 writer.close()
                 await writer.wait_closed()
                 return
 
-            # 可观测性：未鉴权 GET /metrics 短路（Prometheus scrape）
+            # Observability: unauthenticated GET /metrics short circuit
+            # (Prometheus scrape)
             if _is_metrics_request(request_text) and self._metrics_provider:
                 await _write_metrics_response(writer, self._metrics_provider())
                 writer.close()
@@ -443,19 +454,21 @@ class HTTPTransport(Transport):
 
             content_length = _safe_content_length(headers)
 
-            # R6：SSE/HTTP 远程传输鉴权，Bearer token 匹配才放行
+            # R6: SSE/HTTP remote transport auth; pass only when the Bearer
+            # token matches
             if not _check_auth(self._auth_token, headers):
-                logger.warning("HTTPTransport: 鉴权失败，拒绝请求")
+                logger.warning("HTTPTransport: auth failed, rejecting request")
                 await _write_simple_response(writer, 401, b"Unauthorized")
                 writer.close()
                 await writer.wait_closed()
                 return
 
             if not request_text.startswith("POST"):
-                # issue #62：JSON-RPC 端点仅接受 POST，未知路径/方法 404 快速
-                # 失败（原 400 掩盖误路由 — 200/4xx 均可能被判"存活"）。
+                # issue #62: the JSON-RPC endpoint accepts POST only; unknown
+                # paths/methods fail fast with 404 (the previous 400 masked
+                # misrouting — 200/4xx can both be judged "alive").
                 logger.warning(
-                    "HTTPTransport: %s 非 JSON-RPC POST 端点，返回 404",
+                    "HTTPTransport: %s is not a JSON-RPC POST endpoint, returning 404",
                     _request_path(request_text),
                 )
                 await _write_simple_response(writer, 404, b"Not Found")
@@ -501,7 +514,7 @@ class HTTPTransport(Transport):
             writer.close()
             await writer.wait_closed()
         except TimeoutError:
-            logger.warning("HTTPTransport: 连接读取超时")
+            logger.warning("HTTPTransport: connection read timed out")
             try:
                 await _write_simple_response(writer, 408, b"Request Timeout")
                 writer.close()
@@ -520,10 +533,11 @@ class HTTPTransport(Transport):
 async def _read_http_head(
     reader: asyncio.StreamReader,
 ) -> tuple[str | None, dict[str, str]]:
-    """读取 HTTP 请求行 + headers，带超时、行数/行长上限。
-
-    返回 (request_text, headers)；请求行 EOF 返回 (None, {})。
-    """
+    # Read the HTTP request line + headers with a timeout and caps on line
+    # count/length.
+    #
+    # Returns (request_text, headers); on EOF of the request line returns
+    # (None, {}).
     try:
         request_line = await asyncio.wait_for(reader.readline(), timeout=_READ_TIMEOUT)
     except TimeoutError:
@@ -538,7 +552,7 @@ async def _read_http_head(
         except TimeoutError:
             raise
         if len(header_line) > _MAX_HEADER_LINE:
-            logger.warning("transport: header 行过长，拒绝请求")
+            logger.warning("transport: header line too long, rejecting request")
             return None, {}
         header_text = header_line.decode("utf-8", errors="replace").strip()
         if not header_text:
@@ -547,13 +561,13 @@ async def _read_http_head(
             key, value = header_text.split(":", 1)
             headers[key.strip().lower()] = value.strip()
     else:
-        logger.warning("transport: header 行数超限 %d，拒绝请求", _MAX_HEADERS)
+        logger.warning("transport: header line count exceeds %d, rejecting request", _MAX_HEADERS)
         return None, {}
     return request_text, headers
 
 
 def _safe_content_length(headers: dict[str, str]) -> int:
-    """安全解析 Content-Length，非法/缺失返回 -1。"""
+    # Safely parse Content-Length; returns -1 on invalid/missing.
     raw = headers.get("content-length")
     if raw is None:
         return -1
@@ -567,11 +581,11 @@ def _safe_content_length(headers: dict[str, str]) -> int:
 
 
 def _check_auth(auth_token: str | None, headers: dict[str, str]) -> bool:
-    """R6：校验 Authorization: Bearer <token>。
-
-    auth_token 为 None 时表示未启用鉴权（本地/测试），放行。
-    启用后必须匹配，使用 hmac.compare_digest 常量时间比较防侧信道。
-    """
+    # R6: validate Authorization: Bearer <token>.
+    #
+    # auth_token=None means auth is disabled (local/test), allow. When
+    # enabled, the token must match; hmac.compare_digest constant-time
+    # comparison guards against side channels.
     if not auth_token:
         return True
     import hmac
@@ -583,13 +597,14 @@ def _check_auth(auth_token: str | None, headers: dict[str, str]) -> bool:
 
 
 def _request_path(request_text: str) -> str:
-    """从请求行提取路径（issue #62：SSE/HTTP 传输按路径分发）。"""
+    # Extract the path from the request line (issue #62: SSE/HTTP transports
+    # dispatch by path).
     parts = request_text.split()
     return parts[1] if len(parts) >= 2 else "/"
 
 
 async def _write_simple_response(writer: asyncio.StreamWriter, status: int, message: bytes) -> None:
-    """写一个无 body 的简单 HTTP 错误响应。"""
+    # Write a simple HTTP error response with no body.
     reason = {
         400: b"Bad Request",
         401: b"Unauthorized",
@@ -609,7 +624,7 @@ async def _write_simple_response(writer: asyncio.StreamWriter, status: int, mess
 
 
 def _is_health_request(request_text: str) -> bool:
-    """P2-8：判断是否为未鉴权 GET /health 健康探针请求。"""
+    # P2-8: whether this is an unauthenticated GET /health probe request.
     parts = request_text.split()
     if len(parts) < 2 or parts[0] != "GET":
         return False
@@ -617,7 +632,8 @@ def _is_health_request(request_text: str) -> bool:
 
 
 async def _write_health_response(writer: asyncio.StreamWriter) -> None:
-    """写未鉴权健康探针响应（供编排器/K8s liveness 检测）。"""
+    # Write the unauthenticated health probe response (for orchestrators /
+    # K8s liveness checks).
     body = b'{"status":"ok"}'
     writer.write(
         b"HTTP/1.1 200 OK\r\n"
@@ -629,7 +645,8 @@ async def _write_health_response(writer: asyncio.StreamWriter) -> None:
 
 
 def _is_metrics_request(request_text: str) -> bool:
-    """判断是否为未鉴权 GET /metrics 请求（Prometheus scrape）。"""
+    # Whether this is an unauthenticated GET /metrics request (Prometheus
+    # scrape).
     parts = request_text.split()
     if len(parts) < 2 or parts[0] != "GET":
         return False
@@ -637,7 +654,8 @@ def _is_metrics_request(request_text: str) -> bool:
 
 
 async def _write_metrics_response(writer: asyncio.StreamWriter, exposition: str) -> None:
-    """写 Prometheus 文本暴露格式响应（未鉴权，供 scrape 拉取）。"""
+    # Write the Prometheus text exposition format response (unauthenticated,
+    # for scrape pulls).
     body = exposition.encode("utf-8")
     writer.write(
         b"HTTP/1.1 200 OK\r\n"
@@ -653,7 +671,7 @@ def create_transport(
     handler: Callable[[dict], Any] | None = None,
     **kwargs: Any,
 ) -> Transport:
-    """工厂方法：根据类型创建传输实例。"""
+    # Factory: create a transport instance by type.
     if transport_type == "stdio":
         return StdioTransport(handler=handler)
     elif transport_type == "sse":

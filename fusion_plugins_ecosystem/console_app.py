@@ -1,18 +1,17 @@
-"""Extensions 控制台 HTTP 服务（issue #30 E3）。
-
-FastAPI 应用：静态控制台（web/）+ REST API，端点契约与 f-ecommerce
-控制台一致（仅去电商前缀），GUI 四页签（Connectors / Plugins·MCP /
-Skills / Sub-agents，issue #41 能力中心 hub）。
-
-独立于 fusion-plugin-server（MCP wire）运行：
-    fusion-plugin-console --port 8795
-
-issue #30 验收补充 — shell 模块化：
-- /api/* 鉴权：FUSION_PLUGINS_CONSOLE_API_KEY 静态密钥 + 网关签发 fm- 模块密钥
-  双活（gateway /shell/ 代理注入 Bearer）；两者皆未配置时放行（默认仅本机绑定）。
-- FUSION_ADMIN_KEY 配置时启动后台注册循环（shell_registry，issue #38 单点解析），
-  侧边栏出现扩展控制台入口，console 停止后入口置灰。
-"""
+# Extensions console HTTP service (issue #30 E3).
+# FastAPI app: static console (web/) + REST API. Endpoint contract mirrors
+# the f-ecommerce console (e-commerce prefix dropped only); GUI four tabs
+# (Connectors / Plugins·MCP / Skills / Sub-agents, issue #41 capabilities
+# hub).
+# Runs independently of fusion-plugin-server (MCP wire):
+#     fusion-plugin-console --port 8795
+# issue #30 acceptance follow-up — shell modularization:
+# - /api/* auth: FUSION_PLUGINS_CONSOLE_API_KEY static key + gateway-issued
+#   fm- module key dual-active (gateway /shell/ proxy injects Bearer); when
+#   neither is configured requests pass through (default localhost bind only).
+# - With FUSION_ADMIN_KEY configured, a background registration loop starts
+#   (shell_registry, issue #38 single-point resolution); the sidebar shows
+#   the Extensions console entry, grayed out after the console stops.
 
 from __future__ import annotations
 
@@ -28,7 +27,8 @@ DEFAULT_PORT = 8795  # port-registry: fusion-plugins-ecosystem-console
 
 
 def _accepted_keys() -> list[str]:
-    # 双活窗口: env 静态密钥与网关签发 fm- 密钥同时有效 (对齐 gateway K1 grace)。
+    # Dual-active window: the env static key and the gateway-issued fm- key
+    # are both valid (aligned with gateway K1 grace).
     keys = []
     static = os.environ.get("FUSION_PLUGINS_CONSOLE_API_KEY", "").strip()
     if static:
@@ -49,13 +49,13 @@ def create_app(
     registry: Any = None,
     lifecycle: Any = None,
 ) -> Any:
-    """构建 FastAPI 控制台应用（fastapi 为 console 可选依赖）。"""
+    # Build the FastAPI console app (fastapi is an optional console dep).
     try:
         from fastapi import FastAPI, Header, HTTPException
         from fastapi.responses import FileResponse, JSONResponse
         from fastapi.staticfiles import StaticFiles
-    except ImportError as exc:  # pragma: no cover — 环境缺依赖
-        raise RuntimeError("console 需要 fastapi：pip install 'fusion-plugins-ecosystem[console]'") from exc
+    except ImportError as exc:  # pragma: no cover — missing env dependency
+        raise RuntimeError("console requires fastapi: pip install 'fusion-plugins-ecosystem[console]'") from exc
 
     from contextlib import asynccontextmanager
 
@@ -67,7 +67,7 @@ def create_app(
     async def lifespan(_app):
         console = console_holder["console"]
         out = await console.resync()
-        logger.info("console: startup resync 重建 %d 个能力", len(out["relisted"]))
+        logger.info("console: startup resync rebuilt %d capabilities", len(out["relisted"]))
         yield
 
     app = FastAPI(
@@ -85,8 +85,10 @@ def create_app(
 
     @app.middleware("http")
     async def _api_auth(request, call_next):
-        # gateway /shell/ 代理注入 Bearer <fm- key | static key>; 未配置密钥时
-        # 放行 (默认仅 127.0.0.1 绑定, 本地优先)。静态面不鉴权 — 会话在网关侧。
+        # The gateway /shell/ proxy injects Bearer <fm- key | static key>;
+        # when no key is configured requests pass through (default
+        # 127.0.0.1 bind, local-first). The static surface is not
+        # authenticated — sessions live on the gateway side.
         if request.url.path.startswith("/api/"):
             keys = _accepted_keys()
             if keys:
@@ -118,13 +120,13 @@ def create_app(
     async def capabilities() -> dict[str, Any]:
         return {"capabilities": console.list_capabilities()}
 
-    # ── 能力中心 hub（issue #41）──
+    # ── Capabilities hub (issue #41) ──
 
     @app.get("/api/hub")
     async def hub(q: str = "") -> dict[str, Any]:
         return console.list_hub(q)
 
-    # ── 安装/授权/更新/卸载流（issue #42 PC-2）──
+    # ── Install / authorize / update / uninstall flows (issue #42 PC-2) ──
 
     @app.get("/api/hub/bundles")
     async def bundles_list() -> dict[str, Any]:
@@ -179,7 +181,7 @@ def create_app(
     async def connector_scope_policy(connector_id: str) -> dict[str, Any]:
         return console.scope_policy(connector_id)
 
-    # ── 审计视图 + scope 撤销 + 反向查找（issue #43 PC-3）──
+    # ── Audit view + scope revoke + reverse lookup (issue #43 PC-3) ──
 
     @app.get("/api/hub/audit")
     async def hub_audit(
@@ -205,7 +207,8 @@ def create_app(
     async def capability_used_by(capability: str) -> dict[str, Any]:
         return console.capability_used_by(capability)
 
-    # ── 稳定注册表读契约（issue #44 PC-4：cowork#228 / agent-studio#529 消费）──
+    # ── Stable registry read contract (issue #44 PC-4: consumed by
+    # cowork#228 / agent-studio#529) ──
 
     @app.get("/api/registry/capabilities")
     async def registry_capabilities() -> dict[str, Any]:
@@ -218,7 +221,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=out["error"])
         return out
 
-    # ── marketplace backend（issue #74：web-shell 市场页数据源）──
+    # ── marketplace backend (issue #74: web-shell market page data source) ──
 
     @app.get("/api/marketplace/plugins")
     async def market_plugins(
@@ -316,7 +319,7 @@ def create_app(
     async def connectors_harness(connector_id: str) -> dict[str, Any]:
         return await console.harness(connector_id)
 
-    # ── 凭据保险库（Desk Fernet 存储）──
+    # ── Credential vault (Desk Fernet storage) ──
 
     @app.put("/api/adapters/{credential_ref}")
     async def adapters_put(credential_ref: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -368,7 +371,7 @@ def create_app(
     async def mcp_remove(server_id: str) -> dict[str, Any]:
         return console.remove_mcp_server(server_id)
 
-    # ── 静态控制台 ──
+    # ── Static console ──
 
     if WEB_DIR.exists():
 
@@ -394,7 +397,7 @@ def create_app(
 
 
 def main() -> None:
-    """fusion-plugin-console CLI 入口。"""
+    # fusion-plugin-console CLI entry point.
     import argparse
 
     from fusion_core.config import service_port
@@ -404,7 +407,8 @@ def main() -> None:
         description="Fusion Plugins — Extensions Console (Connectors + Plugins·MCP)",
     )
     parser.add_argument("--host", default="127.0.0.1")
-    # issue #38：端口单点解析 — env FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT 可覆盖
+    # issue #38: single-point port resolution — env
+    # FUSION_PLUGINS_ECOSYSTEM_CONSOLE_PORT can override
     parser.add_argument(
         "--port",
         type=int,
@@ -420,7 +424,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # issue #35：进程标题带产品名 + 端口，ps 可区分实例
+    # issue #35: process title carries product name + port so ps can tell
+    # instances apart
     from fusion_plugins_ecosystem.proctitle import console_title, set_process_title
 
     set_process_title(console_title(args.port))
@@ -432,7 +437,7 @@ def main() -> None:
     try:
         import uvicorn
     except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("console 需要 uvicorn：pip install 'fusion-plugins-ecosystem[console]'") from exc
+        raise RuntimeError("console requires uvicorn: pip install 'fusion-plugins-ecosystem[console]'") from exc
 
     import asyncio
 
@@ -444,10 +449,10 @@ def main() -> None:
     app = create_app()
     register_enabled = shell_registration_enabled()
     logger.info(
-        "console: 监听 http://%s:%s (shell 注册 %s)",
+        "console: listening on http://%s:%s (shell registration %s)",
         args.host,
         args.port,
-        "启用" if register_enabled else "未启用 — 缺 FUSION_ADMIN_KEY",
+        "enabled" if register_enabled else "disabled — missing FUSION_ADMIN_KEY",
     )
 
     async def _serve():

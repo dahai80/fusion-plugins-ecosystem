@@ -1,29 +1,29 @@
-"""声明式 REST/Webhook 连接器包（issue #30 E3，通用化自 f-ecommerce connectors.py）。
-
-一个连接器 = 一份 JSON 文档（config-first 接入，无需适配器类）：
-
-{
-  "id": "erp-json",
-  "kind": "rest",                  // rest | webhook | db
-  "auth": {"type": "bearer", "credential_fields": ["token"]},
-  "base_url": "https://erp.example.com/api",
-  "credential_ref": "erp-json",    // Desk 加密凭据存储键（Fernet）
-  "operations": {
-    "erp.stock.fetch": {"method": "GET", "path": "/stock",
-                        "params": {"since": "{since}"},
-                        "response": {"rows": "$.rows"}}
-  },
-  "error_code_map": {"40001": "auth failed"}
-}
-
-凭据永不写入连接器 JSON —— enable 时经 PUT /api/adapters/<id> 存入
-Desk 加密存储（Fernet），调用时服务端解析。执行结果契约（全连接器统一）：
-  {"ok": bool, "status": int|None, "data": ..., "extracted": ...,
-   "error_code": ..., "reason": ..., "duration_ms": int}
-
-读通道（GET）enable 时自动桥接为能力；写通道（POST/PUT/PATCH/DELETE）
-不自动列出，进入人工审核队列（§6.2 契约）。
-"""
+# Declarative REST/Webhook connector packages (issue #30 E3, generalized
+# from f-ecommerce connectors.py).
+# One connector = one JSON document (config-first integration, no adapter
+# class needed):
+# {
+#   "id": "erp-json",
+#   "kind": "rest",                  // rest | webhook | db
+#   "auth": {"type": "bearer", "credential_fields": ["token"]},
+#   "base_url": "https://erp.example.com/api",
+#   "credential_ref": "erp-json",    // Desk encrypted credential store key (Fernet)
+#   "operations": {
+#     "erp.stock.fetch": {"method": "GET", "path": "/stock",
+#                         "params": {"since": "{since}"},
+#                         "response": {"rows": "$.rows"}}
+#   },
+#   "error_code_map": {"40001": "auth failed"}
+# }
+# Credentials are never written into connector JSON — stored at enable time
+# via PUT /api/adapters/<id> into the Desk encrypted store (Fernet) and
+# resolved server-side at call time. Execution result contract (uniform
+# across all connectors):
+#   {"ok": bool, "status": int|None, "data": ..., "extracted": ...,
+#    "error_code": ..., "reason": ..., "duration_ms": int}
+# Read channel (GET) ops are auto-bridged to capabilities on enable; write
+# channel (POST/PUT/PATCH/DELETE) ops are not auto-listed and enter the
+# manual review queue (§6.2 contract).
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ from fusion_plugins_ecosystem.config import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CONNECTOR_DIR = str(DATA_DIR / "connectors")  # issue #38：数据目录单点解析
+DEFAULT_CONNECTOR_DIR = str(DATA_DIR / "connectors")  # issue #38: single-point data dir resolution
 
 _READ_METHODS = ("GET",)
 _VALID_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
@@ -64,7 +64,7 @@ def get_connector(connector_id: str) -> dict[str, Any] | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
-        logger.error("rest_connector: 连接器 %s 文件不可读", connector_id)
+        logger.error("rest_connector: connector %s file unreadable", connector_id)
         return None
 
 
@@ -72,7 +72,7 @@ def save_connector(connector_id: str, document: dict[str, Any]) -> None:
     d = connector_dir()
     d.mkdir(parents=True, exist_ok=True)
     _doc_path(connector_id).write_text(json.dumps(document, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.info("rest_connector: 连接器 %s 已保存到 %s", connector_id, d)
+    logger.info("rest_connector: connector %s saved to %s", connector_id, d)
 
 
 def delete_connector(connector_id: str) -> bool:
@@ -80,7 +80,7 @@ def delete_connector(connector_id: str) -> bool:
     if not path.exists():
         return False
     path.unlink()
-    logger.info("rest_connector: 连接器 %s 已删除", connector_id)
+    logger.info("rest_connector: connector %s deleted", connector_id)
     return True
 
 
@@ -141,7 +141,7 @@ def is_read_op(op: dict[str, Any]) -> bool:
 
 
 def read_channels(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    """READ 通道 —— enable 时自动列为能力的集合（§6.2）。"""
+    # READ channel — the set auto-listed as capabilities on enable (§6.2).
     channels = []
     for op_name, op in (doc.get("operations") or {}).items():
         if is_read_op(op):
@@ -160,7 +160,7 @@ def write_channels(doc: dict[str, Any]) -> list[str]:
 
 
 def _extract(data: Any, dotted: str) -> Any:
-    """'$.product_id' / '$.data.list.0.id' -> 值；缺失返回 None。"""
+    # '$.product_id' / '$.data.list.0.id' -> value; returns None if missing.
     if not dotted.startswith("$"):
         return None
     value = data
@@ -187,7 +187,8 @@ def _apply_auth(
     doc: dict[str, Any],
     credentials: dict[str, Any],
 ) -> str | None:
-    """按 auth 声明注入凭据头；缺字段返回缺失原因（fail-loud 契约）。"""
+    # Inject credential headers per the auth declaration; returns the
+    # missing reason on missing fields (fail-loud contract).
     auth = doc.get("auth") or {}
     auth_type = str(auth.get("type", ""))
     cred_fields = auth.get("credential_fields") or []
@@ -209,7 +210,8 @@ async def execute_operation(
     variables: dict[str, Any] | None = None,
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """执行一个连接器操作；永不抛异常 —— 统一返回契约 envelope。"""
+    # Execute one connector operation; never raises — returns the uniform
+    # contract envelope.
     import httpx
 
     op = (connector.get("operations") or {}).get(operation_name)
@@ -312,7 +314,8 @@ async def _exec_webhook(
     op: dict[str, Any],
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """出站 webhook 投递：POST payload 到声明路径（通用化：不做电商路由）。"""
+    # Outbound webhook delivery: POST the payload to the declared path
+    # (generalized: no e-commerce routing).
     import httpx
 
     url = _render(

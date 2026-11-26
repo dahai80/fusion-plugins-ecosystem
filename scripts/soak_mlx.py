@@ -1,20 +1,21 @@
-"""Live MLX soak (步骤 5 长时稳定性，一次性脚本，不入 CI)。
+"""Live MLX soak (step 5 long-run stability, one-off script, not in CI).
 
-对 live fusion-mlx 发起持续 tools/call，按间隔采样：
-- 进程 RSS（检测内存泄漏）
-- plugin_executions_total（单调、与实际调用数一致）
-- plugin_errors_total（应为 0，无错误漂移）
-- token_records（应 ≤ max_records，封顶不泄漏）
-- active_sessions / log_entries（封顶不累积）
+Issues sustained tools/call against live fusion-mlx, sampling at intervals:
+- process RSS (memory-leak detection)
+- plugin_executions_total (monotonic, matches actual call count)
+- plugin_errors_total (should be 0, no error drift)
+- token_records (should be <= max_records, capped without leak)
+- active_sessions / log_entries (capped, not accumulating)
 
-关键判定：持续运行后 RSS 不单调爬升、指标计数与调用数一致、
-有界集合保持封顶。受脚本时长参数控制（默认 120s），24h 部署
-由运维延长 --duration。
+Key verdicts: RSS does not climb monotonically after sustained run,
+metric counters match call count, bounded collections stay capped.
+Controlled by the script's duration parameter (default 120s); for 24h
+deployment ops extends --duration.
 
-用法：
+Usage:
     python scripts/soak_mlx.py --duration 120 --interval 30
 
-前置：fusion-mlx 已起 + Qwen3.8-27B-4bit 已加载。
+Prerequisite: fusion-mlx running + Qwen3.8-27B-4bit loaded.
 """
 
 from __future__ import annotations
@@ -61,7 +62,7 @@ async def mlx_entry(desk, params):
 
 
 class _MLXHTTPClient:
-    """最小 MLX 客户端：直连 fusion-mlx OpenAI 兼容端点，单连接复用。"""
+    """Minimal MLX client: talks directly to the fusion-mlx OpenAI-compatible endpoint, reusing a single connection."""
 
     def __init__(self, base_url: str, api_key: str) -> None:
         import httpx
@@ -91,7 +92,7 @@ class _MLXHTTPClient:
 
 
 def rss_mb() -> float:
-    """当前进程实时 RSS（MB），经 ps 读取（ru_maxrss 是高水位，不反映释放）。"""
+    """Current process live RSS (MB), read via ps (ru_maxrss is a high-water mark and does not reflect releases)."""
     try:
         out = os.popen(f"ps -o rss= -p {os.getpid()}").read().strip()
         return float(out) / 1024.0 if out else 0.0
@@ -142,7 +143,7 @@ def sample(desk, meter, calls_done, rss_samples):
 async def run(duration, interval):
     desk, registry, lifecycle, meter, client = build_runtime()
     if not await client.health():
-        print("[soak] fusion-mlx 不健康，退出")
+        print("[soak] fusion-mlx unhealthy, exiting")
         return None
     await lifecycle.enable("soak_mlx")
 
@@ -172,8 +173,9 @@ async def run(duration, interval):
     samples.append(final)
     print(f"[sample final] {final}")
 
-    # 稳定性判定：后半段 RSS 是否持平（plateau）。
-    # 首样本含模型预热 page-fault，不看首尾差；看后半段最大-最小 RSS。
+    # Stability verdict: whether RSS plateaus over the second half.
+    # The first sample includes model warm-up page-faults, so do not use
+    # first-vs-last delta; use max-min RSS over the second half.
     last = samples[-1]
     rss_series = [s["rss_mb"] for s in samples]
     half = rss_series[len(rss_series) // 2 :] if len(rss_series) >= 4 else rss_series[-2:]
@@ -189,7 +191,7 @@ async def run(duration, interval):
         "log_entries_capped": last["log_entries"] <= 2000,
         "calls_total": calls_done,
     }
-    print("\n===== soak 判定 =====")
+    print("\n===== soak verdict =====")
     print(json.dumps(verdict, ensure_ascii=False, indent=2))
     ok = (
         not verdict["rss_climbing"]
@@ -208,8 +210,8 @@ async def run(duration, interval):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--duration", type=int, default=120, help="持续秒数")
-    p.add_argument("--interval", type=int, default=30, help="采样间隔秒数")
+    p.add_argument("--duration", type=int, default=120, help="duration in seconds")
+    p.add_argument("--interval", type=int, default=30, help="sampling interval in seconds")
     args = p.parse_args()
     res = asyncio.run(run(args.duration, args.interval))
     if res is not None:

@@ -1,4 +1,4 @@
-"""进程标题治理测试（issue #35）。"""
+"""Process title governance tests (issue #35)."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def test_set_process_title_calls_setproctitle(monkeypatch) -> None:
 
 
 def test_set_process_title_missing_module_degrades(monkeypatch) -> None:
-    # sys.modules 显式 None → import 抛 ImportError → 降级 False 不炸
+    # sys.modules set to None -> import raises ImportError -> falls back to False without crashing
     monkeypatch.setitem(sys.modules, "setproctitle", None)
     assert set_process_title("fusion-plugin-console :8795") is False
 

@@ -1,8 +1,9 @@
-"""可观测性指标采集回归测试。
+"""Observability metrics collection regression tests.
 
-覆盖 metrics.py（Counter/Gauge/MetricsRegistry/标签转义）+ desk_runtime 注入 +
-transport /metrics 端点暴露 + 关键路径计数（lifecycle.execute、MCP tools/call、
-sandbox spawn、活跃插件/会话 gauge、显存 gauge）。
+Covers metrics.py (Counter/Gauge/MetricsRegistry/label escaping) + desk_runtime
+injection + the transport /metrics endpoint exposure + critical-path counters
+(lifecycle.execute, MCP tools/call, sandbox spawn, active plugin/session gauges,
+VRAM gauge).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from fusion_plugins_ecosystem.metrics import (
 )
 from fusion_plugins_ecosystem.transport import _is_metrics_request
 
-# ── Counter / Gauge 基础语义 ──
+# ── Counter / Gauge basic semantics ──
 
 
 def test_counter_inc_and_total() -> None:
@@ -60,7 +61,7 @@ def test_gauge_set_inc_dec() -> None:
     assert g.value() == 6
 
 
-# ── Prometheus 文本暴露格式 ──
+# ── Prometheus text exposition format ──
 
 
 def test_render_empty_registry() -> None:
@@ -90,11 +91,11 @@ def test_render_orders_counter_then_gauge() -> None:
     r.gauge("z_gauge", "z")
     r.counter("a_counter", "a")
     text = r.render()
-    # 计数器在前，仪表在后（各按名排序）
+    # Counters first, gauges after (each sorted by name)
     assert text.index("a_counter") < text.index("z_gauge")
 
 
-# ── 标签转义 ──
+# ── Label escaping ──
 
 
 def test_escape_label_value() -> None:
@@ -112,17 +113,17 @@ def test_format_labels_sorted() -> None:
     assert out == '{a="1",b="2"}'
 
 
-# ── DeskRuntime 注入 ──
+# ── DeskRuntime injection ──
 
 
 def test_desk_metrics_lazy_singleton() -> None:
-    """desk.metrics 惰性单例：多次访问返回同一对象。"""
+    """desk.metrics lazy singleton: repeated access returns the same object."""
     d = DeskRuntime()
     assert d.metrics is d.metrics
     assert isinstance(d.metrics, MetricsRegistry)
 
 
-# ── transport /metrics 端点短路 ──
+# ── transport /metrics endpoint short-circuit ──
 
 
 def test_is_metrics_request() -> None:
@@ -134,7 +135,7 @@ def test_is_metrics_request() -> None:
 
 
 async def test_http_metrics_endpoint_exposes_exposition() -> None:
-    """GET /metrics 返回 Prometheus 文本暴露格式，未鉴权可访问。"""
+    """GET /metrics returns the Prometheus text exposition format, accessible without auth."""
     from fusion_plugins_ecosystem.transport import HTTPTransport
 
     d = DeskRuntime()
@@ -162,7 +163,7 @@ async def test_http_metrics_endpoint_exposes_exposition() -> None:
 
 
 async def test_http_metrics_endpoint_no_provider_falls_through() -> None:
-    """无 metrics_provider 时 GET /metrics 不短路，落到端点校验 → 404（issue #62）。"""
+    """Without metrics_provider, GET /metrics does not short-circuit and falls to endpoint validation -> 404 (issue #62)."""
     from fusion_plugins_ecosystem.transport import HTTPTransport
 
     t = HTTPTransport(handler=None, host="127.0.0.1", port=0)
@@ -176,16 +177,16 @@ async def test_http_metrics_endpoint_no_provider_falls_through() -> None:
     writer.close()
     await writer.wait_closed()
     await t.stop()
-    # 无 provider 短路 → 继续 JSON-RPC 端点校验 → 非 POST → 404
+    # No provider short-circuit -> continue JSON-RPC endpoint validation -> non-POST -> 404
     assert b"404 Not Found" in resp_line
     assert b"Connection: close" in rest
 
 
-# ── 关键路径计数：lifecycle.execute ──
+# ── Critical-path counter: lifecycle.execute ──
 
 
 async def test_lifecycle_execute_increments_counter() -> None:
-    """execute 成功/超时/错误各入对应 status 桶。"""
+    """Successful/timed-out/failed executes land in their respective status buckets."""
     from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
     from fusion_plugins_ecosystem.registry import (
         PluginCapability,
@@ -235,7 +236,7 @@ async def test_lifecycle_execute_increments_counter() -> None:
     assert reg2.desk.metrics.get_counter("plugin_errors_total").value(plugin="boom_plugin", kind="ValueError") == 1
 
 
-# ── 关键路径计数：MCP tools/call ──
+# ── Critical-path counter: MCP tools/call ──
 
 
 async def test_mcp_tools_call_increments_counter() -> None:
@@ -279,7 +280,7 @@ async def test_mcp_tools_call_increments_counter() -> None:
     )
 
 
-# ── 关键路径 gauge：活跃插件数 ──
+# ── Critical-path gauge: active plugin count ──
 
 
 async def test_active_plugins_gauge_reflects_enable_disable() -> None:
@@ -313,7 +314,7 @@ async def test_active_plugins_gauge_reflects_enable_disable() -> None:
     assert reg.desk.metrics.get_gauge("active_plugins").value() == 0
 
 
-# ── 关键路径 gauge：显存 ──
+# ── Critical-path gauge: VRAM ──
 
 
 def test_vram_gauge_reflects_acquire_release() -> None:
@@ -327,21 +328,21 @@ def test_vram_gauge_reflects_acquire_release() -> None:
     assert d.metrics.get_gauge("vram_used_mb").value() == 200
 
 
-# ── 关键路径计数：sandbox spawn ──
+# ── Critical-path counter: sandbox spawn ──
 
 
 async def test_sandbox_spawn_increments_counter() -> None:
-    """PROCESS 沙箱 spawn 入 sandbox_spawns_total 计数。"""
+    """PROCESS sandbox spawns count into sandbox_spawns_total."""
     from fusion_plugins_ecosystem.sandbox import PluginSandbox, ResourceLimits
 
     d = DeskRuntime()
     sandbox = PluginSandbox(desk=d)
 
-    # 用本测试模块自身作为模块级入口（PROCESS 须模块级属性）
+    # Use this test module itself as the module-level entry (PROCESS requires a module-level attribute)
     def _no_call():
         pass
 
-    # 注册一个模块级可导入的入口：复用本模块已存在符号
+    # Register a module-level importable entry: reuse an existing symbol of this module
     import tests.test_metrics as _self_mod
 
     await sandbox.spawn(

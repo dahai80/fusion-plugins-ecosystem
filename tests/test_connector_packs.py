@@ -1,4 +1,4 @@
-"""第一方连接器包目录测试（结构性校验，不联网）。"""
+"""First-party connector pack catalog tests (structural validation, no network)."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def test_builtin_catalog_complete() -> None:
 
 
 def test_all_packs_valid_constructors() -> None:
-    # 构造期校验（transport/command/url/tools）全部通过
+    # Construction-time validation (transport/command/url/tools) all passes
     for pack in list_builtin_packs():
         assert pack.id
         assert pack.version
@@ -38,8 +38,8 @@ def test_all_packs_valid_constructors() -> None:
 def test_pack_ids_unique_and_tool_names_unique() -> None:
     for pack in list_builtin_packs():
         tool_names = [t.name for t in pack.tools]
-        assert len(tool_names) == len(set(tool_names)), f"{pack.id} 工具名重复"
-        assert tool_names, f"{pack.id} 无工具"
+        assert len(tool_names) == len(set(tool_names)), f"{pack.id} has duplicate tool names"
+        assert tool_names, f"{pack.id} declares no tools"
 
 
 def test_tool_input_schema_shape() -> None:
@@ -53,16 +53,16 @@ def test_tool_input_schema_shape() -> None:
 
 
 def test_credential_providers_declared() -> None:
-    # 每个需要凭证的包都声明了 provider，env 目标名不冲突
+    # Every pack needing credentials declares a provider; env target names do not collide
     for pack in list_builtin_packs():
         providers = list(pack.env_credentials)
         targets = list(pack.env_credentials.values())
-        assert len(targets) == len(set(targets)), f"{pack.id} env 目标重复"
-        assert all(providers), f"{pack.id} 凭证 provider 为空"
+        assert len(targets) == len(set(targets)), f"{pack.id} has duplicate env targets"
+        assert all(providers), f"{pack.id} has an empty credential provider"
 
 
 def test_feishu_pack_acceptance_shape() -> None:
-    # issue #27 验收：飞书可读消息/文档入工作流、结果回写、凭证本地存储
+    # issue #27 acceptance: Feishu can read messages/docs into workflows, write results back, and store credentials locally
     tools = {t.name: t for t in FEISHU_PACK.tools}
     assert "im.message.list" in tools and tools["im.message.list"].read_only
     assert "docx.document.read" in tools
@@ -72,7 +72,7 @@ def test_feishu_pack_acceptance_shape() -> None:
 
 
 def test_send_tools_gated_high_risk() -> None:
-    # 所有「发送/写」类工具必须 HIGH 或 MEDIUM 风险，读类必须 LOW + read_only
+    # All send/write tools must be HIGH or MEDIUM risk; read tools must be LOW + read_only
     for pack in list_builtin_packs():
         for tool in pack.tools:
             if tool.read_only:
@@ -99,7 +99,7 @@ def test_bridged_feishu_tools_register_into_registry() -> None:
     plugin_ids = creg.install_pack(FEISHU_PACK)
     assert len(plugin_ids) == len(FEISHU_PACK.tools)
     assert all(pid in desk.registered_plugin_ids for pid in plugin_ids)
-    # 桥接插件可被 lifecycle 加载（INLINE 闭包入口）
+    # Bridged plugins loadable by lifecycle (INLINE closure entry)
     lifecycle = fpe.PluginLifecycle(creg.registry)
     for pid in plugin_ids:
         inst = lifecycle.load(pid)

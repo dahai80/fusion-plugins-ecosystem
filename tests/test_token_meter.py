@@ -1,4 +1,4 @@
-"""TokenMeter 测试。"""
+"""TokenMeter tests."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def test_record_long_no_token_warns() -> None:
         output_tokens=0,
         wall_seconds=120,
     )
-    meter.record(rec)  # 应触发 warning，不抛异常
+    meter.record(rec)  # should trigger a warning, not raise
     assert len(meter.all_records()) == 1
 
 
@@ -87,7 +87,7 @@ def test_record_with_desk_logs_warning() -> None:
         wall_seconds=120,
     )
     meter.record(rec)
-    # desk.log 应被调用
+    # desk.log should be called
     assert desk_mock.log.called
 
 
@@ -102,7 +102,7 @@ def test_record_with_tokens_does_not_warn() -> None:
         wall_seconds=120,
     )
     meter.record(rec)
-    # 有 token 消耗，不应触发 warning log
+    # Token consumption present, so no warning log should fire
     assert not desk_mock.log.called
 
 
@@ -152,7 +152,7 @@ def test_measure_exception_still_records() -> None:
             raise ValueError("boom")
     except ValueError:
         pass
-    # 即使抛异常，记录也应写入
+    # Even on exception the record should be written
     assert len(meter.records_for("p1")) == 1
 
 
@@ -195,7 +195,7 @@ def test_all_returns_all_in_order() -> None:
         meter.record(TokenRecord(f"p{i}", TokenKind.CLAUDE_MODEL, i, i))
     all_records = meter.all_records()
     assert len(all_records) == 5
-    # 按插入顺序
+    # In insertion order
     assert all_records[0].plugin_id == "p0"
     assert all_records[4].plugin_id == "p4"
 
@@ -210,11 +210,11 @@ def test_token_kind_values() -> None:
     assert TokenKind.MCP_RELAY.value == "mcp_relay"
 
 
-# ── P3-4: 追加写 + 周期压缩 ──
+# ── P3-4: append-write + periodic compaction ──
 
 
 def test_wal_append_roundtrip(tmp_path) -> None:
-    """record → flush → 新 meter 加载 = 同样记录（WAL 压缩 snapshot 后单文件可恢复）。"""
+    """record -> flush -> a fresh meter loads the same records (WAL compacted into a snapshot; single file recoverable)."""
     import json
     import os
 
@@ -234,9 +234,9 @@ def test_wal_append_roundtrip(tmp_path) -> None:
 
 
 def test_wal_replay_dedups_after_snapshot(tmp_path) -> None:
-    """崩溃恢复去重：snapshot.last_seq 已含的 wal 行不重复加载。
+    """Crash-recovery dedup: wal rows already covered by snapshot.last_seq are not loaded twice.
 
-    模拟：写 snapshot(last_seq=1) + wal 含 seq≤1 的行 → load 仅取未重复记录。
+    Simulates: write snapshot(last_seq=1) + wal containing rows with seq<=1 -> load keeps only the non-duplicate records.
     """
     import json
 
@@ -261,7 +261,7 @@ def test_wal_replay_dedups_after_snapshot(tmp_path) -> None:
             },
             f,
         )
-    # wal 含 seq=1（已在 snapshot）与 seq=2（新）
+    # wal contains seq=1 (already in snapshot) and seq=2 (new)
     with open(wal_path, "w") as f:
         f.write(
             json.dumps(
@@ -305,18 +305,18 @@ def test_wal_replay_dedups_after_snapshot(tmp_path) -> None:
 
 
 def test_wal_compaction_triggers_on_threshold(tmp_path) -> None:
-    """wal 行数超 _compact_threshold → 写 snapshot 并清空 wal。"""
+    """wal lines beyond _compact_threshold -> snapshot written and wal cleared."""
     import os
 
     path = str(tmp_path / "tokens.json")
-    # 极低阈值强制压缩
+    # Very low threshold forces compaction
     m = TokenMeter(persist_path=path, save_batch=1, max_records=100)
     m._compact_threshold = 3
     for i in range(4):
         m.record(TokenRecord(f"p{i}", TokenKind.PLUGIN_LOCAL, i, i))
-    # 第 3 条后 wal_line_count>=3 触发压缩 → snapshot 已落盘
+    # After the 3rd record, wal_line_count>=3 triggers compaction -> snapshot on disk
     assert os.path.exists(path)
-    # flush 强制压缩，停机后单文件恢复，含全部 4 条
+    # flush forces compaction; after shutdown a single file restores all 4 records
     m.flush()
     assert m._wal_line_count == 0
     assert m._next_seq == 5
@@ -325,7 +325,7 @@ def test_wal_compaction_triggers_on_threshold(tmp_path) -> None:
 
 
 def test_wal_appends_without_snapshot_until_compact(tmp_path) -> None:
-    """常态 _save 只追加 wal，不写 snapshot（直到阈值/flush）。"""
+    """In the steady state _save only appends to the wal, no snapshot (until threshold/flush)."""
     import os
 
     path = str(tmp_path / "tokens.json")
@@ -334,7 +334,7 @@ def test_wal_appends_without_snapshot_until_compact(tmp_path) -> None:
     m._compact_threshold = 1000
     for i in range(3):
         m.record(TokenRecord(f"p{i}", TokenKind.PLUGIN_LOCAL, i, i))
-    # 3 条 < 阈值 → 无 snapshot，wal 存在且 3 行
+    # 3 records < threshold -> no snapshot, wal exists with 3 lines
     assert not os.path.exists(path)
     assert os.path.exists(wal_path)
     lines = [ln for ln in open(wal_path).read().splitlines() if ln.strip()]

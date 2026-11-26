@@ -1,4 +1,4 @@
-"""connector 框架测试：包校验/桥接/审批闸门/持久化/stdio+http client。"""
+"""Connector framework tests: pack validation/bridging/approval gate/persistence/stdio+http client."""
 
 from __future__ import annotations
 
@@ -24,15 +24,18 @@ def _make_pack(tmp_pack_id: str = "test_conn") -> ConnectorPack:
         id=tmp_pack_id,
         name="Test Connector",
         version="1.0.0",
+        # i18n: user-facing
         description="测试连接器",
         transport="stdio",
         command=("echo", "noop"),
         tools=(
             fpe.ConnectorToolSpec(
                 name="read.thing",
+                # i18n: user-facing
                 description="读",
                 input_schema={
                     "type": "object",
+                    # i18n: user-facing
                     "properties": {"q": {"type": "string", "description": "查询"}},
                     "required": ["q"],
                 },
@@ -41,6 +44,7 @@ def _make_pack(tmp_pack_id: str = "test_conn") -> ConnectorPack:
             ),
             fpe.ConnectorToolSpec(
                 name="send.thing",
+                # i18n: user-facing
                 description="发",
                 input_schema={"type": "object", "properties": {}},
                 risk=RiskLevel.HIGH,
@@ -49,7 +53,7 @@ def _make_pack(tmp_pack_id: str = "test_conn") -> ConnectorPack:
     )
 
 
-# ── 包校验 ──
+# ── Pack validation ──
 
 
 def test_pack_rejects_bad_transport() -> None:
@@ -89,7 +93,7 @@ def test_pack_http_requires_url() -> None:
 
 
 def test_pack_requires_tools() -> None:
-    with pytest.raises(ValueError, match="工具"):
+    with pytest.raises(ValueError, match="at least one tool"):
         ConnectorPack(
             id="x",
             name="x",
@@ -110,7 +114,7 @@ def test_pack_roundtrip() -> None:
     assert restored.tools[1].risk == RiskLevel.HIGH
 
 
-# ── 安装桥接 ──
+# ── Install bridging ──
 
 
 def test_install_pack_bridges_tools_to_registry() -> None:
@@ -124,7 +128,7 @@ def test_install_pack_bridges_tools_to_registry() -> None:
     assert manifest is not None
     assert manifest.category == fpe.PluginCategory.CONNECTOR
     assert fpe.PluginCapability.MCP_TOOL in manifest.capabilities
-    # JSON Schema properties 桥接为 PluginParam
+    # JSON Schema properties bridge into PluginParam
     assert manifest.params[0].name == "q"
     assert manifest.params[0].required is True
     assert manifest.params[0].type == "string"
@@ -140,7 +144,7 @@ def test_install_bridged_tool_exposed_via_mcp_exporter() -> None:
 
 def test_install_disabled_framework_raises() -> None:
     creg = ConnectorRegistry(enabled=False)
-    with pytest.raises(RuntimeError, match="未启用"):
+    with pytest.raises(RuntimeError, match="not enabled"):
         creg.install_pack(_make_pack())
 
 
@@ -175,7 +179,7 @@ def test_uninstall_pack_unregisters_tools() -> None:
     assert creg.registry.get("connector__test_conn__read.thing") is None
 
 
-# ── 审批闸门 ──
+# ── Approval gate ──
 
 
 async def test_high_risk_requires_approval() -> None:
@@ -185,7 +189,8 @@ async def test_high_risk_requires_approval() -> None:
         await creg.dispatch("test_conn", "send.thing", {})
     creg.approve_tool("test_conn", "send.thing")
     assert creg.is_approved("test_conn", "send.thing")
-    # 已审批：继续执行会走外部 server（command=echo 非 MCP，但不再触发审批闸门）
+    # Approved: execution proceeds to the external server (command=echo is not an MCP
+    # server, but the approval gate no longer triggers)
     with pytest.raises(RuntimeError, match="MCP server"):
         await creg.dispatch("test_conn", "send.thing", {})
 
@@ -206,7 +211,7 @@ async def test_dispatch_unknown_pack_and_tool() -> None:
         await creg.dispatch("test_conn", "nope", {})
 
 
-# ── 持久化 ──
+# ── Persistence ──
 
 
 def test_persistence_roundtrip(tmp_path) -> None:
@@ -218,7 +223,7 @@ def test_persistence_roundtrip(tmp_path) -> None:
     creg2 = ConnectorRegistry(persist_path=path)
     assert creg2.get_pack("test_conn") is not None
     assert ("test_conn", "send.thing") in creg2.list_approved()
-    # 恢复时桥接插件重新注册
+    # On restore the bridged plugins are re-registered
     assert creg2.registry.get("connector__test_conn__read.thing") is not None
 
 
@@ -229,7 +234,7 @@ def test_persistence_corrupt_file_ignored(tmp_path) -> None:
     assert creg.list_packs() == []
 
 
-# ── 凭证 ──
+# ── Credentials ──
 
 
 def test_resolve_credentials_from_desk_store() -> None:
@@ -255,7 +260,7 @@ def test_resolve_credentials_missing_skipped() -> None:
     assert client.resolve_credentials() == {}
 
 
-# ── stdio client（真实子进程回环）──
+# ── stdio client (real subprocess loopback) ──
 
 _ECHO_SERVER = """
 import sys, json
@@ -318,7 +323,7 @@ async def test_stdio_client_bad_command_raises() -> None:
         tools=(fpe.ConnectorToolSpec(name="t", description=""),),
     )
     client = ExternalMCPClient(pack, timeout=5)
-    with pytest.raises(RuntimeError, match="无法启动"):
+    with pytest.raises(RuntimeError, match="failed to launch"):
         await client.initialize()
 
 
@@ -347,7 +352,7 @@ async def test_dispatch_over_real_stdio(tmp_path) -> None:
     await creg.close_all()
 
 
-# ── http client（本地线程 HTTP server 回环）──
+# ── http client (local threaded HTTP server loopback) ──
 
 
 def _start_rpc_http_server() -> tuple[HTTPServer, int]:
@@ -407,7 +412,7 @@ async def test_http_client_unreachable_raises() -> None:
         tools=(fpe.ConnectorToolSpec(name="t", description=""),),
     )
     client = ExternalMCPClient(pack, timeout=3)
-    with pytest.raises(RuntimeError, match="HTTP 请求失败"):
+    with pytest.raises(RuntimeError, match="HTTP request failed"):
         await client.call_tool("t", {})
 
 

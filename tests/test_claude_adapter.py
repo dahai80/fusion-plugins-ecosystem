@@ -1,4 +1,4 @@
-"""ClaudeSkillAdapter 测试。"""
+"""ClaudeSkillAdapter tests."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _make_manifest(
     capabilities: list[PluginCapability] | None = None,
     default_mounted: bool = False,
 ) -> PluginManifest:
-    # capabilities 显式传入时完全遵循；否则默认附加 CLAUDE_SKILL
+    # When capabilities are passed explicitly they are honored; otherwise CLAUDE_SKILL is appended by default
     if capabilities is None:
         caps = [PluginCapability.CLAUDE_SKILL]
     else:
@@ -27,18 +27,21 @@ def _make_manifest(
         name="Test Plugin",
         version="0.1.0",
         category=PluginCategory.CUSTOM,
+        # i18n: user-facing
         description="测试插件描述",
         capabilities=caps,
         params=[
             PluginParam(
                 name="text",
                 type="string",
+                # i18n: user-facing
                 description="输入文本",
                 required=True,
             ),
             PluginParam(
                 name="count",
                 type="int",
+                # i18n: user-facing
                 description="数量",
                 required=False,
                 default=10,
@@ -46,27 +49,32 @@ def _make_manifest(
             PluginParam(
                 name="mode",
                 type="string",
+                # i18n: user-facing
                 description="模式",
                 enum=["fast", "slow"],
             ),
             PluginParam(
                 name="enabled",
                 type="bool",
+                # i18n: user-facing
                 description="是否启用",
             ),
             PluginParam(
                 name="tags",
                 type="array",
+                # i18n: user-facing
                 description="标签列表",
             ),
             PluginParam(
                 name="config",
                 type="object",
+                # i18n: user-facing
                 description="配置对象",
             ),
             PluginParam(
                 name="score",
                 type="float",
+                # i18n: user-facing
                 description="分数",
             ),
         ],
@@ -112,7 +120,7 @@ def test_export_all_filters_non_claude_skill() -> None:
     )
     adapter = ClaudeSkillAdapter(registry)
     skills = adapter.export_all()
-    # 该插件没有 CLAUDE_SKILL 能力，应被过滤
+    # This plugin has no CLAUDE_SKILL capability, so it should be filtered out
     assert len(skills) == 0
 
 

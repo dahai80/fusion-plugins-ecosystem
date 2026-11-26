@@ -1,4 +1,4 @@
-"""TokenMeter persist/prune + EcosystemConfig token_persist_path 测试。"""
+"""TokenMeter persist/prune + EcosystemConfig token_persist_path tests."""
 
 from __future__ import annotations
 
@@ -43,8 +43,8 @@ def test_persist_saves_to_file() -> None:
                 output_tokens=5,
             )
         )
-        # R4：节流落盘，单条记录不立即写文件，需显式 flush
-        # P3-4：flush 触发压缩，snapshot 为 dict {last_seq, records} 格式
+        # R4: throttled persistence; a single record does not write the file immediately, explicit flush required
+        # P3-4: flush triggers compaction; the snapshot is a dict {last_seq, records}
         meter.flush()
         assert os.path.exists(path)
         snapshot = json.loads(open(path).read())
@@ -114,7 +114,7 @@ def test_persist_roundtrip() -> None:
                 metadata={"model": "llama"},
             )
         )
-        # R4：节流落盘，flush 后才落盘供 meter2 读取
+        # R4: throttled persistence; only on flush does it hit disk for meter2 to read
         meter1.flush()
 
         meter2 = TokenMeter(persist_path=path)

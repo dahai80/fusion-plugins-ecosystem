@@ -1,4 +1,4 @@
-"""Extensions 控制台 HTTP 服务测试（FastAPI TestClient，端点契约对齐 GUI）。"""
+"""Extensions console HTTP service tests (FastAPI TestClient, endpoint contract aligned with the GUI)."""
 
 import json
 import sys
@@ -23,8 +23,8 @@ from test_extensions_console import FakeDesk  # noqa: E402
 def _env(tmp_path, monkeypatch):
     monkeypatch.setenv("FUSION_PLUGIN_CONNECTOR_DIR", str(tmp_path / "connectors"))
     monkeypatch.setenv("FUSION_PLUGIN_EXTENSIONS_DIR", str(tmp_path / "extensions"))
-    # 密钥隔离: 真实部署可能存在 ~/.fusion-plugins-ecosystem/web_module_key
-    # (fm- 签发密钥), 不能让本机部署凭据影响测试的 /api/* 鉴权行为。
+    # Key isolation: a real deployment may have ~/.fusion-plugins-ecosystem/web_module_key
+    # (fm- issued key); local deployment credentials must not affect the /api/* auth behavior under test.
     monkeypatch.delenv("FUSION_PLUGINS_CONSOLE_API_KEY", raising=False)
     from fusion_plugins_ecosystem import shell_registry
 
@@ -162,7 +162,7 @@ def test_mcp_flow(client, mcp_server):
 
 def test_plugins_flow(client):
     plugins = client.get("/api/extensions/plugins").json()
-    # issue #41：console 自举内置插件（hub 面反映真实注册表）
+    # issue #41: console bootstraps builtin plugins (hub surface reflects the real registry)
     names = [p["name"] for p in plugins["plugins"]]
     assert "caveman_compress" in names
     assert plugins["require_signing"] is False
@@ -183,24 +183,24 @@ def test_static_console_served(client):
 
 
 def test_theme_follows_shell_host(client):
-    """issue #33 — 嵌入跟随宿主主题推送, standalone 读 shell localStorage。"""
+    """issue #33 — embedded mode follows host theme push; standalone reads shell localStorage."""
     js = client.get("/shell.js").text
-    # 嵌入: 监听宿主 {type:"event", event:"theme"} postMessage (同源校验)
+    # Embedded: listens for host {type:"event", event:"theme"} postMessage (same-origin check)
     assert '"event"' in js and '"theme"' in js
     assert "e.origin !== location.origin" in js
     assert 'msg.payload === "light" || msg.payload === "dark"' in js
-    # 类主题: html.light / html.dark 双类切换
+    # Class theme: html.light / html.dark dual-class switching
     assert 'classList.toggle("light"' in js
     assert 'classList.toggle("dark"' in js
-    # standalone: 初始主题读 shell 同键 localStorage, 兼容旧 cookie
+    # Standalone: initial theme reads the shell's same-key localStorage, with legacy cookie fallback
     assert 'localStorage.getItem("fusion.shell.theme")' in js
     assert "fs_theme" in js
-    # prefers-color-scheme 初始默认
+    # prefers-color-scheme as the initial default
     assert "prefers-color-scheme: light" in js
 
 
 class TestApiAuth:
-    """issue #30 验收补充 — /api/* 鉴权 (静态 env key + 签发 fm- key 双活)。"""
+    """issue #30 acceptance follow-up — /api/* auth (static env key + issued fm- key dual-active)."""
 
     def test_no_keys_configured_api_open(self, client):
         assert client.get("/api/whoami").status_code == 200

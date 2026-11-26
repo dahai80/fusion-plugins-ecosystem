@@ -1,17 +1,15 @@
-"""Claude Code Plugin 包生成器。
-
-生成完整 .claude-plugin/ 目录结构：
-    <plugin-id>/
-        .claude-plugin/
-            plugin.json
-        skills/
-            <skill-id>/
-                SKILL.md
-                references/
-        agents/
-            <agent-id>.md
-        .mcp.json
-"""
+# Claude Code Plugin bundle generator.
+# Generates the full .claude-plugin/ directory structure:
+#     <plugin-id>/
+#         .claude-plugin/
+#             plugin.json
+#         skills/
+#             <skill-id>/
+#                 SKILL.md
+#                 references/
+#         agents/
+#             <agent-id>.md
+#         .mcp.json
 
 from __future__ import annotations
 
@@ -34,8 +32,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class PluginBundle:
-    """Claude Code Plugin 包。"""
-
+    # Claude Code Plugin bundle.
     plugin_id: str
     plugin_json: str
     skills: dict[str, SkillBundle] = field(default_factory=dict)
@@ -44,13 +41,11 @@ class PluginBundle:
 
 
 class PluginBundleGenerator:
-    """Claude Code Plugin 包生成器。
-
-    用法：
-        gen = PluginBundleGenerator(registry)
-        bundle = gen.generate("caveman_compress")
-        bundles = gen.generate_all()
-    """
+    # Claude Code Plugin bundle generator.
+    # Usage:
+    #     gen = PluginBundleGenerator(registry)
+    #     bundle = gen.generate("caveman_compress")
+    #     bundles = gen.generate_all()
 
     def __init__(self, registry: PluginRegistry) -> None:
         self._registry = registry

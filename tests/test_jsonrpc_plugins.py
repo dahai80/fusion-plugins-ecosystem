@@ -1,7 +1,8 @@
-"""Studio 集成面板 plugins/* JSON-RPC 方法测试。
+"""JSON-RPC plugins/* method tests for the Studio integration panel.
 
-校验 dict 信封 + 具名键严格匹配 PluginBridge.swift / PluginEcosystemModels.swift
-的 fromDict 约定。覆盖全部 15 个方法。
+Validates the dict envelope + named keys strictly matching the fromDict
+conventions of PluginBridge.swift / PluginEcosystemModels.swift.
+Covers all 15 methods.
 """
 
 from __future__ import annotations
@@ -25,16 +26,16 @@ def _registry_with_plugin() -> tuple[PluginRegistry, PluginManifest]:
     registry = PluginRegistry(desk=desk)
     manifest = PluginManifest(
         id="caveman_compress",
-        name="Caveman 压缩",
+        name="Caveman Compress",
         version="0.3.3",
         category=PluginCategory.CONTEXT_COMPRESS,
-        description="上下文压缩插件",
+        description="context compression plugin",
         capabilities=(PluginCapability.MCP_TOOL,),
         params=(
             PluginParam(
                 name="ratio",
                 type=PluginParamType.INT,
-                description="压缩比",
+                description="compression ratio",
                 required=False,
                 default=2,
             ),
@@ -57,7 +58,7 @@ def _make_handler(
 
 
 async def _call(handler: MCPHandler, method: str, params: dict | None = None):
-    """通过 handle() 发起完整 JSON-RPC 请求，返回 result dict。"""
+    """Issue a full JSON-RPC request via handle() and return the result dict."""
     resp = await handler.handle({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}})
     assert resp is not None
     assert "error" not in resp, f"unexpected error: {resp.get('error')}"
@@ -86,7 +87,7 @@ async def test_plugins_list_keys() -> None:
     assert isinstance(items, list)
     assert len(items) == 1
     item = items[0]
-    # Studio PluginListItem.fromDict 必需键
+    # Required keys for Studio PluginListItem.fromDict
     for key in (
         "id",
         "name",
@@ -99,12 +100,12 @@ async def test_plugins_list_keys() -> None:
     ):
         assert key in item, f"missing key {key}"
     assert item["id"] == "caveman_compress"
-    assert item["name"] == "Caveman 压缩"
+    assert item["name"] == "Caveman Compress"
     assert item["category"] == "context_compress"
     assert item["version"] == "0.3.3"
     assert item["author"] is None
-    assert item["enabled"] is False  # 未启用
-    assert item["installed"] is False  # 未加载
+    assert item["enabled"] is False  # not enabled
+    assert item["installed"] is False  # not loaded
 
 
 async def test_plugins_list_with_category_filter() -> None:
@@ -120,10 +121,10 @@ async def test_plugins_list_with_category_filter() -> None:
 
 async def test_plugins_install_uninstall() -> None:
     handler, registry = _make_handler()
-    # install → 加载并启用
+    # install -> load and enable
     result = await _call(handler, "plugins/install", {"plugin_id": "caveman_compress"})
     assert result == {"ok": True}
-    # install 后状态应为 enabled
+    # state after install should be enabled
     state = await _call(handler, "plugins/state.get", {"plugin_id": "caveman_compress"})
     assert state["state"] == "enabled"
     assert state["error_count"] == 0
@@ -147,7 +148,7 @@ async def test_plugins_install_unknown_plugin() -> None:
 async def test_plugins_config_get_studio_keys() -> None:
     handler, _ = _make_handler()
     result = await _call(handler, "plugins/config.get")
-    # Studio EcosystemConfig.fromDict 期望 7 键
+    # Studio EcosystemConfig.fromDict expects 7 keys
     for key in (
         "sandbox_mode",
         "auto_update",
@@ -158,13 +159,13 @@ async def test_plugins_config_get_studio_keys() -> None:
         "mcp_enabled",
     ):
         assert key in result, f"missing config key {key}"
-    assert result["mcp_enabled"] is True  # enable_claude_mcp 默认 True
+    assert result["mcp_enabled"] is True  # enable_claude_mcp defaults to True
     assert result["sandbox_mode"] == "inline"
 
 
 async def test_plugins_config_set_studio_name() -> None:
     handler, _ = _make_handler()
-    # Studio 名 mcp_enabled → 后端 enable_claude_mcp
+    # Studio name mcp_enabled -> backend enable_claude_mcp
     result = await _call(handler, "plugins/config.set", {"mcp_enabled": False})
     assert result == {"ok": True}
     config = await _call(handler, "plugins/config.get")
@@ -173,7 +174,7 @@ async def test_plugins_config_set_studio_name() -> None:
 
 async def test_plugins_config_set_backend_name() -> None:
     handler, _ = _make_handler()
-    # 后端原名也支持
+    # Backend original name is also supported
     result = await _call(handler, "plugins/config.set", {"enable_claude_mcp": True})
     assert result == {"ok": True}
 
@@ -193,7 +194,7 @@ async def test_plugins_states_after_install() -> None:
     result = await _call(handler, "plugins/states")
     states = result["states"]
     assert len(states) == 1
-    # Studio PluginStateInfo.fromDict 必需键
+    # Required keys for Studio PluginStateInfo.fromDict
     for key in (
         "id",
         "plugin_id",
@@ -237,7 +238,7 @@ async def test_plugins_state_list_invalid_state() -> None:
 
 async def test_plugins_token_records_keys() -> None:
     handler, registry = _make_handler()
-    # 注入一条记录
+    # Inject one record
     handler.token_meter.record(
         TokenRecord(
             plugin_id="caveman_compress",
@@ -251,7 +252,7 @@ async def test_plugins_token_records_keys() -> None:
     assert "records" in result
     recs = result["records"]
     assert len(recs) == 1
-    # Studio TokenRecord.fromDict 必需键
+    # Required keys for Studio TokenRecord.fromDict
     for key in (
         "id",
         "plugin_id",
@@ -284,7 +285,7 @@ async def test_plugins_token_prune() -> None:
     handler.token_meter.record(TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL))
     result = await _call(handler, "plugins/token.prune", {"max_age_seconds": 0})
     assert result == {"ok": True}
-    # max_age 被 floor 到 60s，刚写入记录 timestamp > now-60 → 保留，防止审计全清
+    # max_age is floored to 60s; the just-written record's timestamp > now-60 -> kept, guarding against an audit wipe
     recs = await _call(handler, "plugins/token.records")
     assert len(recs["records"]) == 1
 
@@ -292,7 +293,7 @@ async def test_plugins_token_prune() -> None:
 async def test_plugins_token_prune_floor_prevents_wipe() -> None:
     handler, registry = _make_handler()
     handler.token_meter.record(TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL))
-    # 负数 / 0 都应被 floor，记录不被清空
+    # Negative / 0 values must both be floored, records must not be wiped
     await _call(handler, "plugins/token.prune", {"max_age_seconds": -1})
     recs = await _call(handler, "plugins/token.records")
     assert len(recs["records"]) == 1
@@ -303,11 +304,11 @@ async def test_plugins_token_prune_floor_prevents_wipe() -> None:
 
 async def test_plugins_vram_usage_keys() -> None:
     handler, registry = _make_handler()
-    # 注入显存分配
+    # Inject a vRAM allocation
     registry.desk.acquire_vram("caveman_compress", 256)
     registry.desk.vram_total_mb = 4096
     result = await _call(handler, "plugins/vram.usage")
-    # Studio VRAMUsage.fromDict 必需键
+    # Required keys for Studio VRAMUsage.fromDict
     for key in ("total_mb", "used_mb", "free_mb", "by_plugin"):
         assert key in result, f"missing vram key {key}"
     assert result["total_mb"] == 4096
@@ -328,7 +329,7 @@ async def test_plugins_vram_usage_unlimited() -> None:
     result = await _call(handler, "plugins/vram.usage")
     assert result["total_mb"] == 0
     assert result["used_mb"] == 100
-    assert result["free_mb"] == 0  # total=0 → free=0
+    assert result["free_mb"] == 0  # total=0 -> free=0
 
 
 # ── plugins/logs.stream ──
@@ -336,13 +337,13 @@ async def test_plugins_vram_usage_unlimited() -> None:
 
 async def test_plugins_logs_stream_keys() -> None:
     handler, registry = _make_handler()
-    registry.desk.log("caveman_compress", "INFO", "插件已加载")
-    registry.desk.log("caveman_compress", "ERROR", "执行失败")
+    registry.desk.log("caveman_compress", "INFO", "plugin loaded")
+    registry.desk.log("caveman_compress", "ERROR", "execution failed")
     result = await _call(handler, "plugins/logs.stream")
     assert "entries" in result
     entries = result["entries"]
     assert len(entries) == 2
-    # Studio PluginLogEntry.fromDict 必需键（id 必须为 String）
+    # Required keys for Studio PluginLogEntry.fromDict (id must be String)
     for key in ("id", "plugin_id", "level", "message", "timestamp"):
         assert key in entries[0], f"missing log key {key}"
     assert isinstance(entries[0]["id"], str)
@@ -368,13 +369,13 @@ async def test_plugins_logs_stream_filter() -> None:
 
 async def test_plugins_mcp_sessions_keys() -> None:
     handler, registry = _make_handler()
-    # 触发一次会话记录
+    # Trigger one session record
     handler._touch_session("sess-1", "caveman_compress")
     result = await _call(handler, "plugins/mcp.sessions")
     assert "sessions" in result
     sessions = result["sessions"]
     assert len(sessions) == 1
-    # Studio MCPSession.fromDict 必需键
+    # Required keys for Studio MCPSession.fromDict
     for key in (
         "id",
         "session_id",
@@ -396,7 +397,7 @@ async def test_plugins_mcp_sessions_prune() -> None:
 
     handler, registry = _make_handler()
     handler._touch_session("sess-old", "caveman_compress")
-    # 手动使会话 last_active 老于 floor（60s），确保被淘汰
+    # Manually age the session's last_active past the floor (60s) so it gets evicted
     handler._sessions["sess-old"]["last_active"] = _time.time() - 120
     result = await _call(handler, "plugins/mcp.sessions.prune", {"max_age_seconds": 60})
     assert result == {"ok": True}
@@ -404,7 +405,7 @@ async def test_plugins_mcp_sessions_prune() -> None:
     assert sessions["sessions"] == []
 
 
-# ── 完整信封校验：错误方法名 ──
+# ── Full envelope validation: wrong method name ──
 
 
 async def test_unknown_plugins_method_returns_error() -> None:
@@ -415,17 +416,18 @@ async def test_unknown_plugins_method_returns_error() -> None:
     assert resp["id"] == 9
 
 
-# ── 安全加固：config.set 校验 / prune floor / last_error 截断 ──
+# ── Security hardening: config.set validation / prune floor / last_error truncation ──
 
 
 async def test_plugins_config_set_rejects_bad_value() -> None:
     handler, _ = _make_handler()
-    # mcp_port 越界（>65535）→ 校验器拒绝，返回 ok:False
+    # mcp_port out of range (>65535) -> validator rejects, returns ok:False
     result = await _call(handler, "plugins/config.set", {"mcp_port": 99999})
     assert result["ok"] is False
     assert "error" in result
-    # 配置未被污染：mcp_port 已是独立后端字段，config.get 返回 Studio 投影，
-    # 其中 vram_limit_mb 保持默认 0（与 mcp_port 无投影关系）
+    # Config not polluted: mcp_port is a separate backend field; config.get
+    # returns the Studio projection, where vram_limit_mb stays at its default
+    # 0 (no projection relation to mcp_port)
     config = await _call(handler, "plugins/config.get")
     assert config["vram_limit_mb"] == 0
 
@@ -446,7 +448,7 @@ async def test_plugins_config_set_rejects_empty() -> None:
 async def test_plugins_mcp_sessions_prune_floor() -> None:
     handler, registry = _make_handler()
     handler._touch_session("sess-x", "caveman_compress")
-    # 0 被 floor，刚 touch 的会话 last_active > now-60 → 保留
+    # 0 is floored; the just-touched session's last_active > now-60 -> kept
     result = await _call(handler, "plugins/mcp.sessions.prune", {"max_age_seconds": 0})
     assert result == {"ok": True}
     sessions = await _call(handler, "plugins/mcp.sessions")
@@ -456,22 +458,23 @@ async def test_plugins_mcp_sessions_prune_floor() -> None:
 async def test_plugins_state_last_error_truncated() -> None:
     handler, registry = _make_handler()
     await _call(handler, "plugins/install", {"plugin_id": "caveman_compress"})
-    # 直接注入超长 last_error 模拟泄露路径
+    # Directly inject an over-long last_error to simulate the leak path
     inst = handler.lifecycle._instances["caveman_compress"]
     inst.last_error = "x" * 5000
     state = await _call(handler, "plugins/state.get", {"plugin_id": "caveman_compress"})
     err = state["last_error"]
     assert err is not None
-    assert len(err) <= 303  # 300 + 省略号
+    assert len(err) <= 303  # 300 + ellipsis
     assert err.endswith("…")
 
 
-# ── E8：config 驱动 lifecycle / token_meter 接线校验 ──
+# ── E8: config drives lifecycle / token_meter wiring validation ──
 
 
 async def test_handler_config_drives_lifecycle_and_token_meter() -> None:
-    """注入 config 后，handler.lifecycle 与 handler.token_meter 应读取配置阈值，
-    避免旧实现中 handler 自建无 config 的 lifecycle/token_meter（A2/A5 断裂）。"""
+    """After injecting config, handler.lifecycle and handler.token_meter must
+    read the configured thresholds, avoiding the old implementation where the
+    handler self-built a config-less lifecycle/token_meter (A2/A5 breakage)."""
     cfg = EcosystemConfig(
         max_token_records=7,
         token_persist_path=None,
@@ -479,19 +482,19 @@ async def test_handler_config_drives_lifecycle_and_token_meter() -> None:
         max_auto_restart=5,
     )
     handler, _ = _make_handler(config=cfg)
-    # A5：token_meter 读取 max_token_records
+    # A5: token_meter reads max_token_records
     assert handler.token_meter._max_records == 7
-    # A2：lifecycle 持有同一 config 实例
+    # A2: lifecycle holds the same config instance
     assert handler.lifecycle.config is cfg
-    # A2：配置阈值经 getter 生效
+    # A2: config thresholds take effect via getters
     assert handler.lifecycle._cfg_max_restart() == 5
     assert handler.lifecycle._cfg_timeout() == 42
 
 
 async def test_handler_config_get_reflects_set_value() -> None:
-    """plugins/config.set 成功后 plugins/config.get 应返回新值（端到端 config 接线）。"""
+    """After plugins/config.set succeeds, plugins/config.get must return the new value (end-to-end config wiring)."""
     handler, _ = _make_handler()
-    # log_level 是 Studio 投影键 → 直接对应后端 log_level
+    # log_level is a Studio projection key -> maps directly to the backend log_level
     result = await _call(handler, "plugins/config.set", {"log_level": "DEBUG"})
     assert result["ok"] is True
     config = await _call(handler, "plugins/config.get")

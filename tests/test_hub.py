@@ -1,7 +1,8 @@
-"""能力中心 hub 测试（issue #41：四 tab + 分组 + 跨类搜索）。
+"""Capability hub tests (issue #41: four tabs + groups + cross-type search).
 
-覆盖: 内置插件自举、四 tab 分类（skill/subagent 能力归属）、
-跨类搜索、市场分组（推荐/更新版本比较）、/api/hub 端点。
+Covers: builtin plugin bootstrap, four-tab categorization (skill/subagent
+capability attribution), cross-type search, market groups (recommended/update
+version comparison), and the /api/hub endpoint.
 """
 
 import sys
@@ -26,7 +27,7 @@ from test_extensions_console import FakeDesk  # noqa: E402
 def _env(tmp_path, monkeypatch):
     monkeypatch.setenv("FUSION_PLUGIN_CONNECTOR_DIR", str(tmp_path / "connectors"))
     monkeypatch.setenv("FUSION_PLUGIN_EXTENSIONS_DIR", str(tmp_path / "extensions"))
-    # 密钥隔离: 真实部署可能存在 ~/.fusion-plugins-ecosystem/web_module_key
+    # Key isolation: a real deployment may have ~/.fusion-plugins-ecosystem/web_module_key
     monkeypatch.delenv("FUSION_PLUGINS_CONSOLE_API_KEY", raising=False)
     from fusion_plugins_ecosystem import shell_registry
 
@@ -55,11 +56,11 @@ def _manifest(pid, caps, name=None, description=""):
 
 class TestBuiltinBootstrap:
     def test_builtin_registered_on_init(self, console):
-        # issue #41：hub 面反映真实注册表 — console 自举内置插件
+        # issue #41: hub surface reflects the real registry — console bootstraps builtin plugins
         assert console.registry.get("caveman_compress") is not None
 
     def test_builtin_idempotent_on_injected_registry(self, console):
-        # 注入侧已注册时重复构造不炸（register 同版本幂等）
+        # Re-constructing with an already-registered injected registry must not blow up (register is idempotent for the same version)
         console2 = ExtensionsConsole(
             desk=console.desk,
             registry=console.registry,
@@ -76,7 +77,9 @@ class TestTabs:
         assert any(s["id"] == "caveman_compress" for s in hub["tabs"]["plugins"])
 
     def test_subagent_tab_classification(self, console):
-        console.registry.register(_manifest("research-sub", ["subagent"], description="差异研究员"))
+        console.registry.register(
+            _manifest("research-sub", ["subagent"], description="差异研究员")  # i18n: user-facing
+        )
         hub = console.list_hub()
         assert any(s["id"] == "research-sub" for s in hub["tabs"]["subagents"])
         assert not any(s["id"] == "research-sub" for s in hub["tabs"]["skills"])
@@ -96,11 +99,16 @@ class TestTabs:
 
 class TestSearch:
     async def test_cross_type_search(self, console):
-        console.registry.register(_manifest("excel-skill", ["claude_skill"], description="Excel 专家"))
-        console.registry.register(_manifest("bank-conn-agent", ["subagent"], description="网银对账子代理"))
+        console.registry.register(
+            _manifest("excel-skill", ["claude_skill"], description="Excel 专家")  # i18n: user-facing
+        )
+        console.registry.register(
+            _manifest("bank-conn-agent", ["subagent"], description="网银对账子代理")  # i18n: user-facing
+        )
         hub = console.list_hub("excel")
         assert [i["id"] for i in hub["tabs"]["skills"]] == ["excel-skill"]
         assert hub["tabs"]["subagents"] == []
+        # i18n: user-facing
         hub = console.list_hub("对账")
         assert any(i["id"] == "bank-conn-agent" for i in hub["tabs"]["subagents"])
 
@@ -109,12 +117,12 @@ class TestSearch:
         assert any(i["id"] == "caveman_compress" for i in hub["tabs"]["skills"])
 
     def test_search_hits_recommended_connector_pack(self, console):
-        # 未装连接器时搜索也能命中连接器类型 — 推荐位市场条目入搜索面
+        # Search hits the connector type even with no connector installed — recommended market entries join the search surface
         hub = console.list_hub("notion")
         hits = hub["tabs"]["connectors"]
         assert any(i["id"] == "notion" and i["recommended"] for i in hits)
         assert all(not i.get("recommended") or i["enabled"] is False for i in hits)
-        # 空查询不把推荐位混进 tab（counts 保持纯已装口径）
+        # Empty query must not mix recommended entries into tabs (counts stay installed-only)
         full = console.list_hub()
         assert all(not i.get("recommended") for tab in full["tabs"].values() for i in tab)
 
@@ -126,7 +134,7 @@ class TestSearch:
 
 class TestGroups:
     def test_recommended_has_builtin_packs(self, console):
-        # 第一方连接器包目录未安装 → 推荐位非空
+        # First-party connector pack catalog not installed -> recommended list non-empty
         hub = console.list_hub()
         rec_ids = {r["id"] for r in hub["groups"]["recommended"]}
         assert rec_ids, "builtin pack catalog should surface as recommended"

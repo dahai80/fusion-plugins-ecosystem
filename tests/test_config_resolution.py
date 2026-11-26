@@ -1,7 +1,7 @@
-"""issue #38 配置解析验收 — fusion_core.config 单点解析接入行为。
+"""issue #38 config resolution acceptance — fusion_core.config single-point resolution behavior.
 
-覆盖: DATA_DIR 默认值/env 覆盖、service_port env 覆盖、
-admin_key dev/prod 语义（与 shell_registry 门控互补的底层契约）。
+Covers: DATA_DIR default/env override, service_port env override, and the
+admin_key dev/prod semantics (low-level contract complementing the shell_registry gating).
 """
 
 import importlib
@@ -29,7 +29,7 @@ def _clean_env(monkeypatch):
 
 class TestDataDir:
     def test_default_locks_existing_deploy_path(self):
-        # default 锁定既有部署路径 ~/.fusion-plugins-ecosystem（fm- key 不迁移）
+        # Default pins the existing deployment path ~/.fusion-plugins-ecosystem (fm- keys are not migrated)
         assert fpes_config.DATA_DIR == Path.home() / ".fusion-plugins-ecosystem"
 
     def test_env_override(self, monkeypatch):
@@ -37,12 +37,12 @@ class TestDataDir:
             m.setenv("FUSION_PLUGINS_ECOSYSTEM_DATA_DIR", "/tmp/fpes-data")
             reloaded = importlib.reload(fpes_config)
             assert reloaded.DATA_DIR == Path("/tmp/fpes-data")
-        # 撤销 env 后重载恢复默认（防止污染后续用例的模块状态）
+        # Reloading after removing the env restores the default (prevents polluting module state for later tests)
         importlib.reload(fpes_config)
         assert fpes_config.DATA_DIR == Path.home() / ".fusion-plugins-ecosystem"
 
     def test_consumers_share_data_dir(self):
-        # 单点：web_module_key / extensions / connectors / marketplace 同根
+        # Single point: web_module_key / extensions / connectors / marketplace share one root
         from fusion_plugins_ecosystem import (
             extensions_console,
             marketplace,
@@ -108,7 +108,7 @@ class TestAdminKeySemantics:
 
 class TestLegacyEnvCleanup:
     def test_no_local_resolve_helpers_remain(self):
-        # issue #38 验收: 本仓不再有手写 key 解析函数
+        # issue #38 acceptance: this repo no longer has hand-written key resolution functions
         import subprocess
 
         result = subprocess.run(
@@ -119,7 +119,7 @@ class TestLegacyEnvCleanup:
         assert result.stdout.strip() == ""
 
     def test_no_legacy_env_literals_in_source(self):
-        # config-conventions §6 废弃变量不得再出现于产品代码
+        # config-conventions §6: deprecated variables must no longer appear in product code
         import subprocess
 
         result = subprocess.run(

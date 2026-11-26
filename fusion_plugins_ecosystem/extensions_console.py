@@ -1,21 +1,21 @@
-"""Extensions 控制台后端（issue #30 E3：Connectors + Plugins·MCP 两页签）。
-
-通用化自 f-ecommerce agent_platform/extensions.py + mcp_intake.py +
-plugin_bridge.py，剥离全部电商语义：
-
-- Connectors：声明式 JSON 连接器包（rest_connector.py）。install = 全量
-  静态校验 + 落盘；enable = 运行时桥接读通道（GET）为
-  `connector__<id>__<op>` 能力插件（MCP_TOOL，INLINE），写通道不自动列出、
-  进入人工审核队列；凭据经 Desk 加密存储（Fernet），调用时服务端解析，
-  永不暴露给 agent。harness = 静态校验 + 用保险库凭据实测首个读操作。
-- Plugins·MCP：插件 tick/untick（lifecycle enable/disable 对账）、
-  声明式插件包安装（plugin.json 清单，不落地任意代码）、远端 MCP server
-  probe & register（initialize + tools/list），tick 后的工具桥接为
-  `mcp__<server>__<tool>` 能力插件，经 JSON-RPC tools/call 派发。
-
-能力脊柱（spine）：由磁盘事实派生（连接器文档 + MCP ticks + 插件 ticks），
-启动时 resync 重建桥接，进程内不保存第二真相源。
-"""
+# Extensions console backend (issue #30 E3: Connectors + Plugins·MCP tabs).
+# Generalized from f-ecommerce agent_platform/extensions.py + mcp_intake.py +
+# plugin_bridge.py with all e-commerce semantics stripped:
+# - Connectors: declarative JSON connector packs (rest_connector.py). install =
+#   full static validation + persist to disk; enable = runtime bridge of read
+#   channels (GET) into `connector__<id>__<op>` capability plugins (MCP_TOOL,
+#   INLINE). Write channels are not auto-listed and enter a manual review
+#   queue. Credentials are stored encrypted via Desk (Fernet), resolved
+#   server-side at call time, never exposed to the agent. harness = static
+#   validation + a live check of the first read op using vault credentials.
+# - Plugins·MCP: plugin tick/untick (lifecycle enable/disable reconciliation),
+#   declarative plugin pack install (plugin.json manifest, no arbitrary code
+#   on disk), remote MCP server probe & register (initialize + tools/list);
+#   ticked tools bridge into `mcp__<server>__<tool>` capability plugins
+#   dispatched via JSON-RPC tools/call.
+# Capability spine: derived from on-disk facts (connector docs + MCP ticks +
+# plugin ticks); resync rebuilds bridges at startup — no in-memory second
+# source of truth.
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ from fusion_plugins_ecosystem.rest_connector import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EXTENSIONS_DIR = str(DATA_DIR / "extensions")  # issue #38：数据目录单点解析
+DEFAULT_EXTENSIONS_DIR = str(DATA_DIR / "extensions")  # issue #38: single-point data dir resolution
 _MCP_KEY = "mcp_servers.json"
 _TICKS_KEY = "plugin_ticks.json"
 _PLUGINS_KEY = "plugins"
@@ -57,15 +57,15 @@ def _extensions_dir() -> Path:
 _VAULT_FILE = "vault.json"
 
 
+# Console-local encrypted vault (fallback storage when Desk config_center is absent).
 def _local_vault_read() -> dict[str, Any]:
-    """控制台本地加密保险库（Desk config_center 缺失时的回退存储）。"""
     path = _extensions_dir() / _VAULT_FILE
     if not path.exists():
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
-        logger.warning("extensions_console: 本地保险库损坏，视为空")
+        logger.warning("extensions_console: local vault corrupt, treating as empty")
         return {}
 
 
@@ -79,11 +79,11 @@ def _local_vault_write(data: dict[str, Any]) -> None:
     path.chmod(0o600)
 
 
+# Resolve credential JSON from Desk encrypted storage; return an empty dict
+# when missing (caller fails loud).
+# Falls back to the console-local vault when Desk config_center is absent
+# (standalone console).
 def _vault_credentials(desk: Any, credential_ref: str) -> dict[str, Any]:
-    """从 Desk 加密存储解析凭据 JSON；缺失返回空 dict（调用方 fail-loud）。
-
-    Desk config_center 缺失（standalone console）时回退控制台本地保险库。
-    """
     if not credential_ref:
         return {}
     raw = desk.get_api_key(credential_ref) if desk else None
@@ -102,12 +102,11 @@ def _vault_credentials(desk: Any, credential_ref: str) -> dict[str, Any]:
         return {"api_key": raw}
 
 
+# Vault credentials -> remote MCP server auth headers.
+# Accepts {"headers": {...}} injected as-is, or {"api_key"|"token"} -> Bearer.
+# Non-empty ref with nothing stored -> fail loud (precise probe-time error, no
+# half registration).
 def _vault_headers(desk: Any, credential_ref: str) -> dict[str, str]:
-    """保险库凭据 → 远端 MCP server 认证头。
-
-    接受 {"headers": {...}} 原样注入，或 {"api_key"|"token"} → Bearer。
-    ref 非空但库里没有 → fail-loud（探测期精确报错，不半注册）。
-    """
     if not credential_ref:
         return {}
     creds = _vault_credentials(desk, credential_ref)
@@ -132,14 +131,12 @@ def _mcp_rpc(
     timeout: float = _MCP_TIMEOUT,
     headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """对 streamable-http MCP 端点做一次 JSON-RPC 往返。
-
-    trust_env=False：daemon shell 里的代理变量会挂起 loopback 调用。
-    """
+    # One JSON-RPC round trip against a streamable-http MCP endpoint.
+    # trust_env=False: proxy env vars in the daemon shell hang loopback calls.
     payload: dict[str, Any] = {"jsonrpc": "2.0", "id": 1, "method": method}
     if params is not None:
         payload["params"] = params
-    import httpx  # console extra — 函数级导入，base 环境无 httpx 也可 import 本模块
+    import httpx  # console extra — function-level import so the module imports without httpx in the base env
 
     resp = httpx.post(
         url,
@@ -155,8 +152,8 @@ def _mcp_rpc(
     return body.get("result") or {}
 
 
+# Declarative plugin.json manifest -> PluginManifest (entry_point must be module:attr).
 def _manifest_from_decl(data: dict[str, Any]) -> Any:
-    """声明式 plugin.json 清单 → PluginManifest（entry_point 必须是 module:attr）。"""
     from fusion_plugins_ecosystem.registry import (
         PluginCapability,
         PluginCategory,
@@ -187,9 +184,8 @@ def _manifest_from_decl(data: dict[str, Any]) -> Any:
     )
 
 
+# REST read-op bound entry point: closure -> execute_operation (INLINE only).
 class _RestOpBound:
-    """REST 读操作绑定入口：闭包 → execute_operation（INLINE 专用）。"""
-
     def __init__(self, connector_id: str, op_name: str, op: dict[str, Any]) -> None:
         self.connector_id = connector_id
         self.op_name = op_name
@@ -211,9 +207,8 @@ class _RestOpBound:
         return result
 
 
+# MCP intake tool bound entry point: closure -> tools/call (INLINE only).
 class _McpToolBound:
-    """MCP intake 工具绑定入口：闭包 → tools/call（INLINE 专用）。"""
-
     def __init__(self, console: ExtensionsConsole, server_id: str, tool: str) -> None:
         self.console = console
         self.server_id = server_id
@@ -226,9 +221,8 @@ class _McpToolBound:
         return result.get("result") or {}
 
 
+# Extensions console service (connectors + plugins + MCP intake + spine derivation).
 class ExtensionsConsole:
-    """Extensions 控制台服务（连接器 + 插件 + MCP intake + 能力脊柱派生）。"""
-
     def __init__(
         self,
         desk: Any = None,
@@ -242,17 +236,20 @@ class ExtensionsConsole:
 
         self.desk = desk or DeskRuntime()
         self.registry = registry or PluginRegistry(self.desk)
-        # standalone console 未注入 lifecycle 时自建（tick/enable 桥接依赖它）
+        # standalone console builds its own lifecycle when not injected
+        # (tick/enable bridging depends on it)
         self.lifecycle = lifecycle or PluginLifecycle(self.registry)
         self.installed_by = installed_by
-        # issue #41：hub 面反映真实注册表 — console 与 fusion-plugin-server
-        # 同源，自举内置插件（register 同版本幂等，注入侧已注册则 no-op）
+        # issue #41: the hub surface reflects the real registry — console and
+        # fusion-plugin-server share the same source, so bootstrap builtin
+        # plugins here (register is idempotent for same version; no-op when
+        # the injection side already registered)
         try:
             self.registry.register_builtin()
         except ValueError as exc:
-            logger.warning("extensions_console: 内置插件注册冲突: %s", exc)
+            logger.warning("extensions_console: builtin plugin registration conflict: %s", exc)
 
-    # ── 持久化 ──
+    # ── persistence ──
 
     def _read_json(self, name: str, default: Any) -> Any:
         path = _extensions_dir() / name
@@ -261,7 +258,7 @@ class ExtensionsConsole:
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except (ValueError, OSError):
-            logger.warning("extensions_console: %s 损坏，返回默认值", name)
+            logger.warning("extensions_console: %s corrupt, returning default", name)
             return default
 
     def _write_json(self, name: str, data: Any) -> None:
@@ -271,7 +268,7 @@ class ExtensionsConsole:
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(d / name)
 
-    # ── 能力脊柱（派生，无第二真相源）──
+    # ── capability spine (derived, no second source of truth) ──
 
     def list_capabilities(self) -> list[dict[str, Any]]:
         caps: list[dict[str, Any]] = []
@@ -280,8 +277,9 @@ class ExtensionsConsole:
             doc = get_connector(cid) or {}
             disabled = bool(doc.get("_disabled"))
             for ch in read_channels(doc):
-                # 脊柱由运行时桥接事实驱动：仅已 enable（桥接存在）或
-                # 曾 enable 后 disable（_disabled 标记）的连接器入列
+                # The spine is driven by runtime bridge facts: only connectors
+                # that are enabled (bridge exists) or were enabled then
+                # disabled (_disabled marker) are listed
                 bridged = self.registry.get(f"connector__{cid}__{ch['id']}")
                 if not bridged and not disabled:
                     continue
@@ -309,7 +307,7 @@ class ExtensionsConsole:
                 )
         for m in self.registry.list():
             if m.id.startswith(("connector__", "mcp__")):
-                continue  # 桥接清单由 connector/mcp 源覆盖，不重复计
+                continue  # bridge manifests are covered by the connector/mcp sources
             if self._plugin_enabled(m.id):
                 caps.append(
                     {
@@ -323,32 +321,34 @@ class ExtensionsConsole:
                 )
         return caps
 
-    # ── 能力中心 hub（issue #41：四 tab + 分组 + 跨类搜索）──
+    # ── capability hub (issue #41: four tabs + groups + cross-type search) ──
 
     @staticmethod
     def _version_key(version: str) -> tuple[int, ...]:
-        """语义版本比较键：'1.2' < '1.10'，'1.0' 与 '1.0.0' 等价，非数字段按 0。"""
+        # Semantic version comparison key: '1.2' < '1.10', '1.0' == '1.0.0',
+        # non-numeric segments count as 0.
         parts = []
         for chunk in str(version or "0").split("."):
             digits = "".join(ch for ch in chunk if ch.isdigit())
             parts.append(int(digits) if digits else 0)
         while len(parts) > 1 and parts[-1] == 0:
-            parts.pop()  # 尾零归一：1.0.0 == 1.0
+            parts.pop()  # normalize trailing zeros: 1.0.0 == 1.0
         return tuple(parts) or (0,)
 
+    # Marketplace catalog -> (updates, recommended): installed entries are
+    # version-compared, uninstalled ones land in the recommended slot.
+    # Read-only catalog (Marketplace(None)) — the install action belongs to
+    # PC-2; when the marketplace is unavailable the hub degrades to empty
+    # groups without dragging down the four tabs.
     def _market_groups(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """市场目录 → (updates, recommended)：已装比对版本，未装进推荐位。
-
-        只读目录（Marketplace(None)）— 安装动作归 PC-2；市场不可用时 hub 降级
-        为空分组，不拖垮四 tab。
-        """
         try:
             from fusion_plugins_ecosystem.marketplace import Marketplace
 
             mp = Marketplace(connector_registry=None)
             entries, warnings = mp.load_index()
-            # 只读目录（registry=None）：list_installed 会走 connector_registry
-            # .list_packs() — None 时降级为技能包目录扫描 + 连接器文档
+            # Read-only catalog (registry=None): list_installed would go
+            # through connector_registry.list_packs() — degrade to skill
+            # package dir scan + connector docs when None
             installed: dict[str, dict[str, Any]] = {}
             if mp.connector_registry is not None:
                 installed = {i["id"]: i for i in mp.list_installed()}
@@ -357,8 +357,8 @@ class ExtensionsConsole:
                     path = os.path.join(mp.install_root, name)
                     if not name.startswith("_") and os.path.isdir(path):
                         installed[name] = {"id": name}
-        except Exception as exc:  # noqa: BLE001 — 市场不可用不拖垮 hub
-            logger.warning("extensions_console: 市场目录不可用: %s", exc)
+        except Exception as exc:  # noqa: BLE001 — marketplace unavailable must not break the hub
+            logger.warning("extensions_console: marketplace catalog unavailable: %s", exc)
             return [], []
         for entry in connector_report():
             installed.setdefault(entry["id"], entry)
@@ -389,13 +389,13 @@ class ExtensionsConsole:
                     }
                 )
         if warnings:
-            logger.info("extensions_console: 市场索引警告: %s", warnings)
+            logger.info("extensions_console: marketplace index warnings: %s", warnings)
         return updates, recommended
 
+    # Capability hub aggregate view: four tabs (plugins/skills/connectors/
+    # subagents) + installed/updates/recommended groups + cross-type search
+    # (id/name/description substring, case-insensitive).
     def list_hub(self, query: str = "") -> dict[str, Any]:
-        """能力中心聚合视图：四 tab（plugins/skills/connectors/subagents）+
-        已装/更新/推荐分组 + 跨类搜索（id/name/description 子串、大小写不敏感）。
-        """
         q = str(query or "").strip().lower()
 
         def _match(*fields: Any) -> bool:
@@ -410,7 +410,7 @@ class ExtensionsConsole:
         installed: list[dict[str, Any]] = []
         for m in self.registry.list():
             if m.id.startswith(("connector__", "mcp__")):
-                continue  # 桥接清单由 connectors tab 覆盖，不重复计
+                continue  # bridge manifests are covered by the connectors tab
             caps = [c.value for c in m.capabilities]
             enabled = self._plugin_enabled(m.id)
             base = {
@@ -473,8 +473,9 @@ class ExtensionsConsole:
             )
         updates, recommended = self._market_groups()
         if q:
-            # 跨类搜索覆盖推荐位: 未装市场条目也命中（连接器包 →
-            # connectors tab，技能包 → skills tab），打 recommended 标。
+            # Cross-type search covers the recommended slot: uninstalled
+            # marketplace entries also match (connector packs -> connectors
+            # tab, skill packages -> skills tab), tagged recommended.
             for e in recommended:
                 if not _match(e.get("id"), e.get("name"), e.get("description")):
                     continue
@@ -505,7 +506,7 @@ class ExtensionsConsole:
             },
         }
 
-    # ── 安装/授权/更新/卸载流（issue #42 PC-2）──
+    # ── install/authorize/update/uninstall flows (issue #42 PC-2) ──
 
     _BUNDLES_KEY = "bundles.json"
 
@@ -518,8 +519,8 @@ class ExtensionsConsole:
     def _market_entry(self, entry_id: str) -> Any:
         from fusion_plugins_ecosystem.marketplace import Marketplace
 
-        # 索引来源：FUSION_PLUGIN_MARKETPLACE_INDEX（本地 JSON / HTTPS），
-        # 未设置时仅内置第一方目录
+        # Index source: FUSION_PLUGIN_MARKETPLACE_INDEX (local JSON / HTTPS);
+        # builtin first-party catalog only when unset
         mp = Marketplace(
             connector_registry=None,
             marketplace_index=os.environ.get("FUSION_PLUGIN_MARKETPLACE_INDEX") or None,
@@ -527,20 +528,22 @@ class ExtensionsConsole:
         entries, _ = mp.load_index()
         entry = next((e for e in entries if e.id == entry_id), None)
         if entry is None:
-            raise KeyError(f"市场索引中无条目 {entry_id!r}")
+            raise KeyError(f"no marketplace entry {entry_id!r}")
         return entry
 
     @staticmethod
     def _entry_items(entry: Any) -> list[dict[str, Any]]:
-        """市场条目 → bundle items：bundle 展开声明 items；其余包单条目化。"""
+        # Marketplace entry -> bundle items: bundles expand their declared
+        # items; other packs become a single item.
         if entry.kind == "bundle":
             return list(entry.items or [])
         if entry.kind == "connector_pack":
             return [{"type": "connector_pack", "ref": entry.id}]
         return [{"type": "skill_package", "ref": entry.id}]
 
+    # Inline connector registry used when bundles install connector_pack items
+    # (lazily built).
     def _connector_registry(self) -> Any:
-        """bundle 安装 connector_pack 项用的 inline 连接器注册中心（惰性构建）。"""
         from fusion_plugins_ecosystem.connector import ConnectorRegistry
 
         return ConnectorRegistry(
@@ -549,11 +552,11 @@ class ExtensionsConsole:
             sandbox_default_mode="inline",
         )
 
+    # One-click marketplace bundle install (issue #42): skills enabled,
+    # subagents registered + enabled, connectors persisted as pending_auth
+    # (exposed after OAuth), connector_pack/skill_package via existing install
+    # paths. Per-item state is persisted; items can be disabled individually.
     async def install_bundle(self, entry_id: str) -> dict[str, Any]:
-        """一键安装市场包（issue #42）：skills 启用、子代理注册启用、
-        连接器落盘并置 pending_auth（OAuth 后暴露）、connector_pack/skill_package
-        走既有安装路径。逐项状态持久化，安装后可逐项停用。
-        """
         entry = self._market_entry(entry_id)
         state = self._bundles_state()
         items_out: list[dict[str, Any]] = []
@@ -564,7 +567,7 @@ class ExtensionsConsole:
             try:
                 item_state = await self._install_bundle_item(itype, ref, item)
                 items_out.append({"type": itype, "ref": ref, **item_state})
-            except Exception as exc:  # noqa: BLE001 — 逐项报错不打断整包
+            except Exception as exc:  # noqa: BLE001 — per-item errors do not abort the bundle
                 errors.append(f"{itype}:{ref}: {exc}")
                 items_out.append({"type": itype, "ref": ref, "state": "error", "error": str(exc)})
         state[entry.id] = {
@@ -576,7 +579,7 @@ class ExtensionsConsole:
             "items": items_out,
         }
         self._save_bundles_state(state)
-        # issue #43：安装事件入审计管道（trace_id 串整包）
+        # issue #43: install event into the audit pipeline (trace_id ties the bundle)
         trace = audit_events.new_trace_id()
         audit_events.emit(
             "hub.bundle.install",
@@ -603,7 +606,7 @@ class ExtensionsConsole:
         self.desk.log(
             entry.id,
             "INFO",
-            f"bundle {entry.id} v{entry.version} 安装完成（{len(items_out)} 项, {len(errors)} 错误）",
+            f"bundle {entry.id} v{entry.version} installed ({len(items_out)} items, {len(errors)} errors)",
         )
         return {
             "installed": True,
@@ -617,7 +620,7 @@ class ExtensionsConsole:
         if itype in ("skill", "subagent"):
             manifest = self.registry.get(ref)
             if manifest is None:
-                raise KeyError(f"插件 {ref!r} 未注册（先 install_plugin）")
+                raise KeyError(f"plugin {ref!r} not registered (install_plugin first)")
             await self.lifecycle.enable(ref)
             return {"state": "enabled", "name": manifest.name}
         if itype == "connector":
@@ -625,12 +628,13 @@ class ExtensionsConsole:
             doc.setdefault("id", ref)
             problems = validate_connector(doc)
             if problems:
-                raise ValueError(f"连接器 {ref} 校验失败: {problems}")
+                raise ValueError(f"connector {ref} validation failed: {problems}")
             doc.pop("_disabled", None)
             save_connector(ref, doc)
             creds = _vault_credentials(self.desk, str(doc.get("credential_ref") or ref))
             if creds:
-                # 凭据已就绪 → 直接可用（等价 #30 validate → credentials → enable）
+                # Credentials ready -> directly usable (equivalent to the #30
+                # validate -> credentials -> enable path)
                 await self.enable_connector(ref)
                 return {"state": "enabled", "connector_id": ref}
             return {"state": "pending_auth", "connector_id": ref}
@@ -643,16 +647,16 @@ class ExtensionsConsole:
 
                 pack_dict = mp_entry.pack
                 if pack_dict is None:
-                    raise ValueError(f"连接器包 {ref} 无内联 pack 定义")
+                    raise ValueError(f"connector pack {ref} has no inline pack definition")
                 pack = ConnectorPack.from_dict(pack_dict)
             plugin_ids = creg.install_pack(pack)
-            # 桥接即暴露：安装路径与 tick-on 一致，工具置 ENABLED
+            # Bridge = expose: install path matches tick-on, tools set ENABLED
             for pid in plugin_ids:
                 try:
                     await self.lifecycle.enable(pid)
-                except Exception as exc:  # noqa: BLE001 — 单工具失败不阻断整包
-                    logger.warning("extensions_console: 启用包工具 %s 失败: %s", pid, exc)
-            self.desk.log(ref, "INFO", f"连接器包 {ref} 已安装（{len(plugin_ids)} 工具）")
+                except Exception as exc:  # noqa: BLE001 — a single tool failure does not abort the pack
+                    logger.warning("extensions_console: failed to enable pack tool %s: %s", pid, exc)
+            self.desk.log(ref, "INFO", f"connector pack {ref} installed ({len(plugin_ids)} tools)")
             return {"state": "enabled", "plugin_ids": plugin_ids}
         if itype == "skill_package":
             entry = self._market_entry(ref)
@@ -661,24 +665,25 @@ class ExtensionsConsole:
             mp = Marketplace(connector_registry=self._connector_registry())
             out = mp._install_skill_package(entry)
             return {"state": "enabled", "path": out.get("path")}
-        raise ValueError(f"未知 bundle item 类型 {itype!r}")
+        raise ValueError(f"unknown bundle item type {itype!r}")
 
     def list_bundles(self) -> dict[str, Any]:
         state = self._bundles_state()
-        # _scope_policy 是元数据键，不是 bundle — 不进列表
+        # _scope_policy is a metadata key, not a bundle — excluded from the list
         return {"bundles": [v for k, v in state.items() if k != "_scope_policy"]}
 
+    # Per-item enable/disable inside a bundle (issue #42: packed items can be
+    # disabled individually after install).
     async def tick_bundle_item(self, bundle_id: str, ref: str, enabled: bool) -> dict[str, Any]:
-        """bundle 内逐项启停（issue #42：安装后 packed item 各自可停用）。"""
         state = self._bundles_state()
         bundle = state.get(bundle_id)
         if bundle is None:
-            return {"ticked": False, "error": f"bundle {bundle_id!r} 未安装"}
+            return {"ticked": False, "error": f"bundle {bundle_id!r} not installed"}
         item = next((i for i in bundle.get("items", []) if i.get("ref") == ref), None)
         if item is None:
-            return {"ticked": False, "error": f"bundle {bundle_id} 无条目 {ref!r}"}
+            return {"ticked": False, "error": f"bundle {bundle_id} has no item {ref!r}"}
         if item.get("state") == "pending_auth" and enabled:
-            return {"ticked": False, "error": f"{ref} 待授权（先完成 OAuth）"}
+            return {"ticked": False, "error": f"{ref} pending authorization (complete OAuth first)"}
         try:
             if item["type"] in ("skill", "subagent"):
                 if enabled:
@@ -697,10 +702,14 @@ class ExtensionsConsole:
                     else:
                         await self.lifecycle.disable(pid)
             elif item["type"] == "skill_package":
-                pass  # 目录型技能包无运行时开关 — 状态仅记账
+                pass  # directory-style skill package has no runtime switch — state is bookkeeping only
             item["state"] = "enabled" if enabled else "disabled"
             self._save_bundles_state(state)
-            self.desk.log(bundle_id, "INFO", f"bundle 项 {ref} → {'启用' if enabled else '停用'}")
+            self.desk.log(
+                bundle_id,
+                "INFO",
+                f"bundle item {ref} -> {'enabled' if enabled else 'disabled'}",
+            )
             audit_events.emit(
                 "hub.bundle.item.enable" if enabled else "hub.bundle.item.disable",
                 resource_type=item["type"],
@@ -709,20 +718,22 @@ class ExtensionsConsole:
                 risk_level="low",
             )
             return {"ticked": True, "ref": ref, "state": item["state"]}
-        except Exception as exc:  # noqa: BLE001 — 停用失败原样上报
+        except Exception as exc:  # noqa: BLE001 — disable failures reported as-is
             return {"ticked": False, "error": str(exc)}
 
     def _pack_plugin_ids(self, pack_id: str) -> list[str]:
         return [m.id for m in self.registry.list() if m.id.startswith(f"connector__{pack_id}__")]
 
-    # ── 连接器 OAuth（issue #42：hub 内完成，不跳出）──
+    # ── connector OAuth (issue #42: completed inside the hub, no redirects) ──
 
+    # OAuth first screen: read scopes (tickable grants) + sensitive scopes
+    # (per-use confirmation, never auto-opened).
     def oauth_scopes(self, connector_id: str) -> dict[str, Any]:
-        """OAuth 首屏：读 scope（可勾选授权）+ 敏感 scope（逐用确认，不自动开）。"""
         doc = get_connector(connector_id)
         if not doc:
             return {"error": "connector not found"}
-        # issue #43：标注实际授权状态（_scope_grants 缺省 = 全量，兼容 #30 直装路径）
+        # issue #43: annotate the actual grant state (_scope_grants absent =
+        # full grant, compatible with the #30 direct-install path)
         grants = doc.get("_scope_grants")
         scopes = [
             {
@@ -743,9 +754,9 @@ class ExtensionsConsole:
         }
 
     async def oauth_complete(self, connector_id: str, scopes: list[str], credentials: dict[str, Any]) -> dict[str, Any]:
-        """OAuth 完成：凭据入保险库，勾选的读 scope 授权桥接，写 scope 记
-        per_use 策略（绑定 cowork 审批系统，上游 fusion-cowork#225）。
-        """
+        # OAuth completion: credentials go into the vault, ticked read scopes
+        # are granted + bridged, write scopes get a per_use policy (bound to
+        # the cowork approval system, upstream fusion-cowork#225).
         doc = get_connector(connector_id)
         if not doc:
             return {"completed": False, "error": "connector not found"}
@@ -755,7 +766,7 @@ class ExtensionsConsole:
         valid_writes = set(write_channels(doc))
         unknown = [s for s in scopes if s not in valid_reads]
         if unknown:
-            return {"completed": False, "error": f"未知读 scope: {unknown}"}
+            return {"completed": False, "error": f"unknown read scopes: {unknown}"}
         cred_ref = str(doc.get("credential_ref") or connector_id)
         saved = self.save_credentials(cred_ref, credentials)
         if not saved.get("saved"):
@@ -767,12 +778,13 @@ class ExtensionsConsole:
         doc["_scope_grants"] = list(granted)
         doc.pop("_disabled", None)
         save_connector(connector_id, doc)
-        # 敏感 scope 策略绑定：写通道不自动开，逐用确认（cowork #225 上游就绪前
-        # 记录在案 + 查询接口可用，执行侧 #30 审核队列兜底）
+        # Sensitive scope policy binding: write channels are not auto-opened,
+        # per-use confirmation (recorded + queryable until the cowork #225
+        # upstream lands; the #30 review queue backstops the execution side)
         state = self._bundles_state()
         policy = state.setdefault("_scope_policy", {})
         policy[connector_id] = {wid: "per_use" for wid in sorted(valid_writes)}
-        # bundle 内对应项 pending_auth → enabled
+        # corresponding bundle item pending_auth -> enabled
         for bundle in state.values():
             for item in bundle.get("items", []):  # type: ignore[union-attr]
                 if isinstance(item, dict) and item.get("type") == "connector" and item.get("ref") == connector_id:
@@ -782,9 +794,12 @@ class ExtensionsConsole:
         self.desk.log(
             f"connector__{connector_id}",
             "INFO",
-            f"连接器 {connector_id} OAuth 完成：授权读 {len(granted)} 通道，{len(valid_writes)} 写通道绑定逐用确认",
+            f"connector {connector_id} OAuth completed: {len(granted)} read "
+            f"channels granted, {len(valid_writes)} write channels bound to "
+            "per-use confirmation",
         )
-        # issue #43：逐 scope 授权事件 + 敏感策略绑定事件（同一 trace_id）
+        # issue #43: per-scope grant events + sensitive policy binding events
+        # (same trace_id)
         trace = audit_events.new_trace_id()
         for scope in sorted(granted):
             audit_events.emit(
@@ -812,19 +827,20 @@ class ExtensionsConsole:
             "capabilities": added.get("capabilities", []),
         }
 
+    # Sensitive scope policy query (integration point for the cowork approval
+    # system / permission engine).
     def scope_policy(self, connector_id: str) -> dict[str, Any]:
-        """敏感 scope 策略查询（cowork 审批系统 / 权限引擎对接点）。"""
         state = self._bundles_state()
         policy = (state.get("_scope_policy") or {}).get(connector_id, {})
         return {"connector_id": connector_id, "per_use_scopes": sorted(policy)}
 
-    # ── 更新流（issue #42：changelog 先行，新增项 opt-in）──
+    # ── update flow (issue #42: changelog first, new items opt-in) ──
 
     def bundle_update_preview(self, bundle_id: str) -> dict[str, Any]:
         state = self._bundles_state()
         bundle = state.get(bundle_id)
         if bundle is None:
-            return {"error": f"bundle {bundle_id!r} 未安装"}
+            return {"error": f"bundle {bundle_id!r} not installed"}
         entry = self._market_entry(bundle_id)
         installed_v = self._version_key(str(bundle.get("version") or "0"))
         available_v = self._version_key(entry.version)
@@ -846,8 +862,8 @@ class ExtensionsConsole:
             "new_items": new_items,
         }
 
+    # Apply the update: install only opt-in new items, bump the version.
     async def bundle_update_apply(self, bundle_id: str, opt_in: list[str]) -> dict[str, Any]:
-        """应用更新：只装 opt-in 的新增项，版本号前移。"""
         preview = self.bundle_update_preview(bundle_id)
         if not preview.get("update_available"):
             return {"updated": False, "reason": "no update available"}
@@ -860,7 +876,7 @@ class ExtensionsConsole:
         for item in preview["new_items"]:
             ref = str(item.get("ref"))
             if ref not in opted:
-                continue  # 未勾选的新增项不自动开（opt-in 契约）
+                continue  # unticked new items are not auto-opened (opt-in contract)
             try:
                 item_state = await self._install_bundle_item(str(item.get("type")), ref, item)
                 items_out.append({"type": item.get("type"), "ref": ref, **item_state})
@@ -873,7 +889,8 @@ class ExtensionsConsole:
         self.desk.log(
             bundle_id,
             "INFO",
-            f"bundle {bundle_id} 更新至 v{entry.version}（opt-in {len(opted)}/{len(preview['new_items'])} 新增项）",
+            f"bundle {bundle_id} updated to v{entry.version}"
+            f" (opt-in {len(opted)}/{len(preview['new_items'])} new items)",
         )
         audit_events.emit(
             "hub.bundle.update",
@@ -890,13 +907,13 @@ class ExtensionsConsole:
             "errors": errors,
         }
 
-    # ── 卸载 + 影响面（issue #42：卸载前展示 被使用于）──
+    # ── uninstall + impact surface (issue #42: show in-use-by before removal) ──
 
     def uninstall_preview(self, bundle_id: str) -> dict[str, Any]:
         state = self._bundles_state()
         bundle = state.get(bundle_id)
         if bundle is None:
-            return {"error": f"bundle {bundle_id!r} 未安装"}
+            return {"error": f"bundle {bundle_id!r} not installed"}
         caps: list[str] = []
         for item in bundle.get("items", []):
             ref = str(item.get("ref"))
@@ -916,8 +933,9 @@ class ExtensionsConsole:
             "safe_to_remove": not in_use_by,
         }
 
+    # Registry reverse lookup: which cowork nodes reference these capabilities
+    # (defensive traversal).
     def _reverse_lookup(self, refs: list[str]) -> list[dict[str, Any]]:
-        """注册表反向查找：哪些 cowork 节点引用了这些能力（防御式遍历）。"""
         registry = getattr(self.desk, "node_registry", None)
         if registry is None or not refs:
             return []
@@ -926,7 +944,7 @@ class ExtensionsConsole:
         try:
             nodes = registry.list()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("extensions_console: 节点注册表不可读: %s", exc)
+            logger.warning("extensions_console: node registry unreadable: %s", exc)
             return []
         for node in nodes:
             name = getattr(node, "name", None) or getattr(node, "__name__", "") or ""
@@ -942,7 +960,7 @@ class ExtensionsConsole:
         state = self._bundles_state()
         bundle = state.pop(bundle_id, None)
         if bundle is None:
-            return {"removed": False, "error": f"bundle {bundle_id!r} 未安装"}
+            return {"removed": False, "error": f"bundle {bundle_id!r} not installed"}
         removed: list[str] = []
         errors: list[str] = []
         for item in bundle.get("items", []):
@@ -957,8 +975,10 @@ class ExtensionsConsole:
                     delete_connector(ref)
                     removed.append(ref)
                 elif item.get("type") == "connector_pack":
-                    # 卸载即注销桥接（不留孤儿清单 — issue #44 验收：hub 卸载
-                    # 后消费方拉取无残留）；内联 creg 无持久化态，直接注销
+                    # Uninstall unregisters the bridges (no orphan manifests —
+                    # issue #44 acceptance: consumers see no residue after hub
+                    # uninstall); the inline creg holds no persistent state, so
+                    # unregister directly
                     for pid in self._pack_plugin_ids(ref):
                         if self._plugin_enabled(pid):
                             await self.lifecycle.disable(pid)
@@ -969,13 +989,13 @@ class ExtensionsConsole:
 
                     Marketplace(connector_registry=self._connector_registry()).uninstall(ref)
                     removed.append(ref)
-            except Exception as exc:  # noqa: BLE001 — 逐项报错不打断卸载
+            except Exception as exc:  # noqa: BLE001 — per-item errors do not abort the uninstall
                 errors.append(f"{item.get('type')}:{ref}: {exc}")
         self._save_bundles_state(state)
         self.desk.log(
             bundle_id,
             "INFO",
-            f"bundle {bundle_id} 已卸载（{len(removed)} 项, {len(errors)} 错误）",
+            f"bundle {bundle_id} uninstalled ({len(removed)} items, {len(errors)} errors)",
         )
         audit_events.emit(
             "hub.bundle.uninstall",
@@ -991,7 +1011,7 @@ class ExtensionsConsole:
             "errors": errors,
         }
 
-    # ── 审计视图 + scope 撤销 + 反向查找（issue #43 PC-3）──
+    # ── audit view + scope revoke + reverse lookup (issue #43 PC-3) ──
 
     def audit_records(
         self,
@@ -1001,7 +1021,8 @@ class ExtensionsConsole:
         trace_id: str = "",
         limit: int = 100,
     ) -> dict[str, Any]:
-        """hub 内授权审计视图：谁在何时授权了什么（读 fusion-security 轨迹）。"""
+        # In-hub authorization audit view: who granted what and when (reads
+        # the fusion-security trail).
         records = audit_events.query(
             resource_id=resource_id,
             resource_type=resource_type,
@@ -1012,11 +1033,11 @@ class ExtensionsConsole:
         return {"records": records}
 
     async def revoke_scopes(self, connector_id: str, scopes: list[str]) -> dict[str, Any]:
-        """撤销已授权读 scope：更新 _scope_grants、重桥接、发审计事件。
-
-        security 工作台侧的撤销动作经此落回注册表（下一载入即生效 —
-        hub 每次 enable/列表都从盘上事实读取，无内存第二真相源）。
-        """
+        # Revoke granted read scopes: update _scope_grants, re-bridge, emit
+        # audit events.
+        # Revocations from the security workbench land back in the registry
+        # here (effective on next load — the hub reads on-disk facts on every
+        # enable/list, no in-memory second source of truth).
         doc = get_connector(connector_id)
         if not doc:
             return {"revoked": False, "error": "connector not found"}
@@ -1046,7 +1067,7 @@ class ExtensionsConsole:
         self.desk.log(
             f"connector__{connector_id}",
             "INFO",
-            f"连接器 {connector_id} 撤销读 scope: {target}（余 {remaining}）",
+            f"connector {connector_id} revoked read scopes: {target} (remaining {remaining})",
         )
         return {
             "revoked": True,
@@ -1055,14 +1076,17 @@ class ExtensionsConsole:
             "remaining_scopes": remaining,
         }
 
+    # In-use-by: which cowork nodes reference this capability (standalone
+    # entry point for the #42 reverse lookup).
     def capability_used_by(self, capability: str) -> dict[str, Any]:
-        """被使用于：哪些 cowork 节点引用该能力（#42 反向查找的独立入口）。"""
         in_use_by = self._reverse_lookup([capability])
         return {"capability": capability, "in_use_by": in_use_by}
 
-    # ── 稳定注册表读契约（issue #44 PC-4：单注册表三表面）──
-    # 消费方：fusion-cowork#228 能力市场、fusion-agent-studio#529 构建器建议。
-    # 契约版本 registry/1.0 — 只增字段不改语义；授权态只读，授权动作跳 hub。
+    # ── stable registry read contract (issue #44 PC-4: one registry, three surfaces) ──
+    # Consumers: fusion-cowork#228 capability market, fusion-agent-studio#529
+    # builder suggestions.
+    # Contract version registry/1.0 — additive fields only, no semantic
+    # changes; auth state is read-only, authorization actions go to the hub.
 
     REGISTRY_CONTRACT = "registry/1.0"
     HUB_URL = "/shell/fusion-plugins-ecosystem/"
@@ -1076,8 +1100,9 @@ class ExtensionsConsole:
             return "subagent"
         return "plugin"
 
+    # Granted read scope list; None = fully granted (#30 direct-install path,
+    # no _scope_grants).
     def _connector_grants(self, connector_id: str) -> list[str] | None:
-        """已授权读 scope 列表；None = 全量授权（#30 直装路径，无 _scope_grants）。"""
         doc = get_connector(connector_id)
         if not doc:
             return None
@@ -1086,12 +1111,12 @@ class ExtensionsConsole:
             return None
         return grants
 
+    # registry/1.0 full capability listing: single source of truth, consumers
+    # must not fork caches.
+    # Connectors expand by document read channels (not just bridged manifests)
+    # — revoked/pending channels surface via auth.state so consumers see the
+    # full authorization surface, not only active bridges.
     def registry_capabilities(self) -> dict[str, Any]:
-        """registry/1.0 全量能力清单：单一事实源，消费方不得分叉缓存。
-
-        连接器按文档读通道展开（非仅已桥接清单）— 已撤销/待授权通道以
-        auth.state 呈现，消费方可见完整授权面而非只有活跃桥接。
-        """
         items: list[dict[str, Any]] = []
         for entry in connector_report():
             cid = entry["id"]
@@ -1124,14 +1149,16 @@ class ExtensionsConsole:
                         },
                     }
                 )
-        # 连接器包（issue #27 ConnectorRegistry 桥接）无 rest 文档 — 按桥接
-        # 清单入列，授权面 = 全量（包工具无逐 scope 模型，对齐 #30 直装路径）
+        # Connector packs (issue #27 ConnectorRegistry bridges) have no rest
+        # doc — listed by bridge manifests, authorization surface = full
+        # (pack tools have no per-scope model, aligned with the #30
+        # direct-install path)
         doc_cids = {entry["id"] for entry in connector_report()}
         for m in self.registry.list():
             if m.id.startswith("connector__"):
                 cid = m.id.split("__", 2)[1]
                 if cid in doc_cids:
-                    continue  # rest 连接器由文档读通道展开覆盖
+                    continue  # rest connectors are covered by document read-channel expansion
                 _, cid, op = m.id.split("__", 2)
                 items.append(
                     {
@@ -1188,11 +1215,12 @@ class ExtensionsConsole:
                         },
                     }
                 )
-        logger.info("extensions_console: registry/1.0 清单 %d 项", len(items))
+        logger.info("extensions_console: registry/1.0 listing has %d items", len(items))
         return {"contract": self.REGISTRY_CONTRACT, "capabilities": items}
 
+    # registry/1.0 single-capability detail: listing fields + per-use policy
+    # + in-use-by.
     def registry_capability(self, capability: str) -> dict[str, Any]:
-        """registry/1.0 单能力详情：清单字段 + per-use 策略 + 被使用于。"""
         listing = self.registry_capabilities()["capabilities"]
         item = next((c for c in listing if c["id"] == capability), None)
         if item is None:
@@ -1204,7 +1232,7 @@ class ExtensionsConsole:
         out["in_use_by"] = self._reverse_lookup([item["id"]])
         return out
 
-    # ── 连接器 ──
+    # ── connectors ──
 
     def list_connectors(self) -> dict[str, Any]:
         spine: dict[str, list[str]] = {}
@@ -1227,8 +1255,9 @@ class ExtensionsConsole:
             )
         return {"connectors": rows, "registry": [r["id"] for r in rows]}
 
+    # Full static validation + persist to disk (the install record is the
+    # file). Runtime registration happens only on enable.
     def install_connector(self, doc: dict[str, Any]) -> dict[str, Any]:
-        """全量静态校验 + 落盘（安装记录即文件）。enable 才注册运行时。"""
         problems = validate_connector(doc)
         if problems:
             return {"installed": False, "problems": problems}
@@ -1240,10 +1269,10 @@ class ExtensionsConsole:
         self.desk.log(
             f"connector__{cid}",
             "INFO",
-            f"连接器 {cid} 已安装（{len(reads)} 读通道, {len(writes)} 写通道待审）",
+            f"connector {cid} installed ({len(reads)} read channels, {len(writes)} write channels pending review)",
         )
         logger.info(
-            "extensions_console: 连接器 %s 已安装 by %s（%d 读, %d 写不自动列出）",
+            "extensions_console: connector %s installed by %s (%d reads, %d writes not auto-listed)",
             cid,
             self.installed_by,
             len(reads),
@@ -1260,13 +1289,17 @@ class ExtensionsConsole:
         if not credential_ref or not isinstance(credentials, dict):
             return {"saved": False, "error": "missing credential_ref or credentials"}
         stored = json.dumps(credentials, ensure_ascii=False)
-        # 首选 Desk 加密存储（cowork config_center, Fernet）；round-trip 验证
-        # 可读性 —— standalone console（无 config_center）静默丢弃写入，回退
-        # 控制台本地加密保险库（同 _encrypt_key 派生密钥）。
+        # Prefer Desk encrypted storage (cowork config_center, Fernet);
+        # round-trip read verification — a standalone console (no
+        # config_center) silently drops writes, so fall back to the
+        # console-local encrypted vault (same _encrypt_key derived key).
         if hasattr(self.desk, "set_api_key"):
             self.desk.set_api_key(credential_ref, stored)
             if hasattr(self.desk, "get_api_key") and self.desk.get_api_key(credential_ref) == stored:
-                logger.info("extensions_console: 凭据 %s 已写入 Desk 加密存储", credential_ref)
+                logger.info(
+                    "extensions_console: credentials %s written to Desk encrypted storage",
+                    credential_ref,
+                )
                 return {"saved": True, "credential_ref": credential_ref}
         try:
             from fusion_plugins_ecosystem.desk_runtime import _encrypt_key
@@ -1278,7 +1311,10 @@ class ExtensionsConsole:
         vault = _local_vault_read()
         vault[credential_ref] = _encrypt_key(stored)
         _local_vault_write(vault)
-        logger.info("extensions_console: 凭据 %s 已写入控制台本地加密保险库", credential_ref)
+        logger.info(
+            "extensions_console: credentials %s written to console-local encrypted vault",
+            credential_ref,
+        )
         return {"saved": True, "credential_ref": credential_ref}
 
     async def enable_connector(self, connector_id: str) -> dict[str, Any]:
@@ -1291,7 +1327,7 @@ class ExtensionsConsole:
         self.desk.log(
             f"connector__{connector_id}",
             "INFO",
-            f"连接器 {connector_id} 已启用，自动列出 {len(added)} 个读能力",
+            f"connector {connector_id} enabled, auto-listing {len(added)} read capabilities",
         )
         return {"enabled": True, "connector_id": connector_id, "capabilities": added}
 
@@ -1304,7 +1340,7 @@ class ExtensionsConsole:
         self.desk.log(
             f"connector__{connector_id}",
             "INFO",
-            f"连接器 {connector_id} 已禁用，{len(affected)} 个能力翻转",
+            f"connector {connector_id} disabled, {len(affected)} capabilities flipped",
         )
         return {
             "disabled": True,
@@ -1312,8 +1348,9 @@ class ExtensionsConsole:
             "capabilities_disabled": affected,
         }
 
+    # Delete a connector: unbridge + delete doc + clear scope policy
+    # (issue #43 completes the lifecycle).
     async def remove_connector(self, connector_id: str) -> dict[str, Any]:
-        """删除连接器：摘桥接 + 删文档 + 清 scope 策略（issue #43 补全生命周期）。"""
         doc = get_connector(connector_id)
         if not doc:
             return {"removed": False, "error": "connector not found"}
@@ -1336,7 +1373,7 @@ class ExtensionsConsole:
         self.desk.log(
             f"connector__{connector_id}",
             "INFO",
-            f"连接器 {connector_id} 已删除，摘除 {len(affected)} 个能力",
+            f"connector {connector_id} removed, {len(affected)} capabilities detached",
         )
         return {
             "removed": True,
@@ -1344,8 +1381,9 @@ class ExtensionsConsole:
             "capabilities_removed": affected,
         }
 
+    # Conformance harness: static validation + live check of the first read
+    # op using vault credentials.
     async def harness(self, connector_id: str) -> dict[str, Any]:
-        """一致性 harness：静态校验 + 保险库凭据实测首个读操作。"""
         doc = get_connector(connector_id)
         if not doc:
             return {
@@ -1370,7 +1408,7 @@ class ExtensionsConsole:
             "conformant": not problems,
         }
 
-    # ── 桥接（连接器读通道 → 能力插件）──
+    # ── bridging (connector read channels -> capability plugins) ──
 
     async def _bridge_connector(self, doc: dict[str, Any]) -> list[str]:
         from fusion_plugins_ecosystem.registry import (
@@ -1383,13 +1421,14 @@ class ExtensionsConsole:
         cid = str(doc.get("id"))
         await self._unbridge_connector(cid)
         added = []
-        # issue #42：OAuth 逐 scope 授权 — 只桥接已授权读通道
-        # （doc._scope_grants 缺省 = 全量，兼容 #30 直装直启路径）
+        # issue #42: OAuth per-scope grants — bridge only granted read
+        # channels (doc._scope_grants absent = full grant, compatible with the
+        # #30 direct-install/direct-enable path)
         granted = doc.get("_scope_grants")
         for ch in read_channels(doc):
             if isinstance(granted, list) and ch["id"] not in granted:
                 logger.info(
-                    "extensions_console: 连接器 %s 读通道 %s 未授权，跳过桥接",
+                    "extensions_console: connector %s read channel %s not granted, skipping bridge",
                     cid,
                     ch["id"],
                 )
@@ -1412,19 +1451,20 @@ class ExtensionsConsole:
             )
             added.append(f"connector.{cid}.{ch['id']}")
         await self._enable_all(f"connector__{cid}__")
-        logger.info("extensions_console: 连接器 %s 桥接 %d 个读通道", cid, len(added))
+        logger.info("extensions_console: connector %s bridged %d read channels", cid, len(added))
         return added
 
+    # Bridge = expose: read channels / ticked tools are set ENABLED right
+    # after registration (auto-list contract).
     async def _enable_all(self, prefix: str) -> None:
-        """桥接即暴露：读通道/已 tick 工具注册后置 ENABLED（auto-list 契约）。"""
         if self.lifecycle is None:
             return
         for m in list(self.registry.list()):
             if m.id.startswith(prefix):
                 try:
                     await self.lifecycle.enable(m.id)
-                except Exception as exc:  # noqa: BLE001 — 逐个报错不打断批次
-                    logger.warning("extensions_console: 启用 %s 失败: %s", m.id, exc)
+                except Exception as exc:  # noqa: BLE001 — per-item errors do not abort the batch
+                    logger.warning("extensions_console: failed to enable %s: %s", m.id, exc)
 
     async def _unbridge_connector(self, connector_id: str) -> list[str]:
         removed = []
@@ -1434,13 +1474,13 @@ class ExtensionsConsole:
                 if self.lifecycle is not None:
                     try:
                         await self.lifecycle.disable(manifest.id)
-                    except Exception:  # noqa: BLE001 — disable 失败仍注销
+                    except Exception:  # noqa: BLE001 — unregister even if disable fails
                         pass
                 self.registry.unregister(manifest.id)
                 removed.append(manifest.id)
         return removed
 
-    # ── 插件（tick/untick 对账 + 声明式安装）──
+    # ── plugins (tick/untick reconciliation + declarative install) ──
 
     def _base_of(self, plugin_id: str) -> str:
         for prefix in ("connector__", "mcp__"):
@@ -1493,8 +1533,9 @@ class ExtensionsConsole:
             "require_signing": False,
         }
 
+    # Apply ticks: reconcile the ticked set — ticked get enabled, unticked
+    # get disabled.
     async def tick_nodes(self, plugin_base: str, nodes: list[str]) -> dict[str, Any]:
-        """Apply ticks：勾选集合对账 —— 勾选的 enable，未勾的 disable。"""
         target = [m for m in self.registry.list() if self._base_of(m.id) == plugin_base]
         if not target:
             return {"ticked": [], "errors": [f"plugin '{plugin_base}' not found"]}
@@ -1513,7 +1554,7 @@ class ExtensionsConsole:
                     ticked.append(node)
                 elif already:
                     await self.lifecycle.disable(m.id)
-            except Exception as exc:  # noqa: BLE001 — 逐节点报错不打断批次
+            except Exception as exc:  # noqa: BLE001 — per-node errors do not abort the batch
                 errors.append(f"{node}: {exc}")
         self._persist_ticks(plugin_base, sorted(wanted))
         return {"ticked": ticked, "errors": errors}
@@ -1533,7 +1574,7 @@ class ExtensionsConsole:
                 if self.lifecycle is not None:
                     try:
                         await self.lifecycle.disable(m.id)
-                    except Exception:  # noqa: BLE001 — disable 失败仍继续注销
+                    except Exception:  # noqa: BLE001 — unregister even if disable fails
                         pass
                 self.registry.unregister(m.id)
                 removed.append(m.id)
@@ -1541,11 +1582,16 @@ class ExtensionsConsole:
         custom = _extensions_dir() / _PLUGINS_KEY / f"{plugin_base}.json"
         if custom.exists():
             custom.unlink()
-        self.desk.log(plugin_base, "INFO", f"插件 {plugin_base} 已移除（{len(removed)} 能力）")
+        self.desk.log(
+            plugin_base,
+            "INFO",
+            f"plugin {plugin_base} removed ({len(removed)} capabilities)",
+        )
         return {"removed": bool(removed), "capabilities_removed": removed}
 
+    # Install a declarative plugin pack: dir or zip with a plugin.json
+    # manifest (no arbitrary code on disk).
     def install_plugin(self, source: str) -> dict[str, Any]:
-        """安装声明式插件包：目录或 zip，含 plugin.json 清单（不落地任意代码）。"""
         src = Path(source).expanduser()
         manifest_file = src / "plugin.json" if src.is_dir() else None
         tmp_dir: Path | None = None
@@ -1576,7 +1622,7 @@ class ExtensionsConsole:
         self.desk.log(
             manifest.id,
             "INFO",
-            f"声明式插件 {manifest.id} 已安装，候选节点: {nodes}（tick 后暴露）",
+            f"declarative plugin {manifest.id} installed, candidate nodes: {nodes} (exposed after tick)",
         )
         return {
             "installed": True,
@@ -1585,7 +1631,7 @@ class ExtensionsConsole:
             "note": "candidates only — tick to expose",
         }
 
-    # ── 远端 MCP intake ──
+    # ── remote MCP intake ──
 
     def list_mcp_servers(self) -> list[dict[str, Any]]:
         data = self._read_json(_MCP_KEY, {"servers": [], "ticks": {}})
@@ -1598,7 +1644,8 @@ class ExtensionsConsole:
         return out
 
     def register_mcp_server(self, server_id: str, url: str, credential_ref: str = "") -> dict[str, Any]:
-        """probe（initialize + tools/list）通过才落盘 —— 先证明端点会说 MCP。"""
+        # Persist only after the probe (initialize + tools/list) passes —
+        # prove the endpoint speaks MCP first.
         server_id = str(server_id or "").strip()
         url = str(url or "").strip()
         if not server_id or "/" in server_id or server_id.startswith("."):
@@ -1627,7 +1674,7 @@ class ExtensionsConsole:
                 headers=auth_headers,
             )
             tools = _mcp_rpc(url, "tools/list", headers=auth_headers).get("tools") or []
-        except Exception as exc:  # noqa: BLE001 — 诚实 probe envelope
+        except Exception as exc:  # noqa: BLE001 — honest probe envelope
             return {
                 "registered": False,
                 "error": f"probe failed: {type(exc).__name__}: {exc}"[:300],
@@ -1673,8 +1720,9 @@ class ExtensionsConsole:
                 removed.append(m.id)
         return {"removed": True, "server": server_id, "capabilities_removed": removed}
 
+    # Tick tools -> bridge into mcp__<server>__<tool> capability plugins
+    # (re-tick performs a full reconciliation).
     async def tick_mcp_tools(self, server_id: str, tools: list[str]) -> dict[str, Any]:
-        """tick 工具 → 桥接为 mcp__<server>__<tool> 能力插件（重 tick 全量对账）。"""
         server = next((s for s in self.list_mcp_servers() if s.get("id") == server_id), None)
         if not server:
             return {"ticked": [], "errors": [f"server '{server_id}' unknown"]}
@@ -1688,11 +1736,16 @@ class ExtensionsConsole:
         bridged = await self._bridge_mcp_tools(server, valid)
         ticked.extend(bridged)
         if errors:
-            logger.warning("extensions_console: MCP tick 部分失败 %s: %s", server_id, errors)
+            logger.warning(
+                "extensions_console: MCP tick partially failed %s: %s",
+                server_id,
+                errors,
+            )
         return {"ticked": ticked, "errors": errors}
 
+    # MCP ticks live in the same file as servers (mcp_servers.json) — single
+    # source of truth.
     def _persist_mcp_ticks(self, server_id: str, tools: list[str]) -> None:
-        """MCP ticks 与 servers 同文件（mcp_servers.json），单一真相源。"""
         data = self._read_json(_MCP_KEY, {"servers": [], "ticks": {}})
         ticks = data.get("ticks") or {}
         if tools:
@@ -1718,7 +1771,7 @@ class ExtensionsConsole:
                 if self.lifecycle is not None:
                     try:
                         await self.lifecycle.disable(m.id)
-                    except Exception:  # noqa: BLE001 — disable 失败仍注销
+                    except Exception:  # noqa: BLE001 — unregister even if disable fails
                         pass
                 self.registry.unregister(m.id)
         bridged = []
@@ -1744,11 +1797,12 @@ class ExtensionsConsole:
             )
             bridged.append(f"mcp.{sid}.{name}")
         await self._enable_all(prefix)
-        logger.info("extensions_console: MCP server %s 桥接 %d 个工具", sid, len(bridged))
+        logger.info("extensions_console: MCP server %s bridged %d tools", sid, len(bridged))
         return bridged
 
     async def call_mcp_tool(self, server_id: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        """门侧执行：tools/call 派发到注册 URL，认证头服务端解析。"""
+        # Gate-side execution: tools/call dispatched to the registered URL,
+        # auth headers resolved server-side.
         server = next((s for s in self.list_mcp_servers() if s.get("id") == server_id), None)
         if not server:
             return {"ok": False, "error": f"MCP server '{server_id}' not registered"}
@@ -1764,14 +1818,14 @@ class ExtensionsConsole:
                 {"name": tool, "arguments": args or {}},
                 headers=auth_headers,
             )
-        except Exception as exc:  # noqa: BLE001 — 诚实 envelope
+        except Exception as exc:  # noqa: BLE001 — honest envelope
             return {
                 "ok": False,
                 "error": f"tools/call failed: {type(exc).__name__}: {exc}"[:300],
             }
         return {"ok": True, "result": result}
 
-    # ── 启动 resync（磁盘事实重建运行时桥接）──
+    # ── startup resync (rebuild runtime bridges from on-disk facts) ──
 
     async def resync(self) -> dict[str, Any]:
         relisted: list[str] = []
@@ -1794,9 +1848,14 @@ class ExtensionsConsole:
                 try:
                     self.registry.register(_manifest_from_decl(json.loads(path.read_text(encoding="utf-8"))))
                 except (ValueError, KeyError, TypeError) as exc:
-                    logger.warning("extensions_console: 跳过损坏插件清单 %s: %s", path.name, exc)
-        # issue #44：已装 bundle 的 enabled 项跨重启重建（连接器包桥接/技能启用
-        # 是运行时态，不重建则消费方下次拉取即"消失"）
+                    logger.warning(
+                        "extensions_console: skipping corrupt plugin manifest %s: %s",
+                        path.name,
+                        exc,
+                    )
+        # issue #44: rebuild enabled items of installed bundles across
+        # restarts (connector pack bridges / skill enables are runtime state;
+        # without rebuild they "disappear" on the consumer's next pull)
         for bundle in self.list_bundles()["bundles"]:
             for item in bundle.get("items", []):
                 if item.get("state") != "enabled":
@@ -1806,19 +1865,19 @@ class ExtensionsConsole:
                 try:
                     if itype == "connector_pack":
                         if self._pack_plugin_ids(ref):
-                            continue  # 桥接已存在（重复 resync）— 不重装
+                            continue  # bridges already exist (repeated resync) — no reinstall
                         out = await self._install_bundle_item(itype, ref, {})
                         relisted.extend(out.get("plugin_ids", []))
                     elif itype in ("skill", "subagent") and self.registry.get(ref):
                         if not self._plugin_enabled(ref):
                             await self.lifecycle.enable(ref)
                         relisted.append(ref)
-                except Exception as exc:  # noqa: BLE001 — 单项失败不拖垮 resync
+                except Exception as exc:  # noqa: BLE001 — a single item failure does not break resync
                     logger.warning(
-                        "extensions_console: resync 重建 bundle 项 %s:%s 失败: %s",
+                        "extensions_console: resync failed to rebuild bundle item %s:%s: %s",
                         bundle.get("id"),
                         ref,
                         exc,
                     )
-        logger.info("extensions_console: resync 重建 %d 个能力", len(relisted))
+        logger.info("extensions_console: resync rebuilt %d capabilities", len(relisted))
         return {"relisted": relisted}

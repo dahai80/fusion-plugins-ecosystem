@@ -1,12 +1,12 @@
-"""能力操作审计事件流（issue #43 PC-3）。
-
-hub 的 install / uninstall / OAuth 授权 / scope 策略变更事件写入
-fusion-security 审计管道的 JSONL 落点（`~/.fusion_security/audit/audit_<tenant>.jsonl`，
-与 fusion_security.engine.tenant.audit.AuditLogger 同格式 — security#61
-审计工作台直接可检索），trace_id 串跨服务链路。
-
-只依赖文件契约，不 import fusion_security（跨工程零耦合）。
-"""
+# Capability operation audit event stream (issue #43 PC-3).
+# Hub install / uninstall / OAuth authorization / scope policy change
+# events are written to the fusion-security audit pipeline JSONL sink
+# (~/.fusion_security/audit/audit_<tenant>.jsonl, same format as
+# fusion_security.engine.tenant.audit.AuditLogger — directly searchable by
+# the security#61 audit workbench); trace_id strings thread the
+# cross-service chain.
+# Depends only on the file contract, does not import fusion_security
+# (zero cross-project coupling).
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ _TENANT_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def new_trace_id() -> str:
-    """跨服务链路 trace_id：fp-<uuid4 前 16 hex>。"""
+    # Cross-service trace_id: fp-<first 16 hex of uuid4>.
     return "fp-" + uuid.uuid4().hex[:16]
 
 
@@ -37,7 +37,8 @@ def _safe_tenant_slug(tenant_id: str) -> str:
 
 
 def audit_log_dir() -> Path:
-    # 惰性读 env — import 时取值会让测试 monkeypatch 失效（事件漏进真实目录）
+    # Read env lazily — resolving at import time would defeat test
+    # monkeypatching (events leaking into the real directory)
     return Path(
         os.environ.get(
             "FUSION_PLUGIN_AUDIT_DIR",
@@ -47,7 +48,7 @@ def audit_log_dir() -> Path:
 
 
 def _sink_enabled() -> bool:
-    # 关闭落盘（测试/离线场景）：FUSION_PLUGIN_AUDIT_SINK=off
+    # Disable persisting (test/offline scenarios): FUSION_PLUGIN_AUDIT_SINK=off
     return os.environ.get("FUSION_PLUGIN_AUDIT_SINK", "on").lower() != "off"
 
 
@@ -65,10 +66,9 @@ def emit(
     actor: str = "hub-console",
     tenant_id: str = "",
 ) -> dict[str, Any]:
-    """追加一条审计事件（AuditEntry 同构 JSONL 行）。
-
-    失败不拖垮业务流 — 审计落盘降级为告警日志。
-    """
+    # Append one audit event (AuditEntry-shaped JSONL line).
+    # Failure never takes down the business flow — audit persistence
+    # degrades to a warning log.
     entry = {
         "action": action,
         "actor": actor,
@@ -98,7 +98,7 @@ def emit(
             entry["trace_id"],
         )
     except OSError as exc:
-        logger.warning("audit_events: 审计落盘失败: %s", exc)
+        logger.warning("audit_events: audit persist failed: %s", exc)
     return entry
 
 
@@ -110,7 +110,8 @@ def query(
     trace_id: str = "",
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    """只读检索审计轨迹（逐行解析，缺字段兜底 — 对齐 audit_store._entry_from_line）。"""
+    # Read-only audit trail search (line-by-line parse, tolerant of missing
+    # fields — aligned with audit_store._entry_from_line).
     hits: list[dict[str, Any]] = []
     root = audit_log_dir()
     if not root.is_dir():

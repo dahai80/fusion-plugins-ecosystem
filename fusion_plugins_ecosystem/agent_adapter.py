@@ -1,8 +1,6 @@
-"""Claude Code Agent 适配器。
-
-将具备 SUBAGENT 能力的 PluginManifest 导出为 Claude Code agent .md 文件，
-含 YAML frontmatter（name, description, model, color, tools）。
-"""
+# Claude Code Agent adapter.
+# Exports PluginManifests with the SUBAGENT capability as Claude Code agent
+# .md files with YAML frontmatter (name, description, model, color, tools).
 
 from __future__ import annotations
 
@@ -38,13 +36,11 @@ _CAPABILITY_TOOLS: dict[PluginCapability, str] = {
 
 
 class AgentAdapter:
-    """插件 → Claude Code Agent .md 导出器。
-
-    用法：
-        adapter = AgentAdapter(registry)
-        md = adapter.export_agent("my_agent_plugin")
-        all_agents = adapter.export_all()
-    """
+    # Plugin → Claude Code agent .md exporter.
+    # Usage:
+    #     adapter = AgentAdapter(registry)
+    #     md = adapter.export_agent("my_agent_plugin")
+    #     all_agents = adapter.export_all()
 
     def __init__(self, registry: PluginRegistry) -> None:
         self._registry = registry

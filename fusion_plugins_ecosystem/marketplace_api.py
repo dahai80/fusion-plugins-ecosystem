@@ -44,30 +44,35 @@ CAPABILITY_PERMISSIONS: dict[str, dict[str, str]] = {
     PluginCapability.FILE_ACCESS.value: {
         "id": "file_access",
         "label_en": "Read and write local files",
+        # i18n: user-facing
         "label_cn": "读写本地文件",
         "risk": "medium",
     },
     PluginCapability.MCP_TOOL.value: {
         "id": "network",
         "label_en": "Send network requests (exposed as MCP tool)",
+        # i18n: user-facing
         "label_cn": "发起网络请求（暴露为 MCP 工具）",
         "risk": "medium",
     },
     PluginCapability.VRAM_CONSUMER.value: {
         "id": "vram",
         "label_en": "Reserve MLX vRAM via Desk scheduler",
+        # i18n: user-facing
         "label_cn": "占用 MLX 显存（Desk 调度）",
         "risk": "low",
     },
     PluginCapability.LONG_TASK.value: {
         "id": "long_task",
         "label_en": "Run long tasks (timeout meltdown applies)",
+        # i18n: user-facing
         "label_cn": "运行长任务（超时熔断保护）",
         "risk": "low",
     },
     PluginCapability.SUBAGENT.value: {
         "id": "subagent",
         "label_en": "Dispatch Claude Code sub-agents",
+        # i18n: user-facing
         "label_cn": "调度 Claude Code 子代理",
         "risk": "medium",
     },
@@ -76,12 +81,14 @@ CAPABILITY_PERMISSIONS: dict[str, dict[str, str]] = {
 CONNECTOR_PERMISSION_MEDIUM = {
     "id": "network",
     "label_en": "Connect to an external MCP server (stdio/HTTP)",
+    # i18n: user-facing
     "label_cn": "连接外部 MCP 服务器（stdio/HTTP）",
     "risk": "medium",
 }
 CONNECTOR_PERMISSION_HIGH = {
     "id": "network",
     "label_en": "Connect to an external MCP server (stdio/HTTP, HIGH-risk tool declared)",
+    # i18n: user-facing
     "label_cn": "连接外部 MCP 服务器（stdio/HTTP，含 HIGH 风险工具）",
     "risk": "high",
 }

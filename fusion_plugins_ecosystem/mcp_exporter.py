@@ -1,12 +1,10 @@
-"""插件 → MCP Tools 暴露。
-
-对应 PRD「fusion-cowork 暴露 MCP Server，plugin-ecosystem 里所有插件能力
-会自动注册为 MCP Tools 供给 Claude 调用」。
-
-本模块负责将 PluginManifest 转换为 MCP Tool 描述，并通过 fusion-cowork
-的 MCP 网关对外暴露。真实 MCP 协议封装由 fusion-cowork runtime 提供，
-本模块只做描述生成 + 调用转发。
-"""
+# Plugin → MCP tools exposure.
+# Maps to PRD "fusion-cowork exposes an MCP Server; all plugin capabilities
+# in the plugin ecosystem auto-register as MCP Tools for Claude to call".
+# This module converts PluginManifest into MCP Tool descriptions and
+# exposes them via the fusion-cowork MCP gateway. Real MCP protocol framing
+# is provided by the fusion-cowork runtime; this module only does
+# description generation + call forwarding.
 
 from __future__ import annotations
 
@@ -28,7 +26,7 @@ from fusion_plugins_ecosystem.schema import (
 logger = logging.getLogger(__name__)
 
 
-# MCP Tool 描述模板（基于 MCP 规范的 tools/list 响应项）
+# MCP tool description template (based on the MCP spec tools/list response item)
 _MCP_TOOL_TEMPLATE = {
     "jsonrpc": "2.0",
     "protocolVersion": MCP_PROTOCOL_VERSION,
@@ -38,11 +36,11 @@ _MCP_TOOL_NAMESPACE_PREFIX = "mcp__plugin__"
 
 
 def manifest_to_mcp_tool(manifest: PluginManifest) -> dict[str, Any] | None:
-    """将 PluginManifest 转为 MCP Tool 描述（SSOT，所有 adapter 复用）。
-
-    统一输出：enum 始终转 list（JSON 合法数组）、含 title/annotations/outputSchema
-    （MCP 2026-07-28）。避免 jsonrpc / mcp_exporter 各自生成导致 schema 分叉。
-    """
+    # Convert a PluginManifest into an MCP tool description (SSOT, reused
+    # by all adapters).
+    # Unified output: enum is always converted to list (valid JSON array),
+    # includes title/annotations/outputSchema (MCP 2026-07-28). Prevents
+    # schema divergence from jsonrpc / mcp_exporter each generating their own.
     properties: dict[str, Any] = {}
     required: list[str] = []
     for param in manifest.params:
@@ -51,7 +49,7 @@ def manifest_to_mcp_tool(manifest: PluginManifest) -> dict[str, Any] | None:
             "description": param.description,
         }
         if param.enum is not None:
-            # enum 始终输出 list，tuple 在 JSON 中不合法
+            # enum is always output as list; tuple is invalid in JSON
             prop["enum"] = list(param.enum)
         if param.default is not None:
             prop["default"] = param.default
@@ -85,13 +83,11 @@ def manifest_to_mcp_tool(manifest: PluginManifest) -> dict[str, Any] | None:
 
 
 class MCPExporter:
-    """插件 → MCP Tools 暴露器。
-
-    用法：
-        exporter = MCPExporter(registry, desk)
-        tools = exporter.list_tools()           # MCP tools/list 响应
-        result = await exporter.call_tool(...)  # MCP tools/call 转发
-    """
+    # Plugin → MCP tools exporter.
+    # Usage:
+    #     exporter = MCPExporter(registry, desk)
+    #     tools = exporter.list_tools()           # MCP tools/list response
+    #     result = await exporter.call_tool(...)  # MCP tools/call forward
 
     def __init__(
         self,
@@ -102,10 +98,8 @@ class MCPExporter:
         self.desk = desk or registry.desk
 
     def list_tools(self) -> list[dict[str, Any]]:
-        """生成 MCP tools/list 响应项列表。
-
-        只暴露具备 MCP_TOOL 能力的插件。
-        """
+        # Build the MCP tools/list response item list.
+        # Only plugins with the MCP_TOOL capability are exposed.
         tools: list[dict[str, Any]] = []
         for manifest in self.registry.list():
             if PluginCapability.MCP_TOOL not in manifest.capabilities:
@@ -116,7 +110,8 @@ class MCPExporter:
         return tools
 
     def _manifest_to_mcp_tool(self, manifest: PluginManifest) -> dict[str, Any]:
-        """将 PluginManifest 转换为 MCP Tool 描述（委托 SSOT manifest_to_mcp_tool）。"""
+        # Convert a PluginManifest into an MCP tool description (delegates
+        # to SSOT manifest_to_mcp_tool).
         return manifest_to_mcp_tool(manifest)
 
     async def call_tool(
@@ -124,14 +119,14 @@ class MCPExporter:
         plugin_id: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        """MCP tools/call 转发：调用插件并返回 MCP 标准响应。
-
-        本方法依赖 fusion-cowork 的 PluginLifecycle 执行插件，
-        然后将结果包装为 MCP tools/call 响应。
-        """
-        # 真实实现：通过 desk.runtime 获取 lifecycle 并执行
-        # 此处仅返回结构占位，由 Desk 侧 runtime 注入实际调用
-        self.desk.log(plugin_id, "INFO", "MCP tools/call 转发", arguments=arguments)
+        # MCP tools/call forward: invoke the plugin and return the standard
+        # MCP response.
+        # Relies on fusion-cowork's PluginLifecycle to execute the plugin,
+        # then wraps the result into an MCP tools/call response.
+        # Real implementation: fetch the lifecycle via desk.runtime and execute
+        # This only returns a structural placeholder; the Desk-side runtime
+        # injects the actual call.
+        self.desk.log(plugin_id, "INFO", "MCP tools/call forwarded", arguments=arguments)
         return {
             "content": [
                 {
@@ -143,9 +138,9 @@ class MCPExporter:
         }
 
     def gateway_info(self) -> dict[str, Any]:
-        """返回 MCP 网关信息（供 Claude Desktop / Claude Code 对接）。"""
+        # Return MCP gateway info (for Claude Desktop / Claude Code onboarding).
         return {
-            "transport": "stdio",  # Claude Desktop 默认 stdio
+            "transport": "stdio",  # Claude Desktop defaults to stdio
             "port": self.desk.mcp_gateway_port,
             "tools_count": len(self.list_tools()),
             "protocol_version": MCP_PROTOCOL_VERSION,

@@ -71,6 +71,7 @@ def _registry():
                 "kind": "plugin",
                 "category": "context",
                 "source": "fusion-plugins-ecosystem",
+                # i18n: user-facing
                 "description": {"zh": "压缩", "en": "compress"},
                 "doc": "plugins/caveman_compressor.md",
             },
@@ -79,6 +80,7 @@ def _registry():
                 "kind": "skill",
                 "category": "web",
                 "source": "fusion-plugins-ecosystem",
+                # i18n: user-facing
                 "description": {"zh": "检索", "en": "search"},
                 "doc": "skills/web_search.md",
             },

@@ -1,4 +1,4 @@
-"""MCP JSON-RPC 处理器测试。"""
+"""MCP JSON-RPC handler tests."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def _no_tool_manifest() -> PluginManifest:
     )
 
 
-# ── 响应构造 ──
+# ── Response construction ──
 
 
 def test_error_response_structure() -> None:
@@ -292,7 +292,7 @@ async def test_handle_ping_returns_result() -> None:
     assert resp["result"] == {}
 
 
-# ── C12: 会话管理 ──
+# ── C12: session management ──
 
 
 async def test_session_tracking_on_tools_call() -> None:
@@ -348,7 +348,7 @@ async def test_prune_sessions() -> None:
     assert "new" in handler._sessions
 
 
-# ── C13: 速率限制 ──
+# ── C13: rate limiting ──
 
 
 async def test_rate_limit_allows_under_limit() -> None:

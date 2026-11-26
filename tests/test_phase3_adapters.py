@@ -1,4 +1,4 @@
-"""SkillAdapter / AgentAdapter / PluginBundleGenerator 测试。"""
+"""SkillAdapter / AgentAdapter / PluginBundleGenerator tests."""
 
 from __future__ import annotations
 

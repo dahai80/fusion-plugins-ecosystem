@@ -1,4 +1,4 @@
-"""HookAdapter 测试。"""
+"""HookAdapter tests."""
 
 from __future__ import annotations
 

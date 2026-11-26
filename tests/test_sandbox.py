@@ -1,4 +1,4 @@
-"""插件沙箱测试。"""
+"""Plugin sandbox tests."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from fusion_plugins_ecosystem.sandbox import (
 )
 from fusion_plugins_ecosystem.schema import SandboxMode
 
-# ── 模块级入口（PROCESS 沙箱通过 importlib 导入，不能用闭包/局部函数）──
+# ── Module-level entry (PROCESS sandbox imports via importlib; closures/local functions not allowed) ──
 
 
 def _sync_worker_entry(desk, params):
@@ -228,7 +228,7 @@ def test_build_worker_script_string_entry() -> None:
     sandbox = PluginSandbox()
     script = sandbox._build_worker_script("mymod:myfunc", {"k": "v"}, ResourceLimits())
     assert "_ENTRY='mymod:myfunc'" in script
-    # P0-3：config 经 repr 序列化为 Python 字面量（'k': 'v'），非 json 'k': 'v'
+    # P0-3: config serialized via repr into a Python literal ('k': 'v'), not JSON "k": "v"
     assert "'k': 'v'" in script
     assert "_MEM_LIMIT_MB=512" in script
 
@@ -349,11 +349,11 @@ async def test_lifecycle_disable_kills_sandbox() -> None:
     mock_sandbox.kill.assert_called_once_with("process_plugin")
 
 
-# ── 真实子进程沙箱（验证 worker IPC 端到端）──
+# ── Real subprocess sandbox (verifies worker IPC end to end) ──
 
 
 async def test_sandbox_real_subprocess_sync_entry() -> None:
-    """真实子进程：同步入口 entry(desk, params) 签名，验证 desk 代理与结果回传。"""
+    """Real subprocess: sync entry(desk, params) signature, verifying the desk proxy and result round-trip."""
     sandbox = PluginSandbox(default_limits=ResourceLimits(timeout_seconds=10))
     await sandbox.spawn("real_plugin", entry_point=_sync_worker_entry, config={})
     try:
@@ -364,7 +364,7 @@ async def test_sandbox_real_subprocess_sync_entry() -> None:
 
 
 async def test_sandbox_real_subprocess_async_entry() -> None:
-    """真实子进程：异步入口 entry(desk, params) 签名，验证 asyncio.run 路径。"""
+    """Real subprocess: async entry(desk, params) signature, verifying the asyncio.run path."""
     sandbox = PluginSandbox(default_limits=ResourceLimits(timeout_seconds=10))
     await sandbox.spawn("async_plugin", entry_point=_async_worker_entry, config={})
     try:
@@ -375,7 +375,7 @@ async def test_sandbox_real_subprocess_async_entry() -> None:
 
 
 async def test_sandbox_real_subprocess_entry_error_propagates() -> None:
-    """真实子进程：入口抛错时，宿主通过 error 消息收到异常。"""
+    """Real subprocess: when the entry raises, the host receives the exception via an error message."""
     sandbox = PluginSandbox(default_limits=ResourceLimits(timeout_seconds=10))
     await sandbox.spawn("err_plugin", entry_point=_error_worker_entry, config={})
     try:
@@ -386,7 +386,7 @@ async def test_sandbox_real_subprocess_entry_error_propagates() -> None:
 
 
 async def test_sandbox_real_subprocess_dead_resolves_pending() -> None:
-    """真实子进程：进程退出后，等待中的调用应以异常结束而非永久挂起。"""
+    """Real subprocess: after the process exits, pending calls must end with an exception instead of hanging forever."""
     sandbox = PluginSandbox(default_limits=ResourceLimits(timeout_seconds=10))
     await sandbox.spawn("exit_plugin", entry_point=_exit_worker_entry, config={})
     try:

@@ -1,4 +1,4 @@
-"""EcosystemConfig 测试。"""
+"""EcosystemConfig tests."""
 
 from __future__ import annotations
 

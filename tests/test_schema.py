@@ -1,4 +1,4 @@
-"""schema.py 单元测试。"""
+"""schema.py unit tests."""
 
 from __future__ import annotations
 

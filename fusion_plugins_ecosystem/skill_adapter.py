@@ -1,12 +1,10 @@
-"""Claude Code Skill 适配器。
-
-将 PluginManifest 导出为 Claude Code Skill 格式：
-- SKILL.md（YAML frontmatter + body）
-- references/（参考文档）
-- scripts/（可执行脚本）
-
-替代旧 claude_adapter.py，输出符合 2026 Claude Code Plugin 规范。
-"""
+# Claude Code Skill adapter.
+# Exports a PluginManifest into the Claude Code Skill format:
+# - SKILL.md (YAML frontmatter + body)
+# - references/ (reference docs)
+# - scripts/ (executable scripts)
+# Replaces the old claude_adapter.py; outputs conform to the 2026 Claude
+# Code Plugin spec.
 
 from __future__ import annotations
 
@@ -26,10 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 def build_skill_dict(manifest: PluginManifest) -> dict[str, Any]:
-    """PluginManifest → Claude Skill 描述字典（SSOT，E7）。
-
-    skill_adapter 与 legacy claude_adapter 共用此实现，避免 input_schema 双份逻辑漂移。
-    """
+    # PluginManifest → Claude Skill description dict (SSOT, E7).
+    # skill_adapter and legacy claude_adapter share this implementation to
+    # avoid a duplicated input_schema logic drift.
     properties: dict[str, Any] = {}
     required: list[str] = []
     for param in manifest.params:
@@ -67,21 +64,18 @@ def build_skill_dict(manifest: PluginManifest) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class SkillBundle:
-    """Claude Code Skill 包。"""
-
+    # Claude Code Skill bundle.
     skill_md: str
     references: dict[str, str] = field(default_factory=dict)
     scripts: dict[str, str] = field(default_factory=dict)
 
 
 class SkillAdapter:
-    """插件 → Claude Code Skill 导出器。
-
-    用法：
-        adapter = SkillAdapter(registry)
-        bundle = adapter.export_skill("caveman_compress")
-        bundles = adapter.export_all()
-    """
+    # Plugin → Claude Code Skill exporter.
+    # Usage:
+    #     adapter = SkillAdapter(registry)
+    #     bundle = adapter.export_skill("caveman_compress")
+    #     bundles = adapter.export_all()
 
     def __init__(self, registry: PluginRegistry) -> None:
         self._registry = registry
@@ -205,15 +199,16 @@ class SkillAdapter:
             return f"'{escaped}'"
         return value
 
-    # ── 向后兼容：保留旧 ClaudeSkillAdapter 接口 ──
+    # ── Backward compat: keep the old ClaudeSkillAdapter interface ──
 
     def export_one(self, plugin_id: str) -> dict[str, Any] | None:
-        """旧接口兼容：返回 dict 格式 Skill 描述。"""
+        # Legacy interface compat: returns the Skill description as a dict.
         manifest = self._registry.get(plugin_id)
         if manifest is None:
             return None
         return self._manifest_to_skill_dict(manifest)
 
     def _manifest_to_skill_dict(self, manifest: PluginManifest) -> dict[str, Any]:
-        # E7：委托模块级 SSOT，避免与 legacy claude_adapter 逻辑漂移
+        # E7: delegate to the module-level SSOT to avoid logic drift with
+        # legacy claude_adapter.
         return build_skill_dict(manifest)

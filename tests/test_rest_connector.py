@@ -1,4 +1,4 @@
-"""rest_connector 测试：校验 / 通道拆分 / 持久化 / 执行契约。"""
+"""rest_connector tests: validation / channel split / persistence / execution contract."""
 
 import json
 import threading
@@ -16,7 +16,7 @@ def _env(tmp_path, monkeypatch):
 
 
 class _Handler(BaseHTTPRequestHandler):
-    def log_message(self, *a):  # 静音访问日志
+    def log_message(self, *a):  # silence access log
         pass
 
     def _json(self, code, body):
@@ -75,7 +75,7 @@ def _doc(base_url):
     }
 
 
-# ── 静态校验 ──
+# ── Static validation ──
 
 
 def test_validate_ok():
@@ -122,7 +122,7 @@ def test_validate_auth_requires_credential_fields():
     assert any("credential_fields" in p for p in rc.validate_connector(doc))
 
 
-# ── 通道拆分 ──
+# ── Channel split ──
 
 
 def test_read_write_channels():
@@ -132,7 +132,7 @@ def test_read_write_channels():
     assert rc.write_channels(doc) == ["erp.order.push"]
 
 
-# ── 持久化 ──
+# ── Persistence ──
 
 
 def test_save_get_list_delete_roundtrip():
@@ -155,7 +155,7 @@ def test_get_unreadable_file(tmp_path):
     assert rc.get_connector("bad") is None
 
 
-# ── 执行契约 ──
+# ── Execution contract ──
 
 
 async def test_execute_rest_ok_with_extraction(server):

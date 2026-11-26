@@ -1,9 +1,8 @@
-"""生态配置面板（一键开关）。
-
-对应 PRD「Claude 接入开关（生态配置面板）」：
-ecosystem 后台提供一键开关：启用 Claude MCP 对外暴露、
-自动导出插件为 Claude Skill、子代理超时自动销毁。
-"""
+# Ecosystem config panel (one-click toggles).
+# Maps to PRD "Claude integration switch (ecosystem config panel)": the
+# ecosystem backend exposes one-click toggles for Claude MCP exposure,
+# automatic plugin-to-Claude-Skill export, and subagent auto-destroy on
+# timeout.
 
 from __future__ import annotations
 
@@ -17,90 +16,93 @@ from fusion_core.config import service_data_dir
 
 logger = logging.getLogger(__name__)
 
-# issue #38：数据目录单点解析（fusion-core #31, config-conventions §1）。
-# env 覆盖：FUSION_PLUGINS_ECOSYSTEM_DATA_DIR；default 锁定既有部署路径
-# ~/.fusion-plugins-ecosystem（fm- key / key_salt / vault 已落盘于此，不迁移）。
+# issue #38: single-point data dir resolution (fusion-core #31, config-conventions §1).
+# env override: FUSION_PLUGINS_ECOSYSTEM_DATA_DIR; default locks the existing
+# deployment path ~/.fusion-plugins-ecosystem (fm- key / key_salt / vault
+# already persisted there, not migrated).
 DATA_DIR = service_data_dir(
     "plugins-ecosystem",
     default=Path.home() / ".fusion-plugins-ecosystem",
 )
 
 
+# Ecosystem config (persisted to the Desk config center).
+# All toggles default to True, matching the PRD goal of "fully native
+# Claude compatibility".
 @dataclass
 class EcosystemConfig:
-    """生态配置（持久化到 Desk 配置中心）。
-
-    所有开关默认 True，对应 PRD「原生完整兼容 Claude」的设计目标。
-    """
-
-    # ── Claude 全链路 ──
-    # 启用 Claude MCP 对外暴露
+    # ── Claude full chain ──
+    # Expose Claude MCP externally
     enable_claude_mcp: bool = True
-    # 自动导出插件为 Claude Skill
+    # Auto-export plugins as Claude Skills
     auto_export_claude_skill: bool = True
-    # 子代理超时自动销毁（对应 PRD「子代理超时自动销毁」）
+    # Auto-destroy subagents on timeout (PRD "subagent timeout auto-destroy")
     subagent_timeout_destroy: bool = True
-    # 默认挂载 token 压缩插件给 Claude 会话
+    # Mount the token compression plugin to Claude sessions by default
     default_mount_compressor: bool = True
 
-    # ── 火山方舟 Claude Coding Plan ──
-    # 兼容火山方舟 Claude Coding Plan 套餐鉴权
+    # ── Volcengine Claude Coding Plan ──
+    # Support Volcengine Claude Coding Plan credential auth
     enable_volcengine_claude_plan: bool = True
 
-    # ── 痛点配套 ──
-    # 插件日志统一汇总到 Desk
+    # ── Pain-point companions ──
+    # Aggregate plugin logs into Desk
     unified_log_to_desk: bool = True
-    # 混合量化支持（fusion-mlx 本地推理作为 Claude 视觉/图像生成后端）
+    # Mixed quantization support (fusion-mlx local inference as Claude
+    # vision/image generation backend)
     enable_mixed_quantization: bool = True
 
-    # ── 超时阈值 ──
-    # 子代理默认超时秒数
+    # ── Timeout thresholds ──
+    # Default subagent timeout in seconds
     subagent_timeout_seconds: int = 600
-    # 心跳超时阈值（秒）
+    # Heartbeat stale threshold (seconds)
     heartbeat_stale_seconds: int = 120
-    # 最大自动重启次数
+    # Max automatic restarts
     max_auto_restart: int = 3
 
-    # ── MCP 服务 ──
-    # MCP 传输类型
+    # ── MCP service ──
+    # MCP transport type
     mcp_transport: str = "stdio"
-    # MCP 监听主机
+    # MCP listen host
     mcp_host: str = "127.0.0.1"
-    # MCP 监听端口（0 = auto）
+    # MCP listen port (0 = auto)
     mcp_port: int = 0
 
-    # ── 沙箱 ──
-    # 默认沙箱模式
+    # ── Sandbox ──
+    # Default sandbox mode
     sandbox_default_mode: str = "inline"
 
-    # ── Studio 语义对齐字段（A3 修复：原先被错误映射到 mcp_transport/mcp_port
-    # 等无关字段，现补齐真实后端字段，Studio 键 1:1 对齐）──
-    # 日志级别（DEBUG/INFO/WARNING/ERROR），启动时应用到 logging
+    # ── Studio semantic alignment fields (A3 fix: these were previously
+    # mis-mapped to unrelated fields like mcp_transport/mcp_port; now the
+    # real backend fields are filled in, Studio keys 1:1 aligned) ──
+    # Log level (DEBUG/INFO/WARNING/ERROR), applied to logging at startup
     log_level: str = "INFO"
-    # 显存全局上限（MB），启动时同步到 DeskRuntime.vram_total_mb
+    # Global VRAM cap (MB), synced to DeskRuntime.vram_total_mb at startup
     vram_limit_mb: int = 0
-    # 最大并发执行插件数（inline 线程池并发闸）
+    # Max concurrently executing plugins (inline thread pool concurrency gate)
     max_concurrent_plugins: int = 16
 
-    # ── 计量 ──
-    # Token 记录最大条数
+    # ── Metering ──
+    # Max token records kept
     max_token_records: int = 10000
-    # Token 记录持久化路径（None=纯内存）
+    # Token record persistence path (None = in-memory only)
     token_persist_path: str | None = None
 
-    # ── 连接器框架 ──
-    # 启用外部 MCP 连接器框架（connector pack 安装/工具桥接）
+    # ── Connector framework ──
+    # Enable the external MCP connector framework (connector pack install /
+    # tool bridging)
     enable_connector_framework: bool = True
-    # 连接器注册表持久化路径（None=纯内存）
+    # Connector registry persistence path (None = in-memory only)
     connector_persist_path: str | None = None
-    # 连接器市场索引（本地 JSON 路径或 HTTPS URL，None=仅内置目录）
+    # Connector marketplace index (local JSON path or HTTPS URL,
+    # None = builtin catalog only)
     connector_marketplace_index: str | None = None
 
-    # ── 变更回调 ──
+    # ── Change callbacks ──
     _observers: list[Callable[[str, Any, Any], None]] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict[str, object]:
-        """序列化为字典（供 Desk 配置中心持久化）。"""
+        # Serialize to a dict (for Desk config center persistence).
         return {
             "enable_claude_mcp": self.enable_claude_mcp,
             "auto_export_claude_skill": self.auto_export_claude_skill,
@@ -128,7 +130,7 @@ class EcosystemConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> tuple[EcosystemConfig, list[str]]:
-        """从字典反序列化，返回 (config, warnings)。"""
+        # Deserialize from a dict, returning (config, warnings).
         defaults = cls().to_dict()
         merged = {**defaults, **data}
         warnings: list[str] = []
@@ -139,7 +141,7 @@ class EcosystemConfig:
                 return val
             if isinstance(val, str):
                 return val.lower() in ("true", "1", "yes")
-            warnings.append(f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值")
+            warnings.append(f"config.{key}: type mismatch {type(val).__name__}, using default")
             return defaults[key]  # type: ignore[return-value]
 
         def _safe_int(key: str, min_val: int = 0, max_val: int = 100000) -> int:
@@ -147,21 +149,21 @@ class EcosystemConfig:
             try:
                 result = int(val)  # type: ignore[arg-type]
                 if result < min_val or result > max_val:
-                    warnings.append(f"config.{key}: {result} 超出范围 [{min_val},{max_val}]")
+                    warnings.append(f"config.{key}: {result} out of range [{min_val},{max_val}]")
                     return defaults[key]  # type: ignore[return-value]
                 return result
             except (ValueError, TypeError):
-                warnings.append(f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值")
+                warnings.append(f"config.{key}: type mismatch {type(val).__name__}, using default")
                 return defaults[key]  # type: ignore[return-value]
 
         def _safe_str(key: str, allowed: tuple[str, ...] | None = None) -> str:
             val = merged[key]
             if isinstance(val, str):
                 if allowed and val not in allowed:
-                    warnings.append(f"config.{key}: {val!r} 不在 {allowed} 中, 使用默认值")
+                    warnings.append(f"config.{key}: {val!r} not in {allowed}, using default")
                     return defaults[key]  # type: ignore[return-value]
                 return val
-            warnings.append(f"config.{key}: 类型不匹配 {type(val).__name__}, 使用默认值")
+            warnings.append(f"config.{key}: type mismatch {type(val).__name__}, using default")
             return defaults[key]  # type: ignore[return-value]
 
         config = cls(
@@ -195,7 +197,7 @@ class EcosystemConfig:
         return config, warnings
 
     def validate(self) -> list[str]:
-        """返回验证错误列表（空列表表示全部合法）。"""
+        # Return validation errors (empty list means all valid).
         errors: list[str] = []
         if self.subagent_timeout_seconds <= 0:
             errors.append("subagent_timeout_seconds must be > 0")
@@ -210,13 +212,13 @@ class EcosystemConfig:
         return errors
 
     def add_observer(self, callback: Callable[[str, Any, Any], None]) -> None:
-        """添加配置变更回调。"""
+        # Register a config change callback.
         self._observers.append(callback)
 
     def _notify_change(self, key: str, old_value: Any, new_value: Any) -> None:
-        """通知配置变更。"""
+        # Notify observers of a config change.
         for obs in self._observers:
             try:
                 obs(key, old_value, new_value)
             except Exception as exc:
-                logger.warning("config: observer 异常: %s", exc)
+                logger.warning("config: observer exception: %s", exc)

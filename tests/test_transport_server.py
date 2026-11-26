@@ -1,4 +1,4 @@
-"""MCP 传输层 + Server 测试。"""
+"""MCP transport layer + server tests."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from fusion_plugins_ecosystem.transport import (
     create_transport,
 )
 
-# ── create_transport 工厂 ──
+# ── create_transport factory ──
 
 
 def test_create_transport_stdio() -> None:
@@ -42,7 +42,7 @@ def test_create_transport_unknown_raises() -> None:
         create_transport("websocket")
 
 
-# ── StdioTransport basic ──
+# ── StdioTransport basics ──
 
 
 def test_stdio_transport_init() -> None:
@@ -149,30 +149,31 @@ async def test_http_transport_request_response() -> None:
 
 
 async def test_sse_send_to_session_drops_when_queue_full() -> None:
-    """P3-6b：满队丢弃事件而非阻塞。填满队列后 send_to_session 不挂起、不抛。"""
+    """P3-6b: drop events on a full queue instead of blocking. Once the queue is full, send_to_session neither hangs nor raises."""
     from fusion_plugins_ecosystem.transport import _SSE_QUEUE_MAXSIZE
 
-    # 生产队列上限存在且为正
+    # The production queue cap exists and is positive
     assert _SSE_QUEUE_MAXSIZE > 0
 
     t = SSETransport()
-    # 直接构造一个已满队列的 session（绕过握手，隔离测试队列边界）
+    # Directly build a session with a full queue (bypasses the handshake,
+    # isolating the queue-boundary behavior)
     full_q: asyncio.Queue = asyncio.Queue(maxsize=2)
     t._sessions["full"] = full_q
     full_q.put_nowait("data: a\n\n")
     full_q.put_nowait("data: b\n\n")
     assert full_q.full()
-    # 超容 send 应立即返回（丢弃），不阻塞
+    # An over-cap send must return immediately (dropped), not block
     await asyncio.wait_for(t.send_to_session("full", {"x": 1}), timeout=2.0)
-    # 队列仍 2 条（丢弃新事件）
+    # Queue still has 2 items (the new event was dropped)
     assert full_q.qsize() == 2
 
-    # 极小 maxsize 边界：单条即满
+    # Tiny-maxsize boundary: a single item fills it
     one_q: asyncio.Queue = asyncio.Queue(maxsize=1)
     t._sessions["one"] = one_q
     await t.send_to_session("one", {"y": 1})
     assert one_q.qsize() == 1
-    await t.send_to_session("one", {"y": 2})  # 满后丢弃
+    await t.send_to_session("one", {"y": 2})  # dropped once full
     assert one_q.qsize() == 1
 
 
@@ -180,7 +181,7 @@ async def test_sse_send_to_session_drops_when_queue_full() -> None:
 
 
 async def test_sse_transport_post_round_trip() -> None:
-    """真实回环：SSETransport 处理 HTTP POST 请求并返回 JSON-RPC 响应。"""
+    """Real round trip: SSETransport handles an HTTP POST and returns a JSON-RPC response."""
 
     async def handler(request: dict) -> dict:
         return {
@@ -228,7 +229,7 @@ async def test_sse_transport_post_round_trip() -> None:
 
 
 async def test_sse_transport_get_handshake() -> None:
-    """真实回环：SSETransport 处理 GET 请求，建立 SSE 事件流。"""
+    """Real round trip: SSETransport handles a GET request and establishes an SSE event stream."""
     t = SSETransport(handler=None, host="127.0.0.1", port=0)
     await t.start()
     port = t.port
@@ -254,8 +255,8 @@ async def test_sse_transport_get_handshake() -> None:
 
 
 async def test_sse_transport_get_unknown_path_404() -> None:
-    """issue #62：SSETransport 对非 /sse 的 GET 返回 404 快速失败，
-    不再 200-then-hang（挂起会骗过健康探针，掩盖上游误路由）。"""
+    """issue #62: SSETransport returns 404 fast-fail for GETs to non-/sse paths,
+    no longer 200-then-hang (a hang fools health probes and masks upstream misrouting)."""
     t = SSETransport(handler=None, host="127.0.0.1", port=0)
     await t.start()
     port = t.port
@@ -275,7 +276,7 @@ async def test_sse_transport_get_unknown_path_404() -> None:
 
 
 async def test_http_transport_bad_request() -> None:
-    """真实回环：HTTPTransport 对非 POST/无 body 请求返回 404（issue #62）。"""
+    """Real round trip: HTTPTransport returns 404 for non-POST/bodyless requests (issue #62)."""
     t = HTTPTransport(handler=None, host="127.0.0.1", port=0)
     await t.start()
     port = t.port
@@ -293,8 +294,9 @@ async def test_http_transport_bad_request() -> None:
 
 
 async def test_http_transport_bad_request_closes_connection() -> None:
-    """404 错误路径必须关闭连接（HTTP/Connection: close），否则客户端
-    阻塞读 EOF 致测试超时挂起。回归 HTTPTransport 非 POST 漏 close（issue #62）。"""
+    """The 404 error path must close the connection (HTTP/Connection: close), otherwise the
+    client blocks reading for EOF and the test times out. Regression guard for HTTPTransport's
+    non-POST missing close (issue #62)."""
     t = HTTPTransport(handler=None, host="127.0.0.1", port=0)
     await t.start()
     port = t.port
@@ -305,8 +307,9 @@ async def test_http_transport_bad_request_closes_connection() -> None:
 
     response_line = await reader.readline()
     assert b"404 Not Found" in response_line
-    # read(-1) 仅在 EOF 返回；服务端写完 400 后主动关连接，
-    # 故 wait_for 内必返回（证明连接已关闭，非永久挂起泄漏）。
+    # read(-1) only returns at EOF; the server closes the connection itself
+    # after writing the 400, so wait_for must return (proving the connection
+    # closed, not a permanent hang/leak).
     rest = await asyncio.wait_for(reader.read(-1), timeout=5)
     assert b"Connection: close" in rest
 
@@ -364,10 +367,11 @@ async def test_mcp_server_handler_tools_list() -> None:
 
 
 async def test_mcp_server_start_stop_sse() -> None:
-    """真实启动/停止生命周期：SSE transport + register_builtin + keep-alive + stop。
+    """Real start/stop lifecycle: SSE transport + register_builtin + keep-alive + stop.
 
-    关键断言：start() 必须阻塞不返回（否则 asyncio.run 结束、CLI 闪退）。
-    通过检查 start_task 仍 pending 确保服务真正存活。
+    Key assertion: start() must block and not return (otherwise asyncio.run ends
+    and the CLI exits immediately). Checking that start_task is still pending
+    ensures the server is genuinely alive.
     """
     server = MCPServer(config=EcosystemConfig(mcp_transport="sse", mcp_port=0))
     start_task = asyncio.create_task(server.start(transport="sse"))
@@ -375,8 +379,8 @@ async def test_mcp_server_start_stop_sse() -> None:
     assert server._running is True
     assert server.transport is not None
     assert server.registry.get("caveman_compress") is not None
-    # keep-alive：start() 未返回，任务仍 pending（非 done）
-    assert not start_task.done(), "start() 提前返回，服务未保活"
+    # keep-alive: start() has not returned, the task is still pending (not done)
+    assert not start_task.done(), "start() returned early, server not kept alive"
     assert server.registry.get("caveman_compress").version == __version__
 
     await server.stop()
@@ -385,17 +389,17 @@ async def test_mcp_server_start_stop_sse() -> None:
 
 
 async def test_mcp_server_start_already_running_noop() -> None:
-    """二次 start 应幂等返回，不重复注册/启动。
+    """A second start should return idempotently without re-registering/re-starting.
 
-    start() 现已阻塞保活（keep-alive），故首次 start 须作为后台任务，
-    否则 await 直接死等 stop_event。
+    start() now blocks to keep the server alive (keep-alive), so the first start
+    must run as a background task, otherwise await dead-waits on stop_event.
     """
     server = MCPServer(config=EcosystemConfig(mcp_transport="sse", mcp_port=0))
     start_task = asyncio.create_task(server.start(transport="sse"))
     await asyncio.sleep(0.3)
     assert server._running is True
     builtin_count_before = len(server.registry.list())
-    # 二次 start：_running 已 True → 幂等返回，不阻塞
+    # Second start: _running is already True -> idempotent return, no blocking
     await asyncio.wait_for(server.start(transport="sse"), timeout=2)
     builtin_count_after = len(server.registry.list())
     assert builtin_count_before == builtin_count_after
@@ -404,18 +408,18 @@ async def test_mcp_server_start_already_running_noop() -> None:
 
 
 async def test_mcp_server_stop_when_not_running_noop() -> None:
-    """未启动时 stop 应安全返回。"""
+    """stop should return safely when not started."""
     server = MCPServer()
     await server.stop()
     assert server._running is False
 
 
 async def test_mcp_server_stdio_signal_stop(monkeypatch) -> None:
-    """stdio 路径：模拟信号处理器触发 stop_event，验证 start 正常退出。
+    """stdio path: simulate a signal handler triggering stop_event and verify start exits cleanly.
 
-    实例级 patch loop.add_signal_handler：SelectorEventLoop 自身实现了
-    add_signal_handler 会遮蔽 AbstractEventLoop 上的类级 patch，故必须
-    patch 运行中的 loop 实例。
+    Instance-level patch of loop.add_signal_handler: SelectorEventLoop implements
+    its own add_signal_handler, which shadows a class-level patch on
+    AbstractEventLoop, so the running loop instance must be patched.
     """
     server = MCPServer(config=EcosystemConfig(mcp_transport="stdio"))
 
@@ -444,7 +448,7 @@ async def test_mcp_server_stdio_signal_stop(monkeypatch) -> None:
 
 
 def test_main_cli_sse_start_stop(monkeypatch, tmp_path) -> None:
-    """main() CLI：解析参数 → 构造 MCPServer → 启动 sse → 自动停止。"""
+    """main() CLI: parse args -> build MCPServer -> start sse -> auto-stop."""
     monkeypatch.setattr(
         sys,
         "argv",
@@ -476,7 +480,7 @@ def test_main_cli_sse_start_stop(monkeypatch, tmp_path) -> None:
 
 
 def test_main_cli_keyboard_interrupt(monkeypatch) -> None:
-    """main() CLI：KeyboardInterrupt 被吞掉，正常退出（覆盖 except 分支）。"""
+    """main() CLI: KeyboardInterrupt is swallowed and exit is clean (covers the except branch)."""
     monkeypatch.setattr(
         sys,
         "argv",

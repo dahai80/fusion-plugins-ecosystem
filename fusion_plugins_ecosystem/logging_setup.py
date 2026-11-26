@@ -1,13 +1,14 @@
-"""结构化日志（P3-6）。
-
-提供 JSON 日志 Formatter + correlation_id 贯穿单次请求：
-- JsonFormatter：每条日志输出一行 JSON（ts/level/name/msg/correlation_id/...），
-  便于聚合系统（ELK/Loki）检索与关联。
-- correlation_id：contextvars.ContextVar，transport 接到请求时 stamp，
-  handler 链路内所有日志自动带上同一 cid，跨模块可串联。
-
-退化：JSON 格式化失败回退纯文本，绝不抛错吞日志。
-"""
+# Structured logging (P3-6).
+# Provides a JSON log formatter + correlation_id threading through a single
+# request:
+# - JsonFormatter: emits each log as one JSON line
+#   (ts/level/name/msg/correlation_id/...) so aggregation systems
+#   (ELK/Loki) can search and correlate.
+# - correlation_id: contextvars.ContextVar, stamped when the transport
+#   receives a request; all logs in the handler chain automatically carry
+#   the same cid and can be traced across modules.
+# Degradation: JSON formatting failure falls back to plain text — never
+# raises or swallows logs.
 
 from __future__ import annotations
 
@@ -17,31 +18,33 @@ import sys
 from contextvars import ContextVar
 from typing import Any
 
-# 当前请求关联 ID（transport 入口 set，handler 链路内 get）
+# Current request correlation ID (set at the transport entry, read in the
+# handler chain)
 correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 
 
 def set_correlation_id(cid: str | None) -> Any:
-    """设置当前上下文 correlation_id，返回 token 供 reset_correlation_id 还原。"""
+    # Set the correlation_id for the current context; returns a token for
+    # reset_correlation_id to restore.
     return correlation_id.set(cid)
 
 
 def reset_correlation_id(token: Any) -> None:
-    """还原 correlation_id 到 set 前状态（请求结束调用）。"""
+    # Restore correlation_id to its pre-set state (call at request end).
     correlation_id.reset(token)
 
 
 def get_correlation_id() -> str | None:
-    """读取当前上下文 correlation_id（日志 Formatter 调用）。"""
+    # Read the correlation_id for the current context (used by the log formatter).
     return correlation_id.get()
 
 
 class JsonFormatter(logging.Formatter):
-    """单行 JSON 日志 Formatter。
-
-    输出字段：ts(ISO)/level/name/msg/correlation_id + record.extra(record 自带)。
-    异常 traceback 入 exc_info 字段（多行字符串），不破坏 JSON 单行结构。
-    """
+    # Single-line JSON log formatter.
+    # Output fields: ts(ISO)/level/name/msg/correlation_id +
+    # record.extra (record-provided). Exception traceback goes into the
+    # exc_info field (multi-line string) without breaking the single-line
+    # JSON structure.
 
     _RESERVED = frozenset(
         {
@@ -79,7 +82,8 @@ class JsonFormatter(logging.Formatter):
         cid = get_correlation_id()
         if cid:
             payload["correlation_id"] = cid
-        # record 自带 extra 字段（logger.info(..., extra={...})）入 payload
+        # record-provided extra fields (logger.info(..., extra={...})) go
+        # into the payload
         for key, val in record.__dict__.items():
             if key not in self._RESERVED and not key.startswith("_"):
                 try:
@@ -94,7 +98,7 @@ class JsonFormatter(logging.Formatter):
         try:
             return json.dumps(payload, ensure_ascii=False, default=str)
         except Exception:
-            # JSON 序列化失败回退纯文本，绝不丢日志
+            # JSON serialization failed; fall back to plain text, never lose the log
             return (
                 f'{{"ts":"{payload.get("ts", "")}","level":"{payload.get("level", "")}",'
                 f'"name":"{payload.get("name", "")}","msg":'
@@ -103,10 +107,9 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_structured_logging(level: int = logging.INFO) -> None:
-    """配置根 logger 使用 JsonFormatter，输出到 stderr。
-
-    幂等：重复调用只清旧 handler 再装，不叠加。
-    """
+    # Configure the root logger to use JsonFormatter, output to stderr.
+    # Idempotent: repeated calls remove old handlers before installing, no
+    # stacking.
     root = logging.getLogger()
     root.setLevel(level)
     for h in list(root.handlers):
