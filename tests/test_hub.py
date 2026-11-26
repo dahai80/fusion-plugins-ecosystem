@@ -60,7 +60,8 @@ class TestBuiltinBootstrap:
         assert console.registry.get("caveman_compress") is not None
 
     def test_builtin_idempotent_on_injected_registry(self, console):
-        # Re-constructing with an already-registered injected registry must not blow up (register is idempotent for the same version)
+        # Re-constructing with an already-registered injected registry must not
+        # blow up (register is idempotent for the same version)
         console2 = ExtensionsConsole(
             desk=console.desk,
             registry=console.registry,
@@ -117,7 +118,8 @@ class TestSearch:
         assert any(i["id"] == "caveman_compress" for i in hub["tabs"]["skills"])
 
     def test_search_hits_recommended_connector_pack(self, console):
-        # Search hits the connector type even with no connector installed — recommended market entries join the search surface
+        # Search hits the connector type even with no connector installed —
+        # recommended market entries join the search surface
         hub = console.list_hub("notion")
         hits = hub["tabs"]["connectors"]
         assert any(i["id"] == "notion" and i["recommended"] for i in hits)

@@ -19,7 +19,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class ResourceLimits:
     grace_period_seconds: int = 10
 
 
-class SandboxHealth(str, Enum):
+class SandboxHealth(StrEnum):
     # Sandbox health states.
 
     ALIVE = "alive"

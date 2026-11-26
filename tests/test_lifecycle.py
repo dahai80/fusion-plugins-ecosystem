@@ -606,7 +606,8 @@ def test_list_by_state_filters() -> None:
 
 
 async def test_enable_with_retry_succeeds_after_transient_vram() -> None:
-    """Transient errors like vRAM request failure should be retried and eventually succeed (without burning the crash-restart budget)."""
+    """Transient errors like vRAM request failure should be retried and
+    eventually succeed (without burning the crash-restart budget)."""
 
     def entry(_desk, _params):
         return {"ok": True}

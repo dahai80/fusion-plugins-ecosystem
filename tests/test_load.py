@@ -199,7 +199,7 @@ def test_token_meter_high_freq_record_no_loss_no_crash() -> None:
     meter = TokenMeter(desk, max_records=5000, persist_path=None)
     n = 1000
 
-    for i in range(n):
+    for _ in range(n):
         meter.record(
             TokenRecord(
                 plugin_id="hp",

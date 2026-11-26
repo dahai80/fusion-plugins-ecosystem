@@ -19,14 +19,14 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-class TokenKind(str, Enum):
+class TokenKind(StrEnum):
     # Token consumption categories.
 
     CLAUDE_MODEL = "claude_model"  # Claude model inference

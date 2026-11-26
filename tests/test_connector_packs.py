@@ -62,7 +62,8 @@ def test_credential_providers_declared() -> None:
 
 
 def test_feishu_pack_acceptance_shape() -> None:
-    # issue #27 acceptance: Feishu can read messages/docs into workflows, write results back, and store credentials locally
+    # issue #27 acceptance: Feishu can read messages/docs into workflows,
+    # write results back, and store credentials locally
     tools = {t.name: t for t in FEISHU_PACK.tools}
     assert "im.message.list" in tools and tools["im.message.list"].read_only
     assert "docx.document.read" in tools

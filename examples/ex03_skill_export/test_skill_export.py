@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 
 import fusion_plugins_ecosystem as fpe
-from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
-
 from examples.ex03_skill_export.skill_plugin import FORMAT_REPORT_MANIFEST
+from fusion_plugins_ecosystem.skill_adapter import SkillAdapter
 
 
 def test_skill_bundle_frontmatter():

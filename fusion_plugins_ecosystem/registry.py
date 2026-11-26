@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +40,7 @@ def _version_key(version: str) -> tuple:
     return tuple(parts)
 
 
-class PluginCategory(str, Enum):
+class PluginCategory(StrEnum):
     # Plugin categories (per PRD "Claude Code exclusive plugin categories").
 
     CODING_PLAN = "coding_plan"  # coding-plan accelerator plugins
@@ -54,7 +54,7 @@ class PluginCategory(str, Enum):
     CUSTOM = "custom"
 
 
-class PluginCapability(str, Enum):
+class PluginCapability(StrEnum):
     # Plugin capability declarations, drive MCP Tools / Claude Skill
     # auto-exposure.
 

@@ -5,10 +5,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class PluginParamType(str, Enum):
+class PluginParamType(StrEnum):
     # Plugin parameter type enum (replaces free-form strings).
     STRING = "string"
     INT = "int"
@@ -39,7 +39,7 @@ _PARAM_TYPE_MAP: dict[str, str] = {
 }
 
 
-class SandboxMode(str, Enum):
+class SandboxMode(StrEnum):
     # Plugin execution sandbox mode.
     INLINE = "inline"  # in-process execution (backward compat)
     PROCESS = "process"  # separate subprocess (requires sandbox isolation)

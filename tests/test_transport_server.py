@@ -149,7 +149,8 @@ async def test_http_transport_request_response() -> None:
 
 
 async def test_sse_send_to_session_drops_when_queue_full() -> None:
-    """P3-6b: drop events on a full queue instead of blocking. Once the queue is full, send_to_session neither hangs nor raises."""
+    """P3-6b: drop events on a full queue instead of blocking. Once the queue
+    is full, send_to_session neither hangs nor raises."""
     from fusion_plugins_ecosystem.transport import _SSE_QUEUE_MAXSIZE
 
     # The production queue cap exists and is positive
