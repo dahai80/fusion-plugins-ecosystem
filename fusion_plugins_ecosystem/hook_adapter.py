@@ -1,8 +1,7 @@
-"""Claude Code Hook 适配器。
-
-将插件能力映射为 Claude Code Plugin hooks/ 目录下的事件处理器定义，
-支持 PreToolUse / PostToolUse / Notification 等事件类型。
-"""
+# Claude Code Hook adapter.
+# Maps plugin capabilities into event handler definitions under the Claude
+# Code Plugin hooks/ directory; supports PreToolUse / PostToolUse /
+# Notification and other event types.
 
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class HookEvent(str):
-    """Claude Code 支持的 Hook 事件类型。"""
+    # Hook event types supported by Claude Code.
 
     PRE_TOOL_USE = "PreToolUse"
     POST_TOOL_USE = "PostToolUse"
@@ -39,7 +38,7 @@ _CAPABILITY_HOOK_EVENTS: dict[PluginCapability, list[str]] = {
 
 @dataclass(frozen=True)
 class HookDef:
-    """单个 Hook 事件定义。"""
+    # A single hook event definition.
 
     event: str
     plugin_id: str
@@ -56,13 +55,11 @@ class HookDef:
 
 
 class HookAdapter:
-    """插件 → Claude Code Hook 事件导出器。
-
-    用法：
-        adapter = HookAdapter(registry)
-        hooks = adapter.export_hooks("my_plugin")
-        all_hooks = adapter.export_all()
-    """
+    # Plugin → Claude Code hook event exporter.
+    # Usage:
+    #     adapter = HookAdapter(registry)
+    #     hooks = adapter.export_hooks("my_plugin")
+    #     all_hooks = adapter.export_all()
 
     def __init__(self, registry: PluginRegistry) -> None:
         self._registry = registry

@@ -1,8 +1,6 @@
-"""共享 schema 定义。
-
-统一类型映射、MCP annotations、SandboxMode 等，
-供 registry / claude_adapter / mcp_exporter / sandbox 共用。
-"""
+# Shared schema definitions.
+# Unified type mapping, MCP annotations, SandboxMode, etc., shared by
+# registry / claude_adapter / mcp_exporter / sandbox.
 
 from __future__ import annotations
 
@@ -11,8 +9,7 @@ from enum import Enum
 
 
 class PluginParamType(str, Enum):
-    """插件参数类型枚举（替代自由字符串）。"""
-
+    # Plugin parameter type enum (replaces free-form strings).
     STRING = "string"
     INT = "int"
     BOOL = "bool"
@@ -21,7 +18,7 @@ class PluginParamType(str, Enum):
     OBJECT = "object"
 
 
-# JSON Schema 类型映射：PluginParamType → JSON Schema type
+# JSON Schema type mapping: PluginParamType → JSON Schema type
 PARAM_TYPE_TO_JSON_SCHEMA: dict[PluginParamType, str] = {
     PluginParamType.STRING: "string",
     PluginParamType.INT: "integer",
@@ -31,7 +28,7 @@ PARAM_TYPE_TO_JSON_SCHEMA: dict[PluginParamType, str] = {
     PluginParamType.OBJECT: "object",
 }
 
-# 向后兼容：字符串 → JSON Schema type（供旧代码过渡）
+# Backward compat: string → JSON Schema type (transition for older code)
 _PARAM_TYPE_MAP: dict[str, str] = {
     "string": "string",
     "int": "integer",
@@ -43,15 +40,14 @@ _PARAM_TYPE_MAP: dict[str, str] = {
 
 
 class SandboxMode(str, Enum):
-    """插件运行沙箱模式。"""
-
-    INLINE = "inline"  # 进程内执行（向后兼容）
-    PROCESS = "process"  # 独立子进程（需沙箱隔离）
+    # Plugin execution sandbox mode.
+    INLINE = "inline"  # in-process execution (backward compat)
+    PROCESS = "process"  # separate subprocess (requires sandbox isolation)
 
 
 @dataclass(frozen=True)
 class MCPAnnotations:
-    """MCP 工具行为注解（MCP 2026-07-28 规范）。"""
+    # MCP tool behavior annotations (MCP 2026-07-28 spec).
 
     readOnlyHint: bool = False
     destructiveHint: bool = False

@@ -1,14 +1,14 @@
-"""技能/连接器包市场（marketplace）。
-
-对应 issue #27「Skill/plugin marketplace」：
-- 从 JSON 索引（本地路径或 HTTPS URL）拉取可安装包目录，内置第一方目录兜底
-- connector_pack：解析为 ConnectorPack 安装进 ConnectorRegistry（工具桥接为
-  cowork 节点）
-- skill_package：cowork markdown skill 包，安装到本地目录
-- 企业私有市场：把 connector_marketplace_index 指向私有索引 URL 即可
-
-安全约束：远程索引/来源仅允许 HTTPS；git 来源浅克隆到安装目录。
-"""
+# Skill/connector pack marketplace.
+# Maps to issue #27 "Skill/plugin marketplace":
+# - Pulls the installable package catalog from a JSON index (local path or
+#   HTTPS URL), with the builtin first-party catalog as fallback
+# - connector_pack: parsed into a ConnectorPack and installed into
+#   ConnectorRegistry (tools bridged as cowork nodes)
+# - skill_package: cowork markdown skill package, installed to a local dir
+# - Enterprise private marketplace: point connector_marketplace_index at a
+#   private index URL
+# Security constraint: remote index/sources allow HTTPS only; git sources
+# are shallow-cloned into the install dir.
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from fusion_plugins_ecosystem.connector import ConnectorPack, ConnectorRegistry
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_INSTALL_ROOT = str(DATA_DIR / "marketplace")  # issue #38：数据目录单点解析
+DEFAULT_INSTALL_ROOT = str(DATA_DIR / "marketplace")  # issue #38: single-point data dir resolution
 PACKAGE_KINDS = ("connector_pack", "skill_package", "bundle")
 BUNDLE_ITEM_TYPES = (
     "skill",
@@ -38,17 +38,16 @@ BUNDLE_ITEM_TYPES = (
 
 
 @dataclass(frozen=True)
+# Marketplace entry (one row of the index).
 class MarketplaceEntry:
-    """市场条目（索引中的一行）。"""
-
     id: str
-    kind: str  # connector_pack | skill_package | bundle（issue #42）
+    kind: str  # connector_pack | skill_package | bundle (issue #42)
     name: str
     version: str
     description: str = ""
-    source: str | None = None  # git URL / 本地路径（内置包为 None）
-    pack: dict[str, Any] | None = None  # connector_pack 内联定义（内置包）
-    items: list[dict[str, Any]] | None = None  # bundle 条目（issue #42 PC-2）
+    source: str | None = None  # git URL / local path (None for builtin packs)
+    pack: dict[str, Any] | None = None  # inline connector_pack definition (builtin)
+    items: list[dict[str, Any]] | None = None  # bundle entries (issue #42 PC-2)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -63,8 +62,8 @@ class MarketplaceEntry:
 
 
 class Marketplace:
-    """连接器包/技能包市场：索引加载 + 安装/卸载/已装清单。"""
-
+    # Connector pack / skill package marketplace: index loading +
+    # install/uninstall/installed listing.
     def __init__(
         self,
         connector_registry: ConnectorRegistry,
@@ -75,10 +74,10 @@ class Marketplace:
         self.install_root = os.path.expanduser(install_root or DEFAULT_INSTALL_ROOT)
         self.marketplace_index = marketplace_index
 
-    # ── 索引 ──
+    # ── Index ──
 
     def builtin_catalog(self) -> list[MarketplaceEntry]:
-        """内置第一方连接器包目录（无需索引即可安装）。"""
+        # Builtin first-party connector pack catalog (installable without an index).
         from fusion_plugins_ecosystem.connector_packs import list_builtin_packs
 
         return [
@@ -96,11 +95,11 @@ class Marketplace:
     def load_index(
         self, source: str | None = None
     ) -> tuple[list[MarketplaceEntry], list[str]]:
-        """加载市场索引，返回 (有效条目, 警告)。
-
-        source：本地 JSON 路径或 HTTPS URL；None 用构造参数；两者皆空时
-        仅返回内置目录。非法条目跳过并记警告，不让单条脏数据拖垮整个索引。
-        """
+        # Load the marketplace index, returning (valid entries, warnings).
+        # source: local JSON path or HTTPS URL; None uses the constructor
+        # arg; when both are empty only the builtin catalog is returned.
+        # Invalid entries are skipped with a warning so one bad row cannot
+        # take down the whole index.
         entries: list[MarketplaceEntry] = list(self.builtin_catalog())
         warnings: list[str] = []
         src = source or self.marketplace_index
@@ -109,24 +108,25 @@ class Marketplace:
         try:
             raw = self._fetch_json(src)
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            warnings.append(f"marketplace: 索引加载失败 {src!r}: {exc}")
+            warnings.append(f"marketplace: index load failed {src!r}: {exc}")
             logger.warning("marketplace: %s", warnings[-1])
             return entries, warnings
         for item in raw.get("packages", []):
             if not isinstance(item, dict):
-                warnings.append(f"marketplace: 跳过非对象条目 {item!r}")
+                warnings.append(f"marketplace: skipping non-object entry {item!r}")
                 continue
             entry, err = self._validate_entry(item)
             if err:
                 warnings.append(err)
                 continue
             entries.append(entry)
-        # 索引条目覆盖同 ID 内置条目（索引为准），保持目录内 ID 唯一
+        # Index entries override builtin entries with the same ID (index
+        # wins), keeping catalog IDs unique
         deduped: dict[str, MarketplaceEntry] = {}
         for e in entries:
             deduped[e.id] = e
         final = list(deduped.values())
-        logger.info("marketplace: 索引 %s 加载 %d 条", src, len(final))
+        logger.info("marketplace: index %s loaded %d entries", src, len(final))
         return final, warnings
 
     @staticmethod
@@ -135,7 +135,7 @@ class Marketplace:
             with urllib.request.urlopen(src, timeout=30) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         if src.startswith("http://"):
-            raise ValueError("marketplace: 仅允许 HTTPS 索引（安全约束）")
+            raise ValueError("marketplace: HTTPS-only index allowed (security constraint)")
         with open(os.path.expanduser(src), encoding="utf-8") as f:
             return json.load(f)
 
@@ -146,9 +146,9 @@ class Marketplace:
         pid = item.get("id")
         kind = item.get("kind")
         if not pid or not isinstance(pid, str):
-            return None, "marketplace: 条目缺少 id"
+            return None, "marketplace: entry missing id"
         if kind not in PACKAGE_KINDS:
-            return None, f"marketplace: {pid} 非法 kind={kind!r}"
+            return None, f"marketplace: {pid} invalid kind={kind!r}"
         entry = MarketplaceEntry(
             id=pid,
             kind=kind,
@@ -160,30 +160,31 @@ class Marketplace:
             items=item.get("items"),
         )
         if entry.kind == "connector_pack" and entry.pack is None and not entry.source:
-            return None, f"marketplace: {pid} 既无内联 pack 也无 source"
+            return None, f"marketplace: {pid} has neither inline pack nor source"
         if entry.kind == "bundle":
             items = entry.items
             if not isinstance(items, list) or not items:
-                return None, f"marketplace: {pid} bundle 缺少 items"
+                return None, f"marketplace: {pid} bundle missing items"
             for it in items:
                 if not isinstance(it, dict) or it.get("type") not in BUNDLE_ITEM_TYPES:
-                    return None, f"marketplace: {pid} 非法 bundle item {it!r}"
+                    return None, f"marketplace: {pid} invalid bundle item {it!r}"
         return entry, None
 
-    # ── 安装 / 卸载 ──
+    # ── Install / uninstall ──
 
     def install(self, entry_id: str, source: str | None = None) -> dict[str, Any]:
-        """安装市场包，返回安装结果（含 kind 与产物路径/桥接插件 ID）。"""
+        # Install a marketplace package, returning the result (kind plus
+        # artifact path / bridged plugin IDs).
         entries, _ = self.load_index(source)
         entry = next((e for e in entries if e.id == entry_id), None)
         if entry is None:
-            raise KeyError(f"marketplace: 索引中无条目 {entry_id!r}")
+            raise KeyError(f"marketplace: no entry {entry_id!r} in index")
         if entry.kind == "connector_pack":
             return self._install_connector_pack(entry)
         if entry.kind == "bundle":
             raise ValueError(
-                f"marketplace: bundle {entry.id!r} 安装走 ExtensionsConsole "
-                "install_bundle（跨注册表编排，issue #42）"
+                f"marketplace: bundle {entry.id!r} must be installed via "
+                "ExtensionsConsole install_bundle (cross-registry orchestration, issue #42)"
             )
         return self._install_skill_package(entry)
 
@@ -193,7 +194,7 @@ class Marketplace:
             pack_dir = self._materialize_source(entry)
             pack_file = os.path.join(pack_dir, "pack.json")
             if not os.path.exists(pack_file):
-                raise ValueError(f"marketplace: {entry.id} 来源缺少 pack.json")
+                raise ValueError(f"marketplace: {entry.id} source missing pack.json")
             with open(pack_file, encoding="utf-8") as f:
                 pack_dict = json.load(f)
             pack_dict.setdefault("id", entry.id)
@@ -203,20 +204,22 @@ class Marketplace:
 
     def _install_skill_package(self, entry: MarketplaceEntry) -> dict[str, Any]:
         if not entry.source:
-            raise ValueError(f"marketplace: skill 包 {entry.id} 缺少 source")
+            raise ValueError(f"marketplace: skill package {entry.id} missing source")
         dest = os.path.join(self.install_root, entry.id)
         if os.path.exists(dest):
             shutil.rmtree(dest)
         src = self._materialize_source(entry)
         shutil.copytree(src, dest)
+        # i18n: user-facing
         self.desk_log(f"skill 包 {entry.id} 已安装到 {dest}")
         return {"kind": "skill_package", "id": entry.id, "path": dest}
 
     def _materialize_source(self, entry: MarketplaceEntry) -> str:
-        """把 entry.source 落成本地目录：git URL 浅克隆 / 本地路径直接返回。"""
+        # Materialize entry.source into a local dir: git URLs are
+        # shallow-cloned; local paths are returned directly.
         src = entry.source
         if not src:
-            raise ValueError(f"marketplace: {entry.id} 缺少 source")
+            raise ValueError(f"marketplace: {entry.id} missing source")
         if src.startswith("https://") and src.endswith(".git"):
             dest = os.path.join(self.install_root, "_src", entry.id)
             if os.path.exists(dest):
@@ -230,22 +233,24 @@ class Marketplace:
             )
             return dest
         if src.startswith("http://") or src.startswith("ftp://"):
-            raise ValueError("marketplace: 仅允许 HTTPS/本地来源（安全约束）")
+            raise ValueError("marketplace: HTTPS/local sources only (security constraint)")
         path = os.path.expanduser(src)
         if not os.path.isdir(path):
-            raise ValueError(f"marketplace: {entry.id} 本地来源不存在: {src}")
+            raise ValueError(f"marketplace: {entry.id} local source does not exist: {src}")
         return path
 
     def uninstall(self, entry_id: str) -> None:
-        """卸载市场包（连接器包注销桥接插件；技能包删除安装目录）。"""
+        # Uninstall a marketplace package (connector packs unregister their
+        # bridged plugins; skill packages delete the install dir).
         self.connector_registry.uninstall_pack(entry_id)
         dest = os.path.join(self.install_root, entry_id)
         if os.path.isdir(dest):
             shutil.rmtree(dest)
+            # i18n: user-facing
             self.desk_log(f"{entry_id} 已卸载")
 
     def list_installed(self) -> list[dict[str, Any]]:
-        """列出已安装包：连接器包 + 技能包目录。"""
+        # List installed packages: connector packs + skill package dirs.
         installed: list[dict[str, Any]] = []
         for pack in self.connector_registry.list_packs():
             installed.append(
@@ -260,7 +265,8 @@ class Marketplace:
         return installed
 
     def desk_log(self, message: str) -> None:
-        """经 Desk 记录市场操作日志（无 desk 时退化为模块日志）。"""
+        # Record a marketplace operation via Desk (falls back to module
+        # logging when no desk is available).
         desk = getattr(self.connector_registry, "desk", None)
         if desk is not None:
             desk.log("marketplace", "INFO", message)
