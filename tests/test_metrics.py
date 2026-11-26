@@ -18,7 +18,6 @@ from fusion_plugins_ecosystem.metrics import (
 )
 from fusion_plugins_ecosystem.transport import _is_metrics_request
 
-
 # ── Counter / Gauge basic semantics ──
 
 
@@ -223,12 +222,7 @@ async def test_lifecycle_execute_increments_counter() -> None:
     lc = PluginLifecycle(reg)
     await lc.enable("ok_plugin")
     await lc.execute("ok_plugin", {})
-    assert (
-        reg.desk.metrics.get_counter("plugin_executions_total").value(
-            plugin="ok_plugin", status="success"
-        )
-        == 1
-    )
+    assert reg.desk.metrics.get_counter("plugin_executions_total").value(plugin="ok_plugin", status="success") == 1
 
     # error
     reg2, _ = make("boom_plugin", boom_entry)
@@ -238,18 +232,8 @@ async def test_lifecycle_execute_increments_counter() -> None:
         await lc2.execute("boom_plugin", {})
     except ValueError:
         pass
-    assert (
-        reg2.desk.metrics.get_counter("plugin_executions_total").value(
-            plugin="boom_plugin", status="error"
-        )
-        == 1
-    )
-    assert (
-        reg2.desk.metrics.get_counter("plugin_errors_total").value(
-            plugin="boom_plugin", kind="ValueError"
-        )
-        == 1
-    )
+    assert reg2.desk.metrics.get_counter("plugin_executions_total").value(plugin="boom_plugin", status="error") == 1
+    assert reg2.desk.metrics.get_counter("plugin_errors_total").value(plugin="boom_plugin", kind="ValueError") == 1
 
 
 # ── Critical-path counter: MCP tools/call ──
@@ -292,10 +276,7 @@ async def test_mcp_tools_call_increments_counter() -> None:
     )
     assert resp["result"]["isError"] is False
     assert (
-        reg.desk.metrics.get_counter("mcp_tool_calls_total").value(
-            plugin="mcp_counter_plugin", status="success"
-        )
-        == 1
+        reg.desk.metrics.get_counter("mcp_tool_calls_total").value(plugin="mcp_counter_plugin", status="success") == 1
     )
 
 
@@ -370,11 +351,6 @@ async def test_sandbox_spawn_increments_counter() -> None:
         config={},
         limits=ResourceLimits(timeout_seconds=5),
     )
-    assert (
-        d.metrics.get_counter("sandbox_spawns_total").value(
-            plugin="spawn_count_plugin", status="spawned"
-        )
-        == 1
-    )
+    assert d.metrics.get_counter("sandbox_spawns_total").value(plugin="spawn_count_plugin", status="spawned") == 1
     await sandbox.kill("spawn_count_plugin")
     await sandbox.shutdown_all()

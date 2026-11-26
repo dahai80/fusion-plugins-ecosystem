@@ -25,7 +25,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
@@ -93,9 +92,7 @@ class ClaudeGateway:
         # P3-1: inject config into lifecycle so _maybe_restart's exponential
         # backoff takes effect (with config=None the backoff degrades to 0,
         # i.e. restarts with no delay).
-        self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(
-            registry, config=self.config
-        )
+        self.lifecycle: PluginLifecycle = lifecycle or PluginLifecycle(registry, config=self.config)
         self.token_meter: TokenMeter = token_meter or TokenMeter(
             self.desk,
             max_records=self.config.max_token_records,
@@ -213,15 +210,9 @@ class ClaudeGateway:
         # timeout.
         manifest = self.registry.get(task.plugin_id)
         if manifest is None:
-            raise KeyError(
-                f"plugin {task.plugin_id!r} of subagent task {task.name!r} is not registered"
-            )
+            raise KeyError(f"plugin {task.plugin_id!r} of subagent task {task.name!r} is not registered")
         # Resolve timeout: task > manifest > config
-        timeout = (
-            task.timeout_seconds
-            or manifest.timeout_seconds
-            or self.config.subagent_timeout_seconds
-        )
+        timeout = task.timeout_seconds or manifest.timeout_seconds or self.config.subagent_timeout_seconds
         try:
             await self.lifecycle.enable(task.plugin_id)
             model_hint = manifest.agent_model or ""
@@ -245,7 +236,7 @@ class ClaudeGateway:
                 "state": "completed",
                 "result": result,
             }
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             self.desk.log(
                 task.plugin_id,
                 "ERROR",
@@ -291,11 +282,7 @@ class ClaudeGateway:
     def list_subagent_capable_plugins(self) -> list[str]:
         # List plugin IDs with the SUBAGENT capability (for the Claude Code
         # subagent dispatch panel).
-        return [
-            m.id
-            for m in self.registry.list()
-            if PluginCapability.SUBAGENT in m.capabilities
-        ]
+        return [m.id for m in self.registry.list() if PluginCapability.SUBAGENT in m.capabilities]
 
     # ── Volcengine Ark Claude Coding Plan credentials ──
 
@@ -307,10 +294,7 @@ class ClaudeGateway:
         #
         # Controlled by config.enable_volcengine_claude_plan (Volcengine
         # provider only).
-        if (
-            provider == "volcengine_claude"
-            and not self.config.enable_volcengine_claude_plan
-        ):
+        if provider == "volcengine_claude" and not self.config.enable_volcengine_claude_plan:
             self.desk.log(
                 "claude_gateway",
                 "WARN",
@@ -330,10 +314,7 @@ class ClaudeGateway:
         # Read a Claude API key.
         # Controlled by config.enable_volcengine_claude_plan (Volcengine
         # provider only).
-        if (
-            provider == "volcengine_claude"
-            and not self.config.enable_volcengine_claude_plan
-        ):
+        if provider == "volcengine_claude" and not self.config.enable_volcengine_claude_plan:
             return None
         return self.desk.get_api_key(provider)
 

@@ -81,15 +81,12 @@ def _encrypt_key(plaintext: str) -> str:
     except ImportError:
         if _strict_encryption():
             raise RuntimeError(
-                "desk_runtime: strict mode with cryptography not installed, "
-                "refusing to store API key in plaintext"
+                "desk_runtime: strict mode with cryptography not installed, refusing to store API key in plaintext"
             ) from None
         logger.warning("desk_runtime: cryptography not installed, storing API key in plaintext")
         return plaintext
     try:
-        return _KEY_ENC_PREFIX + Fernet(_derive_key()).encrypt(
-            plaintext.encode("utf-8")
-        ).decode("ascii")
+        return _KEY_ENC_PREFIX + Fernet(_derive_key()).encrypt(plaintext.encode("utf-8")).decode("ascii")
     except Exception as exc:
         if _strict_encryption():
             raise RuntimeError(
@@ -112,11 +109,7 @@ def _decrypt_key(stored: str | None) -> str | None:
         logger.warning("desk_runtime: cryptography not installed, cannot decrypt API key")
         return None
     try:
-        return (
-            Fernet(_derive_key())
-            .decrypt(stored[len(_KEY_ENC_PREFIX) :].encode("ascii"))
-            .decode("utf-8")
-        )
+        return Fernet(_derive_key()).decrypt(stored[len(_KEY_ENC_PREFIX) :].encode("ascii")).decode("utf-8")
     except Exception as exc:
         logger.warning("desk_runtime: API key decryption failed: %s", exc)
         return None
@@ -183,9 +176,7 @@ class DeskRuntime:
 
     def __post_init__(self) -> None:
         if not FUSION_COWORK_AVAILABLE:
-            logger.info(
-                "desk_runtime: fusion-cowork not installed, DeskRuntime running in degraded mode"
-            )
+            logger.info("desk_runtime: fusion-cowork not installed, DeskRuntime running in degraded mode")
 
     # Lazily initialize the MetricsRegistry singleton (avoids circular import).
     @property
@@ -272,9 +263,7 @@ class DeskRuntime:
                 return False
             self.vram_allocations[plugin_id] = mb
             logger.info("desk_runtime: plugin %s vRAM %dMB→%dMB", plugin_id, current, mb)
-            self.metrics.gauge("vram_used_mb", "allocated vRAM (MB)").set(
-                sum(self.vram_allocations.values())
-            )
+            self.metrics.gauge("vram_used_mb", "allocated vRAM (MB)").set(sum(self.vram_allocations.values()))
             # Step 4: sync vRAM allocation to cluster shared storage (visible cross-node)
             from fusion_plugins_ecosystem import cluster_bridge
 
@@ -287,9 +276,7 @@ class DeskRuntime:
             freed = self.vram_allocations.pop(plugin_id, 0)
         if freed:
             logger.info("desk_runtime: plugin %s released %dMB vRAM", plugin_id, freed)
-        self.metrics.gauge("vram_used_mb", "allocated vRAM (MB)").set(
-            sum(self.vram_allocations.values())
-        )
+        self.metrics.gauge("vram_used_mb", "allocated vRAM (MB)").set(sum(self.vram_allocations.values()))
         # Step 4: sync release to cluster shared storage
         from fusion_plugins_ecosystem import cluster_bridge
 
@@ -359,9 +346,7 @@ class DeskRuntime:
         message: str,
         **kwargs: Any,
     ) -> None:
-        self.log(
-            "_infra", level, f"[{component}] {message}", component=component, **kwargs
-        )
+        self.log("_infra", level, f"[{component}] {message}", component=component, **kwargs)
 
     # Query the log buffer (filter by plugin/level, return the most recent
     # `limit` entries).
@@ -417,9 +402,7 @@ class DeskRuntime:
 
     # Grant a plugin path access permissions.
     def grant_permission(self, plugin_id: str, allowed_paths: list[str]) -> None:
-        self.plugin_permissions.setdefault(plugin_id, {})["allowed_paths"] = (
-            allowed_paths
-        )
+        self.plugin_permissions.setdefault(plugin_id, {})["allowed_paths"] = allowed_paths
 
     # ── API keys ──
 

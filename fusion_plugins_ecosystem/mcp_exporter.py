@@ -126,8 +126,7 @@ class MCPExporter:
         # Real implementation: fetch the lifecycle via desk.runtime and execute
         # This only returns a structural placeholder; the Desk-side runtime
         # injects the actual call.
-        # i18n: user-facing
-        self.desk.log(plugin_id, "INFO", "MCP tools/call 转发", arguments=arguments)
+        self.desk.log(plugin_id, "INFO", "MCP tools/call forwarded", arguments=arguments)
         return {
             "content": [
                 {

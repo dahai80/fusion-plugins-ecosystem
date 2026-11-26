@@ -218,15 +218,12 @@ class PluginLifecycle:
             except Exception:
                 pass
             raise RuntimeError(
-                f"illegal state transition {inst.state.value} → {new_state.value} "
-                f"(plugin={inst.manifest.id})"
+                f"illegal state transition {inst.state.value} → {new_state.value} (plugin={inst.manifest.id})"
             )
         inst.state = new_state
         inst.start_time = time.time()
 
-    def load(
-        self, plugin_id: str, _loading_chain: frozenset[str] | None = None
-    ) -> PluginInstance:
+    def load(self, plugin_id: str, _loading_chain: frozenset[str] | None = None) -> PluginInstance:
         # Load a plugin (instantiate entry_point), loading dependencies first.
         with self._instances_lock:
             manifest = self.registry.get(plugin_id)
@@ -319,9 +316,7 @@ class PluginLifecycle:
     # Sync the active plugins gauge (count of ENABLED instances).
     def _update_active_gauge(self) -> None:
         with self._instances_lock:
-            active = sum(
-                1 for i in self._instances.values() if i.state == PluginState.ENABLED
-            )
+            active = sum(1 for i in self._instances.values() if i.state == PluginState.ENABLED)
         self.desk.metrics.gauge("active_plugins", "number of plugins currently ENABLED").set(active)
 
     # Unload a plugin instance (registration retained).
@@ -387,11 +382,7 @@ class PluginLifecycle:
                     ).inc(plugin=plugin_id, status="idempotent_hit")
                     return hit[1]
                 # Purge expired entries (lazily, avoiding a dedicated sweeper thread)
-                stale = [
-                    k
-                    for k, (ts, _) in self._idem_cache.items()
-                    if now - ts >= self._IDEM_TTL
-                ]
+                stale = [k for k, (ts, _) in self._idem_cache.items() if now - ts >= self._IDEM_TTL]
                 for k in stale:
                     del self._idem_cache[k]
 
@@ -399,9 +390,7 @@ class PluginLifecycle:
             inst = self._instances.get(plugin_id)
             if inst is None or inst.state != PluginState.ENABLED:
                 raise RuntimeError(f"plugin {plugin_id!r} not enabled, cannot execute")
-            timeout = (
-                timeout_override or inst.manifest.timeout_seconds or self._cfg_timeout()
-            )
+            timeout = timeout_override or inst.manifest.timeout_seconds or self._cfg_timeout()
             inst.last_heartbeat = time.time()
 
         try:
@@ -422,9 +411,9 @@ class PluginLifecycle:
             if idem_key:
                 with self._idem_lock:
                     self._idem_cache[(plugin_id, str(idem_key))] = (time.time(), result)
-            self.desk.metrics.counter(
-                "plugin_executions_total", "plugin executions total (bucketed by result)"
-            ).inc(plugin=plugin_id, status="success")
+            self.desk.metrics.counter("plugin_executions_total", "plugin executions total (bucketed by result)").inc(
+                plugin=plugin_id, status="success"
+            )
             return result
         except TimeoutError:
             # PROCESS mode: timeout must kill the worker, otherwise orphan
@@ -436,12 +425,12 @@ class PluginLifecycle:
                 inst.error_count += 1
                 inst.last_error = f"execution timed out ({timeout}s)"
             self.desk.log(plugin_id, "ERROR", "plugin execution timed out, meltdown triggered", timeout=timeout)
-            self.desk.metrics.counter(
-                "plugin_executions_total", "plugin executions total (bucketed by result)"
-            ).inc(plugin=plugin_id, status="timeout")
-            self.desk.metrics.counter(
-                "plugin_errors_total", "plugin execution errors total (bucketed by type)"
-            ).inc(plugin=plugin_id, kind="timeout")
+            self.desk.metrics.counter("plugin_executions_total", "plugin executions total (bucketed by result)").inc(
+                plugin=plugin_id, status="timeout"
+            )
+            self.desk.metrics.counter("plugin_errors_total", "plugin execution errors total (bucketed by type)").inc(
+                plugin=plugin_id, kind="timeout"
+            )
             await self._maybe_restart(plugin_id)
             raise
         except Exception as exc:
@@ -450,12 +439,12 @@ class PluginLifecycle:
                 inst.error_count += 1
                 inst.last_error = str(exc)
             self.desk.log(plugin_id, "ERROR", "plugin execution crashed", error=str(exc))
-            self.desk.metrics.counter(
-                "plugin_executions_total", "plugin executions total (bucketed by result)"
-            ).inc(plugin=plugin_id, status="error")
-            self.desk.metrics.counter(
-                "plugin_errors_total", "plugin execution errors total (bucketed by type)"
-            ).inc(plugin=plugin_id, kind=type(exc).__name__)
+            self.desk.metrics.counter("plugin_executions_total", "plugin executions total (bucketed by result)").inc(
+                plugin=plugin_id, status="error"
+            )
+            self.desk.metrics.counter("plugin_errors_total", "plugin execution errors total (bucketed by type)").inc(
+                plugin=plugin_id, kind=type(exc).__name__
+            )
             # P3-3: load-time not-callable is a config error; restarting is
             # pointless and wastes budget, so skip auto-restart
             if not isinstance(exc, PluginLoadError):
@@ -480,9 +469,7 @@ class PluginLifecycle:
 
         config_default = self.config.sandbox_default_mode
         if config_default not in ("inline", "process"):
-            raise RuntimeError(
-                f"lifecycle: illegal sandbox_default_mode={config_default!r}"
-            )
+            raise RuntimeError(f"lifecycle: illegal sandbox_default_mode={config_default!r}")
         if config_default == "process":
             return await self._invoke_sandbox(inst, params)
 
@@ -503,9 +490,7 @@ class PluginLifecycle:
                 return await asyncio.to_thread(instance, self.desk, params)
         raise PluginLoadError(f"entry point of plugin {inst.manifest.id!r} is not callable")
 
-    async def _invoke_sandbox(
-        self, inst: PluginInstance, params: dict[str, Any]
-    ) -> Any:
+    async def _invoke_sandbox(self, inst: PluginInstance, params: dict[str, Any]) -> Any:
         # Invoke the plugin entry point in a sandbox process.
         plugin_id = inst.manifest.id
         if self._sandbox.health(plugin_id) != "alive":
@@ -519,8 +504,7 @@ class PluginLifecycle:
                 entry_point=inst.manifest.entry_point,
                 config=spawn_config,
                 limits=ResourceLimits(
-                    timeout_seconds=inst.manifest.timeout_seconds
-                    or self._cfg_timeout(),
+                    timeout_seconds=inst.manifest.timeout_seconds or self._cfg_timeout(),
                 ),
             )
         return await self._sandbox.call(plugin_id, "execute", params)
@@ -537,9 +521,7 @@ class PluginLifecycle:
             if inst is None:
                 return
             max_restart = (
-                inst.manifest.max_restart
-                if inst.manifest.max_restart is not None
-                else self._cfg_max_restart()
+                inst.manifest.max_restart if inst.manifest.max_restart is not None else self._cfg_max_restart()
             )
             if inst.restart_count >= max_restart:
                 self.desk.log(plugin_id, "ERROR", "max restart count reached, plugin stays crashed")
@@ -584,9 +566,7 @@ class PluginLifecycle:
                 new_inst.last_error = f"auto-restart failed: {exc}"
             self.desk.log(plugin_id, "ERROR", "plugin auto-restart failed", error=str(exc))
 
-    async def _enable_with_retry(
-        self, plugin_id: str, max_attempts: int = 3, backoff: float = 1.0
-    ) -> PluginInstance:
+    async def _enable_with_retry(self, plugin_id: str, max_attempts: int = 3, backoff: float = 1.0) -> PluginInstance:
         # enable with transient-failure retry (P3-6c).
         # Only transient errors like vRAM acquisition failure are retried
         # (vRAM contention may free up momentarily); other errors (state
@@ -644,13 +624,10 @@ class PluginLifecycle:
                     candidates = [
                         (pid, inst)
                         for pid, inst in self._instances.items()
-                        if inst.state == PluginState.ENABLED
-                        and inst.manifest.sandbox_mode == SandboxMode.PROCESS
+                        if inst.state == PluginState.ENABLED and inst.manifest.sandbox_mode == SandboxMode.PROCESS
                     ]
                 for plugin_id, inst in candidates:
-                    threshold = (
-                        inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
-                    )
+                    threshold = inst.manifest.timeout_seconds or self._cfg_heartbeat_stale()
                     if now - inst.last_heartbeat > threshold:
                         with self._instances_lock:
                             if inst.state != PluginState.ENABLED:
@@ -681,6 +658,4 @@ class PluginLifecycle:
 
     # Return plugin snapshots filtered by state.
     def list_by_state(self, state: PluginState) -> list[dict[str, Any]]:
-        return [
-            inst.to_dict() for inst in self._instances.values() if inst.state == state
-        ]
+        return [inst.to_dict() for inst in self._instances.values() if inst.state == state]

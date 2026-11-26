@@ -22,7 +22,6 @@ from fusion_plugins_ecosystem.registry import (
 )
 from fusion_plugins_ecosystem.schema import SandboxMode
 
-
 # ── Test plugin factory ──
 
 
@@ -78,9 +77,7 @@ def test_load_already_loaded_returns_existing() -> None:
 
 
 def test_load_string_entry_point_resolves() -> None:
-    m = _make_manifest(
-        entry_point="fusion_plugins_ecosystem.builtin.caveman_compress:caveman_compress"
-    )
+    m = _make_manifest(entry_point="fusion_plugins_ecosystem.builtin.caveman_compress:caveman_compress")
     registry = _make_registry(m)
     lifecycle = PluginLifecycle(registry)
     inst = lifecycle.load("test_plugin")
@@ -630,9 +627,7 @@ async def test_enable_with_retry_succeeds_after_transient_vram() -> None:
         return real_acquire(plugin_id, mb)
 
     desk.acquire_vram = flaky_acquire
-    inst = await lifecycle._enable_with_retry(
-        "test_plugin", max_attempts=3, backoff=0.01
-    )
+    inst = await lifecycle._enable_with_retry("test_plugin", max_attempts=3, backoff=0.01)
     assert inst.state == PluginState.ENABLED
     assert attempts["n"] == 2  # first failure + one successful retry
 

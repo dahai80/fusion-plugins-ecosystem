@@ -34,9 +34,7 @@ def _env(tmp_path, monkeypatch):
     from fusion_plugins_ecosystem import shell_registry
 
     monkeypatch.setattr(shell_registry, "MODULE_KEY_PATH", tmp_path / "web_module_key")
-    monkeypatch.setenv(
-        "FUSION_PLUGIN_MARKETPLACE_INDEX", str(tmp_path / "market_index.json")
-    )
+    monkeypatch.setenv("FUSION_PLUGIN_MARKETPLACE_INDEX", str(tmp_path / "market_index.json"))
 
 
 @pytest.fixture()
@@ -158,7 +156,7 @@ class TestPerItemTick:
         out = await populated.tick_bundle_item("finance-kit", "bank-api", True)
         assert out["ticked"] is False
         # i18n: user-facing (source keeps this error in Chinese)
-        assert "待授权" in out["error"]
+        assert "pending authorization" in out["error"]
 
     async def test_unknown_bundle_or_ref(self, populated):
         await populated.install_bundle("finance-kit")
@@ -177,9 +175,7 @@ class TestOAuth:
         assert by_id["bank.order.push"]["sensitive"] is True
         assert scopes["credential_fields"] == ["api_key"]
         # Grant only one read scope
-        out = await populated.oauth_complete(
-            "bank-api", ["bank.flow.fetch"], {"api_key": "k1"}
-        )
+        out = await populated.oauth_complete("bank-api", ["bank.flow.fetch"], {"api_key": "k1"})
         assert out["completed"] is True
         assert out["granted_scopes"] == ["bank.flow.fetch"]
         assert out["sensitive_scopes_per_use"] == ["bank.order.push"]
@@ -196,7 +192,7 @@ class TestOAuth:
         out = await populated.oauth_complete("bank-api", ["nope"], {"api_key": "k"})
         assert out["completed"] is False
         # i18n: user-facing (source keeps this error in Chinese)
-        assert "未知读 scope" in out["error"]
+        assert "unknown read scopes" in out["error"]
 
     async def test_oauth_requires_credentials(self, populated):
         await populated.install_bundle("finance-kit")
@@ -207,9 +203,7 @@ class TestOAuth:
         await populated.install_bundle("finance-kit")
         await populated.oauth_complete("bank-api", [], {"api_key": "k"})
         bundles = populated.list_bundles()["bundles"]
-        item = next(
-            i for b in bundles for i in b["items"] if i.get("ref") == "bank-api"
-        )
+        item = next(i for b in bundles for i in b["items"] if i.get("ref") == "bank-api")
         assert item["state"] == "enabled"
 
 
@@ -246,15 +240,11 @@ class TestUpdate:
         assert populated._plugin_enabled("invoice-skill") is True
         assert populated._plugin_enabled("tax-agent") is False
         # Version already bumped; a second preview reports no update
-        assert (
-            populated.bundle_update_preview("finance-kit")["update_available"] is False
-        )
+        assert populated.bundle_update_preview("finance-kit")["update_available"] is False
 
     async def test_update_none_available(self, populated):
         await populated.install_bundle("finance-kit")
-        assert (
-            populated.bundle_update_preview("finance-kit")["update_available"] is False
-        )
+        assert populated.bundle_update_preview("finance-kit")["update_available"] is False
         out = await populated.bundle_update_apply("finance-kit", [])
         assert out["updated"] is False
 
@@ -282,9 +272,7 @@ class TestUninstall:
         )
         pv = populated.uninstall_preview("finance-kit")
         assert pv["safe_to_remove"] is False
-        assert pv["in_use_by"] == [
-            {"node": "月度对账", "refs": ["excel-skill", "node.excel-skill"]}
-        ]
+        assert pv["in_use_by"] == [{"node": "月度对账", "refs": ["excel-skill", "node.excel-skill"]}]
         assert "node.excel-skill" in pv["capabilities_affected"]
 
     async def test_uninstall_removes_items(self, populated):
@@ -393,9 +381,7 @@ class TestEndpoints:
             json={"scopes": ["bank.flow.fetch"], "credentials": {"api_key": "k"}},
         )
         assert r.json()["completed"] is True
-        assert client.get("/api/hub/connectors/bank-api/policy").json()[
-            "per_use_scopes"
-        ] == ["bank.order.push"]
+        assert client.get("/api/hub/connectors/bank-api/policy").json()["per_use_scopes"] == ["bank.order.push"]
 
         pv = client.get("/api/hub/bundles/finance-kit/uninstall-preview").json()
         assert pv["safe_to_remove"] is True

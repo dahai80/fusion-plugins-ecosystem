@@ -88,9 +88,7 @@ class MCPServer:
         # A3: apply the configured log level to the root logger (the CLI
         # --log-level flag wins; this covers the programmatic entry)
         if self.config.log_level and self.config.log_level != "INFO":
-            logging.getLogger().setLevel(
-                getattr(logging, self.config.log_level, logging.INFO)
-            )
+            logging.getLogger().setLevel(getattr(logging, self.config.log_level, logging.INFO))
         self._transport: Any = None
         self._running = False
         # Stop signal: start() waits on it, stop() sets it; keeps the
@@ -144,9 +142,7 @@ class MCPServer:
         port = kwargs.get("port", self.config.mcp_port)
         # R6: auth token for SSE/HTTP remote transports (env-injected, never
         # written to config files)
-        auth_token = kwargs.get(
-            "auth_token", os.environ.get("FUSION_PLUGIN_AUTH_TOKEN")
-        )
+        auth_token = kwargs.get("auth_token", os.environ.get("FUSION_PLUGIN_AUTH_TOKEN"))
 
         # P0-1: non-loopback remote transport bindings must have auth, to
         # avoid exposing every RPC to the network
@@ -159,9 +155,7 @@ class MCPServer:
                 )
                 logger.error(msg)
                 raise RuntimeError(msg)
-            logger.warning(
-                "remote transport %s bound to %s with Bearer auth enabled", transport_type, host
-            )
+            logger.warning("remote transport %s bound to %s with Bearer auth enabled", transport_type, host)
 
         self._transport = create_transport(
             transport_type,

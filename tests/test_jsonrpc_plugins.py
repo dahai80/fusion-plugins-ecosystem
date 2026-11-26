@@ -50,7 +50,7 @@ def _registry_with_plugin() -> tuple[PluginRegistry, PluginManifest]:
 
 def _make_handler(
     registry: PluginRegistry | None = None,
-    config: "EcosystemConfig | None" = None,
+    config: EcosystemConfig | None = None,
 ) -> tuple[MCPHandler, PluginRegistry]:
     registry = registry or _registry_with_plugin()[0]
     handler = MCPHandler(registry=registry, config=config)
@@ -59,9 +59,7 @@ def _make_handler(
 
 async def _call(handler: MCPHandler, method: str, params: dict | None = None):
     """Issue a full JSON-RPC request via handle() and return the result dict."""
-    resp = await handler.handle(
-        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
-    )
+    resp = await handler.handle({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}})
     assert resp is not None
     assert "error" not in resp, f"unexpected error: {resp.get('error')}"
     assert resp["jsonrpc"] == "2.0"
@@ -131,9 +129,7 @@ async def test_plugins_install_uninstall() -> None:
     assert state["state"] == "enabled"
     assert state["error_count"] == 0
     # uninstall
-    result = await _call(
-        handler, "plugins/uninstall", {"plugin_id": "caveman_compress"}
-    )
+    result = await _call(handler, "plugins/uninstall", {"plugin_id": "caveman_compress"})
     assert result == {"ok": True}
     state = await _call(handler, "plugins/state.get", {"plugin_id": "caveman_compress"})
     assert state["state"] in ("disabled", "unknown")
@@ -276,15 +272,9 @@ async def test_plugins_token_records_keys() -> None:
 
 async def test_plugins_token_records_by_plugin() -> None:
     handler, registry = _make_handler()
-    handler.token_meter.record(
-        TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL)
-    )
-    handler.token_meter.record(
-        TokenRecord(plugin_id="other", kind=TokenKind.PLUGIN_LOCAL)
-    )
-    result = await _call(
-        handler, "plugins/token.records", {"plugin_id": "caveman_compress"}
-    )
+    handler.token_meter.record(TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL))
+    handler.token_meter.record(TokenRecord(plugin_id="other", kind=TokenKind.PLUGIN_LOCAL))
+    result = await _call(handler, "plugins/token.records", {"plugin_id": "caveman_compress"})
     recs = result["records"]
     assert len(recs) == 1
     assert recs[0]["plugin_id"] == "caveman_compress"
@@ -292,9 +282,7 @@ async def test_plugins_token_records_by_plugin() -> None:
 
 async def test_plugins_token_prune() -> None:
     handler, registry = _make_handler()
-    handler.token_meter.record(
-        TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL)
-    )
+    handler.token_meter.record(TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL))
     result = await _call(handler, "plugins/token.prune", {"max_age_seconds": 0})
     assert result == {"ok": True}
     # max_age is floored to 60s; the just-written record's timestamp > now-60 -> kept, guarding against an audit wipe
@@ -304,9 +292,7 @@ async def test_plugins_token_prune() -> None:
 
 async def test_plugins_token_prune_floor_prevents_wipe() -> None:
     handler, registry = _make_handler()
-    handler.token_meter.record(
-        TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL)
-    )
+    handler.token_meter.record(TokenRecord(plugin_id="caveman_compress", kind=TokenKind.PLUGIN_LOCAL))
     # Negative / 0 values must both be floored, records must not be wiped
     await _call(handler, "plugins/token.prune", {"max_age_seconds": -1})
     recs = await _call(handler, "plugins/token.records")
@@ -369,9 +355,7 @@ async def test_plugins_logs_stream_filter() -> None:
     handler, registry = _make_handler()
     registry.desk.log("caveman_compress", "INFO", "ok")
     registry.desk.log("other", "ERROR", "bad")
-    result = await _call(
-        handler, "plugins/logs.stream", {"plugin_id": "caveman_compress"}
-    )
+    result = await _call(handler, "plugins/logs.stream", {"plugin_id": "caveman_compress"})
     entries = result["entries"]
     assert len(entries) == 1
     assert entries[0]["plugin_id"] == "caveman_compress"
@@ -426,9 +410,7 @@ async def test_plugins_mcp_sessions_prune() -> None:
 
 async def test_unknown_plugins_method_returns_error() -> None:
     handler, _ = _make_handler()
-    resp = await handler.handle(
-        {"jsonrpc": "2.0", "id": 9, "method": "plugins/nonexistent", "params": {}}
-    )
+    resp = await handler.handle({"jsonrpc": "2.0", "id": 9, "method": "plugins/nonexistent", "params": {}})
     assert resp is not None
     assert resp["error"]["code"] == -32601
     assert resp["id"] == 9

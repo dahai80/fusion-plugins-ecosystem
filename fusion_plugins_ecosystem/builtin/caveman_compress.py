@@ -94,11 +94,10 @@ def caveman_compress(desk: Any, params: dict[str, Any]) -> dict[str, Any]:
 
     # Unified logging via desk (PRD "plugin logs aggregated into Desk")
     if desk is not None:
-        # i18n: user-facing
         desk.log(
             "caveman_compress",
             "INFO",
-            "压缩完成",
+            "compression complete",
             original=original_chars,
             compressed=compressed_chars,
             ratio=ratio,

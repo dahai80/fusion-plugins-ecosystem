@@ -142,9 +142,7 @@ class PluginManifest:
             "sandbox_mode": self.sandbox_mode.value,
             "max_restart": self.max_restart,
             "output_schema": self.output_schema,
-            "mcp_annotations": self.mcp_annotations.to_dict()
-            if self.mcp_annotations
-            else None,
+            "mcp_annotations": self.mcp_annotations.to_dict() if self.mcp_annotations else None,
             "agent_model": self.agent_model,
         }
 
@@ -201,9 +199,7 @@ class PluginRegistry:
             result = [m for m in result if m.category == category]
         return result
 
-    def list_as_dicts(
-        self, category: PluginCategory | None = None
-    ) -> list[dict[str, Any]]:
+    def list_as_dicts(self, category: PluginCategory | None = None) -> list[dict[str, Any]]:
         # List plugins as JSON-friendly dicts (for Swift/Kotlin/TS consumers).
         return [m.to_dict() for m in self.list(category=category)]
 

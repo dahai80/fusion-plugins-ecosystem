@@ -99,9 +99,7 @@ class EcosystemConfig:
     connector_marketplace_index: str | None = None
 
     # ── Change callbacks ──
-    _observers: list[Callable[[str, Any, Any], None]] = field(
-        default_factory=list, repr=False
-    )
+    _observers: list[Callable[[str, Any, Any], None]] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict[str, object]:
         # Serialize to a dict (for Desk config center persistence).
@@ -143,9 +141,7 @@ class EcosystemConfig:
                 return val
             if isinstance(val, str):
                 return val.lower() in ("true", "1", "yes")
-            warnings.append(
-                f"config.{key}: type mismatch {type(val).__name__}, using default"
-            )
+            warnings.append(f"config.{key}: type mismatch {type(val).__name__}, using default")
             return defaults[key]  # type: ignore[return-value]
 
         def _safe_int(key: str, min_val: int = 0, max_val: int = 100000) -> int:
@@ -153,29 +149,21 @@ class EcosystemConfig:
             try:
                 result = int(val)  # type: ignore[arg-type]
                 if result < min_val or result > max_val:
-                    warnings.append(
-                        f"config.{key}: {result} out of range [{min_val},{max_val}]"
-                    )
+                    warnings.append(f"config.{key}: {result} out of range [{min_val},{max_val}]")
                     return defaults[key]  # type: ignore[return-value]
                 return result
             except (ValueError, TypeError):
-                warnings.append(
-                    f"config.{key}: type mismatch {type(val).__name__}, using default"
-                )
+                warnings.append(f"config.{key}: type mismatch {type(val).__name__}, using default")
                 return defaults[key]  # type: ignore[return-value]
 
         def _safe_str(key: str, allowed: tuple[str, ...] | None = None) -> str:
             val = merged[key]
             if isinstance(val, str):
                 if allowed and val not in allowed:
-                    warnings.append(
-                        f"config.{key}: {val!r} not in {allowed}, using default"
-                    )
+                    warnings.append(f"config.{key}: {val!r} not in {allowed}, using default")
                     return defaults[key]  # type: ignore[return-value]
                 return val
-            warnings.append(
-                f"config.{key}: type mismatch {type(val).__name__}, using default"
-            )
+            warnings.append(f"config.{key}: type mismatch {type(val).__name__}, using default")
             return defaults[key]  # type: ignore[return-value]
 
         config = cls(
@@ -192,9 +180,7 @@ class EcosystemConfig:
             mcp_transport=_safe_str("mcp_transport", ("stdio", "sse", "http")),
             mcp_host=_safe_str("mcp_host"),
             mcp_port=_safe_int("mcp_port", 0, 65535),
-            sandbox_default_mode=_safe_str(
-                "sandbox_default_mode", ("inline", "process")
-            ),
+            sandbox_default_mode=_safe_str("sandbox_default_mode", ("inline", "process")),
             log_level=_safe_str("log_level", ("DEBUG", "INFO", "WARNING", "ERROR")),
             vram_limit_mb=_safe_int("vram_limit_mb", 0, 65535),
             max_concurrent_plugins=_safe_int("max_concurrent_plugins", 1, 1024),
@@ -220,9 +206,7 @@ class EcosystemConfig:
         if self.max_auto_restart < 0:
             errors.append("max_auto_restart must be >= 0")
         if self.mcp_transport not in ("stdio", "sse", "http"):
-            errors.append(
-                f"mcp_transport must be stdio/sse/http, got {self.mcp_transport!r}"
-            )
+            errors.append(f"mcp_transport must be stdio/sse/http, got {self.mcp_transport!r}")
         if self.mcp_port < 0 or self.mcp_port > 65535:
             errors.append(f"mcp_port must be 0-65535, got {self.mcp_port}")
         return errors

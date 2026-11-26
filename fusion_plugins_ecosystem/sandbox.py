@@ -108,9 +108,7 @@ class PluginSandbox:
         error: str | None = None
         try:
             if self.desk is None:
-                raise RuntimeError(
-                    "host DeskRuntime not injected, cannot proxy resource requests"
-                )
+                raise RuntimeError("host DeskRuntime not injected, cannot proxy resource requests")
             if method == "acquire_vram":
                 result = self.desk.acquire_vram(
                     args.get("plugin_id", proc.plugin_id),
@@ -185,21 +183,17 @@ class PluginSandbox:
         )
 
         sandbox_proc.reader_task = asyncio.create_task(self._read_loop(sandbox_proc))
-        sandbox_proc.heartbeat_task = asyncio.create_task(
-            self._heartbeat_monitor(sandbox_proc)
-        )
+        sandbox_proc.heartbeat_task = asyncio.create_task(self._heartbeat_monitor(sandbox_proc))
         sandbox_proc.stderr_task = asyncio.create_task(self._drain_stderr(sandbox_proc))
 
         self._processes[plugin_id] = sandbox_proc
         logger.info("sandbox: spawned %s (pid=%d)", plugin_id, proc.pid)
         if self.desk is not None:
-            self.desk.metrics.counter(
-                "sandbox_spawns_total", "total PROCESS sandbox subprocess spawns"
-            ).inc(plugin=plugin_id, status="spawned")
+            self.desk.metrics.counter("sandbox_spawns_total", "total PROCESS sandbox subprocess spawns").inc(
+                plugin=plugin_id, status="spawned"
+            )
 
-    async def call(
-        self, plugin_id: str, method: str, args: dict[str, Any] | None = None
-    ) -> Any:
+    async def call(self, plugin_id: str, method: str, args: dict[str, Any] | None = None) -> Any:
         # Call a plugin method inside the sandbox.
         proc = self._processes.get(plugin_id)
         if proc is None:
@@ -234,18 +228,13 @@ class PluginSandbox:
             # The worker must be killed after a timeout: otherwise an orphan
             # process lingers and the next call reuses the stuck process
             # (P0-4). _invoke_sandbox respawns when health != alive.
-            self.desk_log(
-                proc, "ERROR", f"call {call_id} timed out, killing worker and waiting for respawn"
-            )
+            self.desk_log(proc, "ERROR", f"call {call_id} timed out, killing worker and waiting for respawn")
             await self.kill(plugin_id)
             raise TimeoutError(
-                f"sandbox: plugin {plugin_id!r} call timed out after "
-                f"{proc.limits.timeout_seconds}s"
+                f"sandbox: plugin {plugin_id!r} call timed out after {proc.limits.timeout_seconds}s"
             ) from None
 
-    def desk_log(
-        self, proc: SandboxProcess, level: str, message: str, **kw: Any
-    ) -> None:
+    def desk_log(self, proc: SandboxProcess, level: str, message: str, **kw: Any) -> None:
         # Sandbox-side logs go through the host logger (worker's own logs
         # are already relayed via IPC).
         log_method = getattr(logger, level.lower(), logger.info)
@@ -264,25 +253,19 @@ class PluginSandbox:
             proc.heartbeat_task.cancel()
         if proc.stderr_task and not proc.stderr_task.done():
             proc.stderr_task.cancel()
-        self._fail_pending(
-            proc, RuntimeError(f"sandbox: plugin {plugin_id!r} was killed")
-        )
+        self._fail_pending(proc, RuntimeError(f"sandbox: plugin {plugin_id!r} was killed"))
 
         try:
             proc.process.terminate()
             try:
-                await asyncio.wait_for(
-                    proc.process.wait(), timeout=proc.limits.grace_period_seconds
-                )
+                await asyncio.wait_for(proc.process.wait(), timeout=proc.limits.grace_period_seconds)
             except TimeoutError:
                 proc.process.kill()
                 # P0-2: bound the post-SIGKILL reap wait so this await never
                 # hangs forever if the worker enters uninterruptible
                 # D-state, taking down execute/_watch_loop with it.
                 try:
-                    await asyncio.wait_for(
-                        proc.process.wait(), timeout=_KILL_REAP_TIMEOUT
-                    )
+                    await asyncio.wait_for(proc.process.wait(), timeout=_KILL_REAP_TIMEOUT)
                 except TimeoutError:
                     logger.error(
                         "sandbox: %s not reaped %ss after SIGKILL, giving up (possible D-state)",
@@ -315,9 +298,7 @@ class PluginSandbox:
                 if not line:
                     proc.health = SandboxHealth.DEAD
                     logger.warning("sandbox: %s stdout EOF", proc.plugin_id)
-                    self._fail_pending(
-                        proc, RuntimeError(f"sandbox {proc.plugin_id!r} process exited")
-                    )
+                    self._fail_pending(proc, RuntimeError(f"sandbox {proc.plugin_id!r} process exited"))
                     break
                 text = line.decode("utf-8").strip()
                 if not text:
@@ -325,9 +306,7 @@ class PluginSandbox:
                 try:
                     msg = json.loads(text)
                 except json.JSONDecodeError:
-                    logger.warning(
-                        "sandbox: %s invalid JSON: %s", proc.plugin_id, text[:100]
-                    )
+                    logger.warning("sandbox: %s invalid JSON: %s", proc.plugin_id, text[:100])
                     continue
 
                 # P1-8: non-dict messages (e.g. a worker accidentally
@@ -354,9 +333,7 @@ class PluginSandbox:
                     # back into the host DeskRuntime
                     await self._handle_rpc(proc, msg)
                 else:
-                    logger.warning(
-                        "sandbox: unknown msg type %r from %s", msg_type, proc.plugin_id
-                    )
+                    logger.warning("sandbox: unknown msg type %r from %s", msg_type, proc.plugin_id)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -374,9 +351,7 @@ class PluginSandbox:
                 elapsed = time.time() - proc.last_heartbeat
                 if elapsed > proc.limits.timeout_seconds:
                     proc.health = SandboxHealth.TIMEOUT
-                    logger.warning(
-                        "sandbox: %s heartbeat timeout (%.0fs)", proc.plugin_id, elapsed
-                    )
+                    logger.warning("sandbox: %s heartbeat timeout (%.0fs)", proc.plugin_id, elapsed)
                     await self.kill(proc.plugin_id)
                     break
         except asyncio.CancelledError:
@@ -432,9 +407,7 @@ class PluginSandbox:
                 future.set_exception(exc)
         proc.pending_calls.clear()
 
-    def _build_worker_script(
-        self, entry_point: Any, config: dict, limits: ResourceLimits
-    ) -> str:
+    def _build_worker_script(self, entry_point: Any, config: dict, limits: ResourceLimits) -> str:
         # Build the subprocess worker script.
         #
         # Fix highlights:

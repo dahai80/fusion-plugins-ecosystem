@@ -124,9 +124,7 @@ class TestSearch:
         assert all(not i.get("recommended") or i["enabled"] is False for i in hits)
         # Empty query must not mix recommended entries into tabs (counts stay installed-only)
         full = console.list_hub()
-        assert all(
-            not i.get("recommended") for tab in full["tabs"].values() for i in tab
-        )
+        assert all(not i.get("recommended") for tab in full["tabs"].values() for i in tab)
 
     def test_empty_query_returns_all(self, console):
         full = console.list_hub()
@@ -154,9 +152,7 @@ class TestGroups:
     async def test_enable_reflected_in_groups(self, console):
         await console.tick_nodes("caveman_compress", ["caveman_compress"])
         hub = console.list_hub()
-        entry = next(
-            i for i in hub["groups"]["installed"] if i["id"] == "caveman_compress"
-        )
+        entry = next(i for i in hub["groups"]["installed"] if i["id"] == "caveman_compress")
         assert entry["enabled"] is True
         skill = next(s for s in hub["tabs"]["skills"] if s["id"] == "caveman_compress")
         assert skill["enabled"] is True

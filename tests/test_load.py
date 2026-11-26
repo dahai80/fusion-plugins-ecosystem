@@ -29,7 +29,6 @@ from fusion_plugins_ecosystem.registry import (
 from fusion_plugins_ecosystem.schema import SandboxMode
 from fusion_plugins_ecosystem.token_meter import TokenKind, TokenMeter, TokenRecord
 
-
 # ── Helpers: build registry + lifecycle ──
 
 
@@ -69,9 +68,7 @@ async def test_concurrent_execute_all_complete_no_loss() -> None:
     await lifecycle.enable("load_plugin")
 
     n = 50
-    results = await asyncio.gather(
-        *(lifecycle.execute("load_plugin", {}) for _ in range(n))
-    )
+    results = await asyncio.gather(*(lifecycle.execute("load_plugin", {}) for _ in range(n)))
     assert len(results) == n
     assert all(r == {"ok": True} for r in results)
     assert counter["n"] == n

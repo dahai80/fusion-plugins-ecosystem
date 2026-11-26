@@ -9,7 +9,6 @@ import pytest
 
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 
-
 # ── VRAM scheduling ──
 
 
@@ -94,9 +93,7 @@ def test_log_with_desk_logger(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_log_falls_back_to_module_logger(caplog: pytest.LogCaptureFixture) -> None:
     rt = DeskRuntime()
-    with caplog.at_level(
-        logging.WARNING, logger="fusion_plugins_ecosystem.desk_runtime"
-    ):
+    with caplog.at_level(logging.WARNING, logger="fusion_plugins_ecosystem.desk_runtime"):
         rt.log("p1", "WARNING", "warning msg")
     assert "plugin=p1" in caplog.text
     assert "warning msg" in caplog.text
@@ -208,9 +205,7 @@ async def test_mlx_chat_no_client_raises() -> None:
 async def test_mlx_chat_with_client() -> None:
     fake = _FakeMLXClient()
     rt = DeskRuntime(mlx_client=fake)
-    result = await rt.mlx_chat(
-        "qwen3.5", [{"role": "user", "content": "hi"}], temperature=0.5
-    )
+    result = await rt.mlx_chat("qwen3.5", [{"role": "user", "content": "hi"}], temperature=0.5)
     assert result["content"] == "fake-response"
     assert len(fake.chat_calls) == 1
 
@@ -349,6 +344,4 @@ class TestKeySaltGovernance:
         # check-env rule 1 regression: source must no longer contain the default salt literal
         import fusion_plugins_ecosystem.desk_runtime as dr
 
-        assert "fusion-plugins-default-salt" not in Path(dr.__file__).read_text(
-            encoding="utf-8"
-        )
+        assert "fusion-plugins-default-salt" not in Path(dr.__file__).read_text(encoding="utf-8")

@@ -51,9 +51,7 @@ _MCP_TIMEOUT = 15.0
 
 
 def _extensions_dir() -> Path:
-    return Path(
-        os.environ.get("FUSION_PLUGIN_EXTENSIONS_DIR", DEFAULT_EXTENSIONS_DIR)
-    ).expanduser()
+    return Path(os.environ.get("FUSION_PLUGIN_EXTENSIONS_DIR", DEFAULT_EXTENSIONS_DIR)).expanduser()
 
 
 _VAULT_FILE = "vault.json"
@@ -113,10 +111,7 @@ def _vault_headers(desk: Any, credential_ref: str) -> dict[str, str]:
         return {}
     creds = _vault_credentials(desk, credential_ref)
     if not creds:
-        raise RuntimeError(
-            f"no vault credentials under '{credential_ref}' — "
-            "save them via PUT /api/adapters first"
-        )
+        raise RuntimeError(f"no vault credentials under '{credential_ref}' — save them via PUT /api/adapters first")
     if isinstance(creds.get("headers"), dict):
         return {str(k): str(v) for k, v in creds["headers"].items()}
     key = creds.get("api_key") or creds.get("token")
@@ -174,9 +169,7 @@ def _manifest_from_decl(data: dict[str, Any]) -> Any:
     except ValueError:
         category = PluginCategory.CUSTOM
     caps = tuple(
-        PluginCapability(c)
-        for c in (data.get("capabilities") or [])
-        if c in PluginCapability._value2member_map_
+        PluginCapability(c) for c in (data.get("capabilities") or []) if c in PluginCapability._value2member_map_
     )
     return PluginManifest(
         id=str(data["id"]),
@@ -222,9 +215,7 @@ class _McpToolBound:
         self.tool = tool
 
     async def __call__(self, desk: Any, params: dict[str, Any]) -> Any:
-        result = await self.console.call_mcp_tool(
-            self.server_id, self.tool, dict(params or {})
-        )
+        result = await self.console.call_mcp_tool(self.server_id, self.tool, dict(params or {}))
         if not result.get("ok"):
             raise RuntimeError(result.get("error") or "MCP tools/call failed")
         return result.get("result") or {}
@@ -376,9 +367,7 @@ class ExtensionsConsole:
         for e in entries:
             if e.id in installed:
                 current = str(installed[e.id].get("version") or "")
-                if current and self._version_key(current) < self._version_key(
-                    e.version
-                ):
+                if current and self._version_key(current) < self._version_key(e.version):
                     updates.append(
                         {
                             "id": e.id,
@@ -439,9 +428,7 @@ class ExtensionsConsole:
                 tabs["skills"].append({**base, "type": "skill"})
             if "subagent" in caps and _match(m.id, m.name, m.description):
                 tabs["subagents"].append({**base, "type": "subagent"})
-            installed.append(
-                {"id": m.id, "name": m.name, "type": "plugin", "enabled": enabled}
-            )
+            installed.append({"id": m.id, "name": m.name, "type": "plugin", "enabled": enabled})
         for entry in connector_report():
             doc = get_connector(entry["id"]) or {}
             disabled = bool(doc.get("_disabled"))
@@ -582,9 +569,7 @@ class ExtensionsConsole:
                 items_out.append({"type": itype, "ref": ref, **item_state})
             except Exception as exc:  # noqa: BLE001 — per-item errors do not abort the bundle
                 errors.append(f"{itype}:{ref}: {exc}")
-                items_out.append(
-                    {"type": itype, "ref": ref, "state": "error", "error": str(exc)}
-                )
+                items_out.append({"type": itype, "ref": ref, "state": "error", "error": str(exc)})
         state[entry.id] = {
             "id": entry.id,
             "name": entry.name,
@@ -602,10 +587,7 @@ class ExtensionsConsole:
             resource_id=entry.id,
             details={
                 "version": entry.version,
-                "items": [
-                    {"type": i["type"], "ref": i["ref"], "state": i["state"]}
-                    for i in items_out
-                ],
+                "items": [{"type": i["type"], "ref": i["ref"], "state": i["state"]} for i in items_out],
                 "errors": errors,
             },
             risk_level="medium",
@@ -624,8 +606,7 @@ class ExtensionsConsole:
         self.desk.log(
             entry.id,
             "INFO",
-            f"bundle {entry.id} v{entry.version} installed"
-            f" ({len(items_out)} items, {len(errors)} errors)",
+            f"bundle {entry.id} v{entry.version} installed ({len(items_out)} items, {len(errors)} errors)",
         )
         return {
             "installed": True,
@@ -635,9 +616,7 @@ class ExtensionsConsole:
             "errors": errors,
         }
 
-    async def _install_bundle_item(
-        self, itype: str, ref: str, item: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _install_bundle_item(self, itype: str, ref: str, item: dict[str, Any]) -> dict[str, Any]:
         if itype in ("skill", "subagent"):
             manifest = self.registry.get(ref)
             if manifest is None:
@@ -676,12 +655,8 @@ class ExtensionsConsole:
                 try:
                     await self.lifecycle.enable(pid)
                 except Exception as exc:  # noqa: BLE001 — a single tool failure does not abort the pack
-                    logger.warning(
-                        "extensions_console: failed to enable pack tool %s: %s", pid, exc
-                    )
-            self.desk.log(
-                ref, "INFO", f"connector pack {ref} installed ({len(plugin_ids)} tools)"
-            )
+                    logger.warning("extensions_console: failed to enable pack tool %s: %s", pid, exc)
+            self.desk.log(ref, "INFO", f"connector pack {ref} installed ({len(plugin_ids)} tools)")
             return {"state": "enabled", "plugin_ids": plugin_ids}
         if itype == "skill_package":
             entry = self._market_entry(ref)
@@ -699,21 +674,16 @@ class ExtensionsConsole:
 
     # Per-item enable/disable inside a bundle (issue #42: packed items can be
     # disabled individually after install).
-    async def tick_bundle_item(
-        self, bundle_id: str, ref: str, enabled: bool
-    ) -> dict[str, Any]:
+    async def tick_bundle_item(self, bundle_id: str, ref: str, enabled: bool) -> dict[str, Any]:
         state = self._bundles_state()
         bundle = state.get(bundle_id)
         if bundle is None:
-            # i18n: user-facing
-            return {"ticked": False, "error": f"bundle {bundle_id!r} 未安装"}
+            return {"ticked": False, "error": f"bundle {bundle_id!r} not installed"}
         item = next((i for i in bundle.get("items", []) if i.get("ref") == ref), None)
         if item is None:
-            # i18n: user-facing
-            return {"ticked": False, "error": f"bundle {bundle_id} 无条目 {ref!r}"}
+            return {"ticked": False, "error": f"bundle {bundle_id} has no item {ref!r}"}
         if item.get("state") == "pending_auth" and enabled:
-            # i18n: user-facing
-            return {"ticked": False, "error": f"{ref} 待授权（先完成 OAuth）"}
+            return {"ticked": False, "error": f"{ref} pending authorization (complete OAuth first)"}
         try:
             if item["type"] in ("skill", "subagent"):
                 if enabled:
@@ -752,11 +722,7 @@ class ExtensionsConsole:
             return {"ticked": False, "error": str(exc)}
 
     def _pack_plugin_ids(self, pack_id: str) -> list[str]:
-        return [
-            m.id
-            for m in self.registry.list()
-            if m.id.startswith(f"connector__{pack_id}__")
-        ]
+        return [m.id for m in self.registry.list() if m.id.startswith(f"connector__{pack_id}__")]
 
     # ── connector OAuth (issue #42: completed inside the hub, no redirects) ──
 
@@ -778,9 +744,7 @@ class ExtensionsConsole:
             }
             for ch in read_channels(doc)
         ]
-        sensitive = [
-            {"id": wid, "title": wid, "sensitive": True} for wid in write_channels(doc)
-        ]
+        sensitive = [{"id": wid, "title": wid, "sensitive": True} for wid in write_channels(doc)]
         auth = doc.get("auth") or {}
         fields = auth.get("credential_fields") or []
         return {
@@ -789,9 +753,7 @@ class ExtensionsConsole:
             "credential_fields": fields,
         }
 
-    async def oauth_complete(
-        self, connector_id: str, scopes: list[str], credentials: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def oauth_complete(self, connector_id: str, scopes: list[str], credentials: dict[str, Any]) -> dict[str, Any]:
         # OAuth completion: credentials go into the vault, ticked read scopes
         # are granted + bridged, write scopes get a per_use policy (bound to
         # the cowork approval system, upstream fusion-cowork#225).
@@ -804,8 +766,7 @@ class ExtensionsConsole:
         valid_writes = set(write_channels(doc))
         unknown = [s for s in scopes if s not in valid_reads]
         if unknown:
-            # i18n: user-facing
-            return {"completed": False, "error": f"未知读 scope: {unknown}"}
+            return {"completed": False, "error": f"unknown read scopes: {unknown}"}
         cred_ref = str(doc.get("credential_ref") or connector_id)
         saved = self.save_credentials(cred_ref, credentials)
         if not saved.get("saved"):
@@ -826,11 +787,7 @@ class ExtensionsConsole:
         # corresponding bundle item pending_auth -> enabled
         for bundle in state.values():
             for item in bundle.get("items", []):  # type: ignore[union-attr]
-                if (
-                    isinstance(item, dict)
-                    and item.get("type") == "connector"
-                    and item.get("ref") == connector_id
-                ):
+                if isinstance(item, dict) and item.get("type") == "connector" and item.get("ref") == connector_id:
                     item["state"] = "enabled"
         self._save_bundles_state(state)
         added = await self.enable_connector(connector_id)
@@ -883,8 +840,7 @@ class ExtensionsConsole:
         state = self._bundles_state()
         bundle = state.get(bundle_id)
         if bundle is None:
-            # i18n: user-facing
-            return {"error": f"bundle {bundle_id!r} 未安装"}
+            return {"error": f"bundle {bundle_id!r} not installed"}
         entry = self._market_entry(bundle_id)
         installed_v = self._version_key(str(bundle.get("version") or "0"))
         available_v = self._version_key(entry.version)
@@ -896,11 +852,7 @@ class ExtensionsConsole:
                 "available_version": entry.version,
             }
         known_refs = {i.get("ref") for i in bundle.get("items", [])}
-        new_items = [
-            dict(item)
-            for item in self._entry_items(entry)
-            if item.get("ref") not in known_refs
-        ]
+        new_items = [dict(item) for item in self._entry_items(entry) if item.get("ref") not in known_refs]
         return {
             "bundle_id": bundle_id,
             "update_available": True,
@@ -911,9 +863,7 @@ class ExtensionsConsole:
         }
 
     # Apply the update: install only opt-in new items, bump the version.
-    async def bundle_update_apply(
-        self, bundle_id: str, opt_in: list[str]
-    ) -> dict[str, Any]:
+    async def bundle_update_apply(self, bundle_id: str, opt_in: list[str]) -> dict[str, Any]:
         preview = self.bundle_update_preview(bundle_id)
         if not preview.get("update_available"):
             return {"updated": False, "reason": "no update available"}
@@ -928,9 +878,7 @@ class ExtensionsConsole:
             if ref not in opted:
                 continue  # unticked new items are not auto-opened (opt-in contract)
             try:
-                item_state = await self._install_bundle_item(
-                    str(item.get("type")), ref, item
-                )
+                item_state = await self._install_bundle_item(str(item.get("type")), ref, item)
                 items_out.append({"type": item.get("type"), "ref": ref, **item_state})
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{item.get('type')}:{ref}: {exc}")
@@ -965,8 +913,7 @@ class ExtensionsConsole:
         state = self._bundles_state()
         bundle = state.get(bundle_id)
         if bundle is None:
-            # i18n: user-facing
-            return {"error": f"bundle {bundle_id!r} 未安装"}
+            return {"error": f"bundle {bundle_id!r} not installed"}
         caps: list[str] = []
         for item in bundle.get("items", []):
             ref = str(item.get("ref"))
@@ -1013,8 +960,7 @@ class ExtensionsConsole:
         state = self._bundles_state()
         bundle = state.pop(bundle_id, None)
         if bundle is None:
-            # i18n: user-facing
-            return {"removed": False, "error": f"bundle {bundle_id!r} 未安装"}
+            return {"removed": False, "error": f"bundle {bundle_id!r} not installed"}
         removed: list[str] = []
         errors: list[str] = []
         for item in bundle.get("items", []):
@@ -1041,9 +987,7 @@ class ExtensionsConsole:
                 elif item.get("type") == "skill_package":
                     from fusion_plugins_ecosystem.marketplace import Marketplace
 
-                    Marketplace(
-                        connector_registry=self._connector_registry()
-                    ).uninstall(ref)
+                    Marketplace(connector_registry=self._connector_registry()).uninstall(ref)
                     removed.append(ref)
             except Exception as exc:  # noqa: BLE001 — per-item errors do not abort the uninstall
                 errors.append(f"{item.get('type')}:{ref}: {exc}")
@@ -1088,9 +1032,7 @@ class ExtensionsConsole:
         )
         return {"records": records}
 
-    async def revoke_scopes(
-        self, connector_id: str, scopes: list[str]
-    ) -> dict[str, Any]:
+    async def revoke_scopes(self, connector_id: str, scopes: list[str]) -> dict[str, Any]:
         # Revoke granted read scopes: update _scope_grants, re-bridge, emit
         # audit events.
         # Revocations from the security workbench land back in the registry
@@ -1327,12 +1269,10 @@ class ExtensionsConsole:
         self.desk.log(
             f"connector__{cid}",
             "INFO",
-            f"connector {cid} installed ({len(reads)} read channels, "
-            f"{len(writes)} write channels pending review)",
+            f"connector {cid} installed ({len(reads)} read channels, {len(writes)} write channels pending review)",
         )
         logger.info(
-            "extensions_console: connector %s installed by %s (%d reads, "
-            "%d writes not auto-listed)",
+            "extensions_console: connector %s installed by %s (%d reads, %d writes not auto-listed)",
             cid,
             self.installed_by,
             len(reads),
@@ -1345,9 +1285,7 @@ class ExtensionsConsole:
             "write_channels_review": writes,
         }
 
-    def save_credentials(
-        self, credential_ref: str, credentials: dict[str, Any]
-    ) -> dict[str, Any]:
+    def save_credentials(self, credential_ref: str, credentials: dict[str, Any]) -> dict[str, Any]:
         if not credential_ref or not isinstance(credentials, dict):
             return {"saved": False, "error": "missing credential_ref or credentials"}
         stored = json.dumps(credentials, ensure_ascii=False)
@@ -1357,10 +1295,7 @@ class ExtensionsConsole:
         # console-local encrypted vault (same _encrypt_key derived key).
         if hasattr(self.desk, "set_api_key"):
             self.desk.set_api_key(credential_ref, stored)
-            if (
-                hasattr(self.desk, "get_api_key")
-                and self.desk.get_api_key(credential_ref) == stored
-            ):
+            if hasattr(self.desk, "get_api_key") and self.desk.get_api_key(credential_ref) == stored:
                 logger.info(
                     "extensions_console: credentials %s written to Desk encrypted storage",
                     credential_ref,
@@ -1371,8 +1306,7 @@ class ExtensionsConsole:
         except ImportError:
             return {
                 "saved": False,
-                "error": "vault unavailable (no Desk config center, "
-                "no local encryption)",
+                "error": "vault unavailable (no Desk config center, no local encryption)",
             }
         vault = _local_vault_read()
         vault[credential_ref] = _encrypt_key(stored)
@@ -1466,8 +1400,7 @@ class ExtensionsConsole:
             result = await execute_operation(doc, reads[0]["id"], credentials=creds)
             if not result.get("ok"):
                 problems.append(
-                    f"{reads[0]['id']} live check failed: "
-                    f"{result.get('error_code')}: {result.get('reason')}"
+                    f"{reads[0]['id']} live check failed: {result.get('error_code')}: {result.get('reason')}"
                 )
         return {
             "connector_id": connector_id,
@@ -1513,16 +1446,12 @@ class ExtensionsConsole:
                     entry_point=_RestOpBound(cid, ch["id"], op),
                     default_mounted=False,
                     sandbox_mode=SandboxMode.INLINE,
-                    mcp_annotations=MCPAnnotations(
-                        readOnlyHint=True, openWorldHint=True
-                    ),
+                    mcp_annotations=MCPAnnotations(readOnlyHint=True, openWorldHint=True),
                 )
             )
             added.append(f"connector.{cid}.{ch['id']}")
         await self._enable_all(f"connector__{cid}__")
-        logger.info(
-            "extensions_console: connector %s bridged %d read channels", cid, len(added)
-        )
+        logger.info("extensions_console: connector %s bridged %d read channels", cid, len(added))
         return added
 
     # Bridge = expose: read channels / ticked tools are set ENABLED right
@@ -1535,9 +1464,7 @@ class ExtensionsConsole:
                 try:
                     await self.lifecycle.enable(m.id)
                 except Exception as exc:  # noqa: BLE001 — per-item errors do not abort the batch
-                    logger.warning(
-                        "extensions_console: failed to enable %s: %s", m.id, exc
-                    )
+                    logger.warning("extensions_console: failed to enable %s: %s", m.id, exc)
 
     async def _unbridge_connector(self, connector_id: str) -> list[str]:
         removed = []
@@ -1689,16 +1616,13 @@ class ExtensionsConsole:
         if tmp_dir is None:
             store = _extensions_dir() / _PLUGINS_KEY
             store.mkdir(parents=True, exist_ok=True)
-            (store / f"{manifest.id}.json").write_text(
-                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            (store / f"{manifest.id}.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         nodes = [self._node_of(manifest.id) or manifest.id]
         self._persist_ticks(manifest.id, [])
         self.desk.log(
             manifest.id,
             "INFO",
-            f"declarative plugin {manifest.id} installed, candidate nodes: "
-            f"{nodes} (exposed after tick)",
+            f"declarative plugin {manifest.id} installed, candidate nodes: {nodes} (exposed after tick)",
         )
         return {
             "installed": True,
@@ -1719,9 +1643,7 @@ class ExtensionsConsole:
             out.append(entry)
         return out
 
-    def register_mcp_server(
-        self, server_id: str, url: str, credential_ref: str = ""
-    ) -> dict[str, Any]:
+    def register_mcp_server(self, server_id: str, url: str, credential_ref: str = "") -> dict[str, Any]:
         # Persist only after the probe (initialize + tools/list) passes —
         # prove the endpoint speaks MCP first.
         server_id = str(server_id or "").strip()
@@ -1785,9 +1707,7 @@ class ExtensionsConsole:
 
     def remove_mcp_server(self, server_id: str) -> dict[str, Any]:
         data = self._read_json(_MCP_KEY, {"servers": [], "ticks": {}})
-        data["servers"] = [
-            s for s in data.get("servers") or [] if s.get("id") != server_id
-        ]
+        data["servers"] = [s for s in data.get("servers") or [] if s.get("id") != server_id]
         ticks = data.get("ticks") or {}
         ticks.pop(server_id, None)
         data["ticks"] = ticks
@@ -1803,9 +1723,7 @@ class ExtensionsConsole:
     # Tick tools -> bridge into mcp__<server>__<tool> capability plugins
     # (re-tick performs a full reconciliation).
     async def tick_mcp_tools(self, server_id: str, tools: list[str]) -> dict[str, Any]:
-        server = next(
-            (s for s in self.list_mcp_servers() if s.get("id") == server_id), None
-        )
+        server = next((s for s in self.list_mcp_servers() if s.get("id") == server_id), None)
         if not server:
             return {"ticked": [], "errors": [f"server '{server_id}' unknown"]}
         known = {t.get("name"): t for t in server.get("tools", [])}
@@ -1837,9 +1755,7 @@ class ExtensionsConsole:
         data["ticks"] = ticks
         self._write_json(_MCP_KEY, data)
 
-    async def _bridge_mcp_tools(
-        self, server: dict[str, Any], tools: list[str]
-    ) -> list[str]:
+    async def _bridge_mcp_tools(self, server: dict[str, Any], tools: list[str]) -> list[str]:
         from fusion_plugins_ecosystem.connector import _schema_to_params
         from fusion_plugins_ecosystem.registry import (
             PluginCapability,
@@ -1876,32 +1792,22 @@ class ExtensionsConsole:
                     entry_point=_McpToolBound(self, sid, name),
                     default_mounted=False,
                     sandbox_mode=SandboxMode.INLINE,
-                    mcp_annotations=MCPAnnotations(
-                        readOnlyHint=read_only, openWorldHint=True
-                    ),
+                    mcp_annotations=MCPAnnotations(readOnlyHint=read_only, openWorldHint=True),
                 )
             )
             bridged.append(f"mcp.{sid}.{name}")
         await self._enable_all(prefix)
-        logger.info(
-            "extensions_console: MCP server %s bridged %d tools", sid, len(bridged)
-        )
+        logger.info("extensions_console: MCP server %s bridged %d tools", sid, len(bridged))
         return bridged
 
-    async def call_mcp_tool(
-        self, server_id: str, tool: str, args: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def call_mcp_tool(self, server_id: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         # Gate-side execution: tools/call dispatched to the registered URL,
         # auth headers resolved server-side.
-        server = next(
-            (s for s in self.list_mcp_servers() if s.get("id") == server_id), None
-        )
+        server = next((s for s in self.list_mcp_servers() if s.get("id") == server_id), None)
         if not server:
             return {"ok": False, "error": f"MCP server '{server_id}' not registered"}
         try:
-            auth_headers = _vault_headers(
-                self.desk, str(server.get("credential_ref") or "")
-            )
+            auth_headers = _vault_headers(self.desk, str(server.get("credential_ref") or ""))
         except RuntimeError as exc:
             return {"ok": False, "error": str(exc)}
         try:
@@ -1940,11 +1846,7 @@ class ExtensionsConsole:
         if custom_dir.exists():
             for path in sorted(custom_dir.glob("*.json")):
                 try:
-                    self.registry.register(
-                        _manifest_from_decl(
-                            json.loads(path.read_text(encoding="utf-8"))
-                        )
-                    )
+                    self.registry.register(_manifest_from_decl(json.loads(path.read_text(encoding="utf-8"))))
                 except (ValueError, KeyError, TypeError) as exc:
                     logger.warning(
                         "extensions_console: skipping corrupt plugin manifest %s: %s",

@@ -44,10 +44,7 @@ FEISHU_PACK = ConnectorPack(
     name="飞书 Lark",
     version="1.0.0",
     # i18n: user-facing
-    description=(
-        "飞书/Lark 连接器：读取消息与云文档、发送消息回写工作流"
-        "（外部 MCP server: @larksuiteoapi/lark-mcp）"
-    ),
+    description=("飞书/Lark 连接器：读取消息与云文档、发送消息回写工作流（外部 MCP server: @larksuiteoapi/lark-mcp）"),
     transport="stdio",
     command=("npx", "-y", "@larksuiteoapi/lark-mcp", "mcp"),
     env_credentials={

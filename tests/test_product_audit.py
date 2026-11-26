@@ -21,7 +21,6 @@ import pytest
 from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.desk_runtime import DeskRuntime
 from fusion_plugins_ecosystem.jsonrpc import MCPHandler
-from fusion_plugins_ecosystem.transport import _is_health_request
 from fusion_plugins_ecosystem.lifecycle import PluginLifecycle
 from fusion_plugins_ecosystem.registry import (
     PluginCapability,
@@ -32,7 +31,7 @@ from fusion_plugins_ecosystem.registry import (
 )
 from fusion_plugins_ecosystem.schema import PluginParamType, SandboxMode
 from fusion_plugins_ecosystem.server import MCPServer, _is_loopback_host
-
+from fusion_plugins_ecosystem.transport import _is_health_request
 
 # ── P0-1: remote transport on non-loopback without auth refuses to start ──
 
@@ -48,9 +47,7 @@ def test_is_loopback_host() -> None:
 
 
 async def test_remote_transport_no_auth_rejected() -> None:
-    server = MCPServer(
-        config=EcosystemConfig(mcp_transport="sse", mcp_host="0.0.0.0", mcp_port=0)
-    )
+    server = MCPServer(config=EcosystemConfig(mcp_transport="sse", mcp_host="0.0.0.0", mcp_port=0))
     with pytest.raises(RuntimeError, match="auth token"):
         await server.start(transport="sse", host="0.0.0.0", port=0)
 
@@ -60,9 +57,7 @@ async def test_remote_transport_loopback_allowed_without_auth() -> None:
     import os
 
     assert os.environ.get("FUSION_PLUGIN_AUTH_TOKEN") is None or True
-    server = MCPServer(
-        config=EcosystemConfig(mcp_transport="sse", mcp_host="127.0.0.1", mcp_port=0)
-    )
+    server = MCPServer(config=EcosystemConfig(mcp_transport="sse", mcp_host="127.0.0.1", mcp_port=0))
     start_task = asyncio.create_task(server.start(transport="sse", port=0))
     await asyncio.sleep(0.3)
     assert server._running is True
@@ -143,9 +138,7 @@ def _make_handler() -> MCPHandler:
 
 
 async def _call(handler: MCPHandler, method: str, params: dict | None = None):
-    resp = await handler.handle(
-        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
-    )
+    resp = await handler.handle({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}})
     assert resp is not None
     return resp.get("result") or resp.get("error")
 
@@ -156,7 +149,7 @@ async def test_config_set_sensitive_field_rejected() -> None:
     result = await _call(handler, "plugins/config.set", {"sandbox_mode": "process"})
     assert result["ok"] is False
     # i18n: user-facing
-    assert "敏感" in result["error"]
+    assert "security-sensitive" in result["error"]
     # mcp_host backend original name -> read-only
     result = await _call(handler, "plugins/config.set", {"mcp_host": "0.0.0.0"})
     assert result["ok"] is False
@@ -207,9 +200,7 @@ async def test_apply_config_to_deps_syncs_lifecycle_and_meter() -> None:
 async def test_install_rejects_invalid_plugin_id() -> None:
     handler = _make_handler()
     # A plugin_id containing a newline must be rejected (log-injection guard)
-    result = await _call(
-        handler, "plugins/install", {"plugin_id": "evil\n[CRITICAL] fake"}
-    )
+    result = await _call(handler, "plugins/install", {"plugin_id": "evil\n[CRITICAL] fake"})
     assert result["ok"] is False
 
 
@@ -265,9 +256,7 @@ def test_full_shutdown_awaits_stop_watcher() -> None:
 
     src = inspect.getsource(server_mod.MCPServer._full_shutdown)
     assert "await self.lifecycle.stop_watcher()" in src
-    assert "self.lifecycle.stop_watcher()" not in src.replace(
-        "await self.lifecycle.stop_watcher()", ""
-    )
+    assert "self.lifecycle.stop_watcher()" not in src.replace("await self.lifecycle.stop_watcher()", "")
 
 
 # ── P0-3: PROCESS worker config serialized as Python literals (not JSON) ──
@@ -328,7 +317,6 @@ async def test_illegal_transition_logged_to_desk() -> None:
     lifecycle = PluginLifecycle(registry)
     # Build a LOADED instance, then transition illegally to a state other than ENABLED
     from fusion_plugins_ecosystem.lifecycle import PluginInstance
-
     from tests.test_lifecycle import _make_manifest
 
     inst = PluginInstance(

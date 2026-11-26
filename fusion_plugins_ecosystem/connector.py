@@ -73,9 +73,7 @@ class ConnectorToolSpec:
             name=data["name"],
             description=data.get("description", ""),
             input_schema=dict(data.get("input_schema") or {}),
-            risk=RiskLevel(risk)
-            if risk in RiskLevel._value2member_map_
-            else RiskLevel.LOW,
+            risk=RiskLevel(risk) if risk in RiskLevel._value2member_map_ else RiskLevel.LOW,
             read_only=bool(data.get("read_only", False)),
         )
 
@@ -99,9 +97,7 @@ class ConnectorPack:
 
     def __post_init__(self) -> None:
         if self.transport not in ("stdio", "http"):
-            raise ValueError(
-                f"connector {self.id!r}: transport must be stdio/http, got {self.transport!r}"
-            )
+            raise ValueError(f"connector {self.id!r}: transport must be stdio/http, got {self.transport!r}")
         if self.transport == "stdio" and not self.command:
             raise ValueError(f"connector {self.id!r}: stdio connector requires a command")
         if self.transport == "http" and not self.url:
@@ -181,9 +177,7 @@ class ExternalMCPClient:
 
     # ── JSON-RPC basics ──
 
-    def _request_body(
-        self, method: str, params: dict[str, Any] | None
-    ) -> dict[str, Any]:
+    def _request_body(self, method: str, params: dict[str, Any] | None) -> dict[str, Any]:
         self._next_id += 1
         body: dict[str, Any] = {"jsonrpc": "2.0", "id": self._next_id, "method": method}
         if params is not None:
@@ -194,9 +188,7 @@ class ExternalMCPClient:
     def _raise_rpc_error(resp: dict[str, Any]) -> dict[str, Any]:
         if "error" in resp and resp["error"] is not None:
             err = resp["error"]
-            raise RuntimeError(
-                f"MCP server error: {err.get('code')}: {err.get('message')}"
-            )
+            raise RuntimeError(f"MCP server error: {err.get('code')}: {err.get('message')}")
         return resp.get("result", {})
 
     # ── stdio transport ──
@@ -229,9 +221,7 @@ class ExternalMCPClient:
         while True:
             raw = await asyncio.wait_for(proc.stdout.readline(), timeout=self.timeout)
             if not raw:
-                raise RuntimeError(
-                    f"connector: {self.pack.id} external MCP server exited (code={proc.returncode})"
-                )
+                raise RuntimeError(f"connector: {self.pack.id} external MCP server exited (code={proc.returncode})")
             stripped = raw.strip()
             if not stripped:
                 continue
@@ -256,9 +246,7 @@ class ExternalMCPClient:
         token = creds.get("Authorization") or creds.get("authorization")
         if token:
             headers["Authorization"] = token
-        req = urllib.request.Request(
-            self.pack.url, data=json.dumps(body).encode("utf-8"), headers=headers
-        )
+        req = urllib.request.Request(self.pack.url, data=json.dumps(body).encode("utf-8"), headers=headers)
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             return resp.read().decode("utf-8")
 
@@ -266,9 +254,7 @@ class ExternalMCPClient:
         try:
             raw = await asyncio.to_thread(self._http_post_sync, body)
         except (urllib.error.URLError, OSError, subprocess.SubprocessError) as exc:
-            raise RuntimeError(
-                f"connector: {self.pack.id} HTTP request failed: {exc}"
-            ) from exc
+            raise RuntimeError(f"connector: {self.pack.id} HTTP request failed: {exc}") from exc
         # Streamable HTTP: either JSON or SSE (data: line)
         if raw.lstrip().startswith("{"):
             resp = json.loads(raw)
@@ -311,9 +297,7 @@ class ExternalMCPClient:
         if self.pack.transport == "stdio":
             proc = await self._ensure_stdio()
             assert proc.stdin is not None
-            proc.stdin.write(
-                b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
-            )
+            proc.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
             await proc.stdin.drain()
         self._initialized = True
         logger.info(
@@ -334,9 +318,7 @@ class ExternalMCPClient:
     # {content, isError}.
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         await self.initialize()
-        result = await self._roundtrip(
-            self._request_body("tools/call", {"name": name, "arguments": arguments})
-        )
+        result = await self._roundtrip(self._request_body("tools/call", {"name": name, "arguments": arguments}))
         return {
             "content": result.get("content", []),
             "isError": bool(result.get("isError", False)),
@@ -397,9 +379,7 @@ class _BoundTool:
     # INLINE sandbox only (the external MCP server is already a separate
     # process, no double isolation needed); closures cannot be imported by
     # PROCESS workers — the ConnectorRegistry install-time gate enforces this.
-    def __init__(
-        self, registry: ConnectorRegistry, pack_id: str, tool_name: str
-    ) -> None:
+    def __init__(self, registry: ConnectorRegistry, pack_id: str, tool_name: str) -> None:
         self.registry = registry
         self.pack_id = pack_id
         self.tool_name = tool_name
@@ -446,13 +426,10 @@ class ConnectorRegistry:
     # is idempotent; a version change uninstalls the old pack first.
     def install_pack(self, pack: ConnectorPack) -> list[str]:
         if not self.enabled:
-            raise RuntimeError(
-                "connector: connector framework not enabled (enable_connector_framework=false)"
-            )
+            raise RuntimeError("connector: connector framework not enabled (enable_connector_framework=false)")
         if self.sandbox_default_mode == "process":
             raise RuntimeError(
-                "connector: connector tools only support the inline sandbox, "
-                "set sandbox_default_mode=inline and retry"
+                "connector: connector tools only support the inline sandbox, set sandbox_default_mode=inline and retry"
             )
         existing = self._packs.get(pack.id)
         if existing is not None and existing.version == pack.version:
@@ -473,9 +450,7 @@ class ConnectorRegistry:
             "INFO",
             f"connector pack installed v{pack.version}, bridged {len(plugin_ids)} tools",
         )
-        logger.info(
-            "connector: %s v%s installed, tools: %s", pack.id, pack.version, plugin_ids
-        )
+        logger.info("connector: %s v%s installed, tools: %s", pack.id, pack.version, plugin_ids)
         return plugin_ids
 
     # Uninstall a connector pack: unregister bridged plugins + close clients +
@@ -497,9 +472,7 @@ class ConnectorRegistry:
         self.desk.log(f"connector__{pack_id}", "INFO", "connector pack uninstalled")
         logger.info("connector: %s uninstalled", pack_id)
 
-    def _tool_manifest(
-        self, pack: ConnectorPack, tool: ConnectorToolSpec
-    ) -> PluginManifest:
+    def _tool_manifest(self, pack: ConnectorPack, tool: ConnectorToolSpec) -> PluginManifest:
         from fusion_plugins_ecosystem.schema import MCPAnnotations, SandboxMode
 
         return PluginManifest(
@@ -569,9 +542,7 @@ class ConnectorRegistry:
             self._clients[pack.id] = client
         return client
 
-    async def dispatch(
-        self, pack_id: str, tool_name: str, params: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def dispatch(self, pack_id: str, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         # Execute a connector tool: risk gate → external MCP tools/call.
         pack = self._packs.get(pack_id)
         if pack is None:
@@ -579,19 +550,14 @@ class ConnectorRegistry:
         tool = next((t for t in pack.tools if t.name == tool_name), None)
         if tool is None:
             raise KeyError(f"connector {pack_id!r} has no tool {tool_name!r}")
-        if (
-            self.require_high_risk_approval
-            and tool.risk == RiskLevel.HIGH
-            and not self.is_approved(pack_id, tool_name)
-        ):
+        if self.require_high_risk_approval and tool.risk == RiskLevel.HIGH and not self.is_approved(pack_id, tool_name):
             self.desk.log(
                 f"connector__{pack_id}",
                 "WARNING",
                 f"HIGH_RISK tool {tool_name} not approved, refusing execution",
             )
             raise PermissionError(
-                f"connector tool {pack_id}.{tool_name} has risk level HIGH and is not approved, "
-                "call approve_tool first"
+                f"connector tool {pack_id}.{tool_name} has risk level HIGH and is not approved, call approve_tool first"
             )
         client = self._client_for(pack)
         try:
@@ -603,9 +569,9 @@ class ConnectorRegistry:
                 "connector_tool_calls_total", "connector tool calls total (bucketed by result)"
             ).inc(connector=pack_id, status="error")
             raise
-        self.desk.metrics.counter(
-            "connector_tool_calls_total", "connector tool calls total (bucketed by result)"
-        ).inc(connector=pack_id, status=status)
+        self.desk.metrics.counter("connector_tool_calls_total", "connector tool calls total (bucketed by result)").inc(
+            connector=pack_id, status=status
+        )
         return result
 
     # Close all connector clients (reap stdio subprocesses).

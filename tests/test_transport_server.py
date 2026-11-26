@@ -8,9 +8,9 @@ import sys
 
 import pytest
 
-from fusion_plugins_ecosystem.config import EcosystemConfig
-from fusion_plugins_ecosystem import server as server_module
 from fusion_plugins_ecosystem import __version__
+from fusion_plugins_ecosystem import server as server_module
+from fusion_plugins_ecosystem.config import EcosystemConfig
 from fusion_plugins_ecosystem.server import MCPServer
 from fusion_plugins_ecosystem.transport import (
     HTTPTransport,
@@ -18,7 +18,6 @@ from fusion_plugins_ecosystem.transport import (
     StdioTransport,
     create_transport,
 )
-
 
 # ── create_transport factory ──
 
@@ -195,9 +194,7 @@ async def test_sse_transport_post_round_trip() -> None:
     await t.start()
     port = t.port
 
-    body = json.dumps(
-        {"jsonrpc": "2.0", "id": 7, "method": "ping", "params": {}}
-    ).encode("utf-8")
+    body = json.dumps({"jsonrpc": "2.0", "id": 7, "method": "ping", "params": {}}).encode("utf-8")
 
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
     writer.write(

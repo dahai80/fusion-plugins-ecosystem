@@ -117,7 +117,7 @@ def test_caveman_compress_with_desk_logs() -> None:
     assert call_args[0][0] == "caveman_compress"
     assert call_args[0][1] == "INFO"
     # i18n: user-facing (source keeps this log message in Chinese)
-    assert "压缩完成" in call_args[0][2]
+    assert "compression complete" in call_args[0][2]
 
 
 def test_caveman_compress_ratio_calculation() -> None:

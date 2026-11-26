@@ -102,9 +102,7 @@ def shell_registration_enabled() -> bool:
 
 
 def load_manifest() -> dict[str, Any]:
-    path = Path(
-        os.environ.get(MANIFEST_PATH_ENV, "").strip() or _default_manifest_path()
-    )
+    path = Path(os.environ.get(MANIFEST_PATH_ENV, "").strip() or _default_manifest_path())
     if not path.exists():
         raise FileNotFoundError(f"shell manifest does not exist: {path}")
     manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -134,9 +132,7 @@ def load_manifest() -> dict[str, Any]:
     return manifest
 
 
-async def _registry_loop_body(
-    client: Any, manifest: dict[str, Any], interval: float
-) -> None:
+async def _registry_loop_body(client: Any, manifest: dict[str, Any], interval: float) -> None:
     module_id = str(manifest["id"])
     gateway = gateway_base_url().rstrip("/")
     adm = admin_key()
@@ -182,14 +178,10 @@ async def _registry_loop_body(
                     logger.info("shell heartbeat 404, re-registering %s", module_id)
                     registered = False
                 elif resp.status_code == 401 and module_key:
-                    logger.warning(
-                        "shell heartbeat 401 (issued key invalid), re-registering %s", module_id
-                    )
+                    logger.warning("shell heartbeat 401 (issued key invalid), re-registering %s", module_id)
                     registered = False
                 elif resp.status_code != 200:
-                    raise RuntimeError(
-                        f"shell heartbeat failed: {resp.status_code} {resp.text[:200]}"
-                    )
+                    raise RuntimeError(f"shell heartbeat failed: {resp.status_code} {resp.text[:200]}")
         except asyncio.CancelledError:
             logger.info("shell registration loop cancelled (module=%s)", module_id)
             raise
@@ -205,9 +197,7 @@ def _safe_json(resp: Any) -> Any:
         return None
 
 
-async def shell_registry_loop(
-    client: Any = None, interval: float = REGISTER_INTERVAL_SECONDS
-) -> None:
+async def shell_registry_loop(client: Any = None, interval: float = REGISTER_INTERVAL_SECONDS) -> None:
     # Register once, keep alive via heartbeats; re-register after a gateway
     # restart (404). Failures only warn and retry, never affecting the service.
     try:

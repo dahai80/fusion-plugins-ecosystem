@@ -107,11 +107,7 @@ class TokenMeter:
         # Anomaly detection: PLUGIN_LOCAL with zero input/output tokens and
         # a very long wall_seconds, matching the "subagent runs 40 minutes
         # with no token usage" pain point
-        if (
-            rec.kind == TokenKind.PLUGIN_LOCAL
-            and rec.total_tokens == 0
-            and rec.wall_seconds > 60
-        ):
+        if rec.kind == TokenKind.PLUGIN_LOCAL and rec.total_tokens == 0 and rec.wall_seconds > 60:
             logger.warning(
                 "token_meter: plugin %s ran %.1f seconds with no token usage, possibly stuck",
                 rec.plugin_id,
@@ -235,9 +231,7 @@ class TokenMeter:
         removed = [r for r in self._records if r.timestamp < cutoff]
         self._records = kept
         self._rebuild_by_plugin(removed)
-        logger.info(
-            "token_meter: evicted %d records by age (>%ss)", len(removed), max_age_seconds
-        )
+        logger.info("token_meter: evicted %d records by age (>%ss)", len(removed), max_age_seconds)
 
     def _rebuild_by_plugin(self, removed: list[TokenRecord]) -> None:
         # Rebuild the affected plugins' _by_plugin lists in one pass given
@@ -333,9 +327,7 @@ class TokenMeter:
         max_seq = self._next_seq - 1
         snapshot = {"last_seq": max_seq, "records": data}
         payload = json.dumps(snapshot, ensure_ascii=False, indent=2)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent), prefix=".token_meter_", suffix=".tmp"
-        )
+        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), prefix=".token_meter_", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(payload)

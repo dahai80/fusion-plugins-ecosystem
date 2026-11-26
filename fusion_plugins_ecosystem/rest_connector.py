@@ -50,9 +50,7 @@ _PATH_RE = re.compile(r"^\$([.\w\[\]]*)$")
 
 
 def connector_dir() -> Path:
-    return Path(
-        os.environ.get("FUSION_PLUGIN_CONNECTOR_DIR", DEFAULT_CONNECTOR_DIR)
-    ).expanduser()
+    return Path(os.environ.get("FUSION_PLUGIN_CONNECTOR_DIR", DEFAULT_CONNECTOR_DIR)).expanduser()
 
 
 def _doc_path(connector_id: str) -> Path:
@@ -73,9 +71,7 @@ def get_connector(connector_id: str) -> dict[str, Any] | None:
 def save_connector(connector_id: str, document: dict[str, Any]) -> None:
     d = connector_dir()
     d.mkdir(parents=True, exist_ok=True)
-    _doc_path(connector_id).write_text(
-        json.dumps(document, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    _doc_path(connector_id).write_text(json.dumps(document, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("rest_connector: connector %s saved to %s", connector_id, d)
 
 
@@ -106,10 +102,7 @@ def list_connectors() -> list[dict[str, Any]]:
 
 
 def connector_report() -> list[dict[str, Any]]:
-    return [
-        {**entry, "problems": validate_connector(get_connector(entry["id"]) or {})}
-        for entry in list_connectors()
-    ]
+    return [{**entry, "problems": validate_connector(get_connector(entry["id"]) or {})} for entry in list_connectors()]
 
 
 def validate_connector(doc: dict[str, Any]) -> list[str]:
@@ -136,10 +129,7 @@ def validate_connector(doc: dict[str, Any]) -> list[str]:
                 problems.append(f"operation '{name}' {key} must be an object")
         for dotted in (op.get("response") or {}).values():
             if not isinstance(dotted, str) or not _PATH_RE.match(dotted):
-                problems.append(
-                    f"operation '{name}' response path {dotted!r} "
-                    "must be JSONPath-lite ($.a.b)"
-                )
+                problems.append(f"operation '{name}' response path {dotted!r} must be JSONPath-lite ($.a.b)")
     auth = doc.get("auth", {})
     if auth and not auth.get("credential_fields"):
         problems.append("auth requires credential_fields")
@@ -166,11 +156,7 @@ def read_channels(doc: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def write_channels(doc: dict[str, Any]) -> list[str]:
-    return [
-        op_name
-        for op_name, op in (doc.get("operations") or {}).items()
-        if not is_read_op(op)
-    ]
+    return [op_name for op_name, op in (doc.get("operations") or {}).items() if not is_read_op(op)]
 
 
 def _extract(data: Any, dotted: str) -> Any:
@@ -252,9 +238,7 @@ async def execute_operation(
     started = time.monotonic()
     try:
         if kind == "rest":
-            result = await _exec_rest(
-                connector, op, credentials or {}, variables or {}, payload or {}
-            )
+            result = await _exec_rest(connector, op, credentials or {}, variables or {}, payload or {})
         else:
             result = await _exec_webhook(connector, op, payload or {})
     except httpx.TimeoutException:
@@ -291,14 +275,10 @@ async def _exec_rest(
     if auth_error:
         return {"ok": False, "error_code": "missing_credentials", "reason": auth_error}
 
-    params = {
-        k: _render(str(v), variables) for k, v in (op.get("params") or {}).items()
-    }
+    params = {k: _render(str(v), variables) for k, v in (op.get("params") or {}).items()}
     body = None if method == "GET" else (payload or {})
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.request(
-            method, url, headers=headers, params=params, json=body
-        )
+        resp = await client.request(method, url, headers=headers, params=params, json=body)
     if resp.status_code >= 400:
         error_code = f"http_{resp.status_code}"
         reason = resp.text[:200]

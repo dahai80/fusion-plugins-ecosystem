@@ -101,12 +101,8 @@ class StdioTransport(Transport):
         self._reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(self._reader)
         await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-        write_transport, write_protocol = await loop.connect_write_pipe(
-            asyncio.streams.FlowControlMixin, sys.stdout
-        )
-        self._writer = asyncio.StreamWriter(
-            write_transport, write_protocol, self._reader, loop
-        )
+        write_transport, write_protocol = await loop.connect_write_pipe(asyncio.streams.FlowControlMixin, sys.stdout)
+        self._writer = asyncio.StreamWriter(write_transport, write_protocol, self._reader, loop)
         self._read_task = asyncio.create_task(self._read_loop())
         logger.info("StdioTransport started")
 
@@ -211,9 +207,7 @@ class SSETransport(Transport):
         if self._running:
             return
         self._running = True
-        self._server = await asyncio.start_server(
-            self._handle_connection, self._host, self._port
-        )
+        self._server = await asyncio.start_server(self._handle_connection, self._host, self._port)
         actual_port = self.port
         logger.info("SSETransport started on %s:%d", self._host, actual_port)
 
@@ -232,9 +226,7 @@ class SSETransport(Transport):
         # the POST branch already writes back synchronously. Cross-client
         # broadcast would leak data (P0-2). Server-initiated notifications
         # use send_to_session.
-        logger.warning(
-            "SSETransport: send() broadcast is disabled, use send_to_session to route per session"
-        )
+        logger.warning("SSETransport: send() broadcast is disabled, use send_to_session to route per session")
 
     async def send_to_session(self, session_id: str, message: dict[str, Any]) -> None:
         queue = self._sessions.get(session_id)
@@ -254,9 +246,7 @@ class SSETransport(Transport):
                 _SSE_QUEUE_MAXSIZE,
             )
 
-    async def _handle_connection(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             request_text, headers = await _read_http_head(reader)
             if request_text is None:
@@ -312,9 +302,7 @@ class SSETransport(Transport):
                     writer.close()
                     await writer.wait_closed()
                     return
-                body = await asyncio.wait_for(
-                    reader.read(content_length), timeout=_READ_TIMEOUT
-                )
+                body = await asyncio.wait_for(reader.read(content_length), timeout=_READ_TIMEOUT)
                 try:
                     request = json.loads(body.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as e:
@@ -335,9 +323,7 @@ class SSETransport(Transport):
                         writer.write(
                             b"HTTP/1.1 200 OK\r\n"
                             b"Content-Type: application/json\r\n"
-                            b"Content-Length: "
-                            + str(len(resp_bytes)).encode()
-                            + b"\r\n"
+                            b"Content-Length: " + str(len(resp_bytes)).encode() + b"\r\n"
                             b"\r\n" + resp_bytes
                         )
                         await writer.drain()
@@ -429,9 +415,7 @@ class HTTPTransport(Transport):
         if self._running:
             return
         self._running = True
-        self._server = await asyncio.start_server(
-            self._handle_request, self._host, self._port
-        )
+        self._server = await asyncio.start_server(self._handle_request, self._host, self._port)
         actual_port = self.port
         logger.info("HTTPTransport started on %s:%d", self._host, actual_port)
 
@@ -445,9 +429,7 @@ class HTTPTransport(Transport):
     async def send(self, message: dict[str, Any]) -> None:
         logger.debug("HTTPTransport send: direct push not supported")
 
-    async def _handle_request(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             request_text, headers = await _read_http_head(reader)
             if request_text is None:
@@ -503,9 +485,7 @@ class HTTPTransport(Transport):
                 await writer.wait_closed()
                 return
 
-            body = await asyncio.wait_for(
-                reader.read(content_length), timeout=_READ_TIMEOUT
-            )
+            body = await asyncio.wait_for(reader.read(content_length), timeout=_READ_TIMEOUT)
             try:
                 request = json.loads(body.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
@@ -568,9 +548,7 @@ async def _read_http_head(
     headers: dict[str, str] = {}
     for _ in range(_MAX_HEADERS):
         try:
-            header_line = await asyncio.wait_for(
-                reader.readline(), timeout=_READ_TIMEOUT
-            )
+            header_line = await asyncio.wait_for(reader.readline(), timeout=_READ_TIMEOUT)
         except TimeoutError:
             raise
         if len(header_line) > _MAX_HEADER_LINE:
@@ -625,9 +603,7 @@ def _request_path(request_text: str) -> str:
     return parts[1] if len(parts) >= 2 else "/"
 
 
-async def _write_simple_response(
-    writer: asyncio.StreamWriter, status: int, message: bytes
-) -> None:
+async def _write_simple_response(writer: asyncio.StreamWriter, status: int, message: bytes) -> None:
     # Write a simple HTTP error response with no body.
     reason = {
         400: b"Bad Request",
@@ -677,9 +653,7 @@ def _is_metrics_request(request_text: str) -> bool:
     return parts[1].rstrip("/") == "/metrics"
 
 
-async def _write_metrics_response(
-    writer: asyncio.StreamWriter, exposition: str
-) -> None:
+async def _write_metrics_response(writer: asyncio.StreamWriter, exposition: str) -> None:
     # Write the Prometheus text exposition format response (unauthenticated,
     # for scrape pulls).
     body = exposition.encode("utf-8")

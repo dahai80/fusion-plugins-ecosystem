@@ -92,9 +92,7 @@ class Marketplace:
             for p in list_builtin_packs()
         ]
 
-    def load_index(
-        self, source: str | None = None
-    ) -> tuple[list[MarketplaceEntry], list[str]]:
+    def load_index(self, source: str | None = None) -> tuple[list[MarketplaceEntry], list[str]]:
         # Load the marketplace index, returning (valid entries, warnings).
         # source: local JSON path or HTTPS URL; None uses the constructor
         # arg; when both are empty only the builtin catalog is returned.
@@ -210,8 +208,7 @@ class Marketplace:
             shutil.rmtree(dest)
         src = self._materialize_source(entry)
         shutil.copytree(src, dest)
-        # i18n: user-facing
-        self.desk_log(f"skill 包 {entry.id} 已安装到 {dest}")
+        self.desk_log(f"skill package {entry.id} installed to {dest}")
         return {"kind": "skill_package", "id": entry.id, "path": dest}
 
     def _materialize_source(self, entry: MarketplaceEntry) -> str:
@@ -246,16 +243,13 @@ class Marketplace:
         dest = os.path.join(self.install_root, entry_id)
         if os.path.isdir(dest):
             shutil.rmtree(dest)
-            # i18n: user-facing
-            self.desk_log(f"{entry_id} 已卸载")
+            self.desk_log(f"{entry_id} uninstalled")
 
     def list_installed(self) -> list[dict[str, Any]]:
         # List installed packages: connector packs + skill package dirs.
         installed: list[dict[str, Any]] = []
         for pack in self.connector_registry.list_packs():
-            installed.append(
-                {"kind": "connector_pack", "id": pack.id, "version": pack.version}
-            )
+            installed.append({"kind": "connector_pack", "id": pack.id, "version": pack.version})
         if os.path.isdir(self.install_root):
             for name in sorted(os.listdir(self.install_root)):
                 path = os.path.join(self.install_root, name)
