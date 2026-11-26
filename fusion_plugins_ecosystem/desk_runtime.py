@@ -139,69 +139,75 @@ except ImportError:
 class DeskRuntime:
     # fusion-cowork node registry (fusion_cowork.NodeRegistry)
     node_registry: Any | None = None
-    # fusion-cowork 任务调度器（fusion_cowork.TaskScheduler）
+    # fusion-cowork task scheduler (fusion_cowork.TaskScheduler)
     task_scheduler: Any | None = None
-    # fusion-cowork MLX 客户端（fusion_cowork.FusionMLXClient）
+    # fusion-cowork MLX client (fusion_cowork.FusionMLXClient)
     mlx_client: Any | None = None
-    # fusion-cowork 工作流引擎（fusion_cowork.WorkflowEngine）
+    # fusion-cowork workflow engine (fusion_cowork.WorkflowEngine)
     workflow_engine: Any | None = None
-    # fusion-cowork 日志器
+    # fusion-cowork logger
     desk_logger: logging.Logger | None = None
-    # 配置中心句柄（dict-like，支持 get/set）
+    # Config center handle (dict-like, supports get/set)
     config_center: Any | None = None
-    # MCP 网关端口（由 cowork 分配）
+    # MCP gateway port (allocated by cowork)
     mcp_gateway_port: int | None = None
-    # 已注册插件权限表 {plugin_id: {allowed_paths: [...], capabilities: [...]}}
+    # Registered plugin permission table {plugin_id: {allowed_paths: [...], capabilities: [...]}}
     plugin_permissions: dict[str, dict[str, Any]] = field(default_factory=dict)
-    # 显存占用台账 {plugin_id: mb}
+    # vRAM allocation ledger {plugin_id: mb}
     vram_allocations: dict[str, int] = field(default_factory=dict)
-    # 总显存预算（MB），0 表示不限制
+    # Total vRAM budget (MB); 0 means unlimited
     vram_total_mb: int = 0
-    # 已注册的插件 ID 集合
+    # Set of registered plugin IDs
     registered_plugin_ids: set[str] = field(default_factory=set)
-    # 日志环形缓冲区（供消费端查询历史日志）
+    # Log ring buffer (consumers query historical logs from it)
     log_entries: deque = field(default_factory=lambda: deque(maxlen=_LOG_BUFFER_MAX))
-    # 日志自增计数（生成日志条目 id）
+    # Log auto-increment counter (generates log entry ids)
     _log_counter: int = field(default=0)
-    # vRAM 操作锁（线程安全）：acquire_vram/release_vram 是同步方法，
-    # load/unload 同步路径会调用，asyncio.Lock 无法在同步代码里 await（P2-2）
+    # vRAM operation lock (thread safety): acquire_vram/release_vram are sync
+    # methods called on sync load/unload paths; asyncio.Lock cannot be awaited
+    # in sync code (P2-2)
     _vram_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    # 日志缓冲写锁：_log_counter 自增 + append 需原子，避免并发 id 重复/丢条目
+    # Log buffer write lock: _log_counter increment + append must be atomic to
+    # avoid duplicate ids / dropped entries under concurrency
     _log_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    # R5：跨 handler 共享的 MCP 会话状态 + 速率限制时间戳。
-    # 多个 MCPHandler 共用同一 DeskRuntime 时，限流/会话以 desk 为单一来源，
-    # 避免 per-handler 各自计数导致 N 个 handler 放大 N 倍限流上限。
+    # R5: MCP session state + rate limit timestamps shared across handlers.
+    # When multiple MCPHandlers share one DeskRuntime, rate limiting/sessions
+    # use desk as the single source of truth, avoiding per-handler counting
+    # that would multiply the rate limit N-fold with N handlers.
     _mcp_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
     _mcp_call_timestamps: dict[str, Any] = field(default_factory=dict)
     _mcp_state_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    # 可观测性指标注册表（企业级运维）：经此单例注入各模块，单一来源
+    # Observability metrics registry (enterprise ops): injected into modules
+    # via this singleton, single source of truth
     _metrics: Any | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not FUSION_COWORK_AVAILABLE:
             logger.info(
-                "desk_runtime: fusion-cowork 未安装，DeskRuntime 以降级模式运行"
+                "desk_runtime: fusion-cowork not installed, DeskRuntime running in degraded mode"
             )
 
+    # Lazily initialize the MetricsRegistry singleton (avoids circular import).
     @property
     def metrics(self) -> Any:
-        """惰性初始化 MetricsRegistry 单例（避免循环导入）。"""
         if self._metrics is None:
             from fusion_plugins_ecosystem.metrics import MetricsRegistry
 
             self._metrics = MetricsRegistry()
         return self._metrics
 
-    # ── 集群分布式状态桥接（企业级多节点，步骤 4）──
-    # 集群未启用（FUSION_CLUSTER_ENABLED 非 truthy）或 fusion-cowork 缺失时，
-    # 所有写操作 no-op、查询返回空——单机部署行为不变。
+    # ── Cluster distributed state bridge (enterprise multi-node, step 4) ──
+    # When the cluster is not enabled (FUSION_CLUSTER_ENABLED not truthy) or
+    # fusion-cowork is missing, all writes are no-ops and queries return
+    # empty — standalone behavior unchanged.
 
+    # This node's id; returns None when the cluster is not enabled.
     def cluster_node_id(self) -> str | None:
-        """本节点 id；集群未启用返回 None。"""
         from fusion_plugins_ecosystem import cluster_bridge
 
         return cluster_bridge.cluster_node_id()
 
+    # Send this node's heartbeat to cluster shared storage. No-op when the cluster is not enabled.
     def cluster_heartbeat(
         self,
         host: str = "",
@@ -211,7 +217,6 @@ class DeskRuntime:
         vram_used_mb: int = 0,
         tags: list[str] | None = None,
     ) -> None:
-        """向集群共享存储发送本节点心跳。集群未启用 no-op。"""
         from fusion_plugins_ecosystem import cluster_bridge
 
         cluster_bridge.cluster_heartbeat(
@@ -223,34 +228,33 @@ class DeskRuntime:
             tags=tags,
         )
 
+    # Failover: evict stale nodes whose heartbeats timed out, cleaning up
+    # their plugin state and vRAM.
     def cluster_evict_stale_nodes(self) -> list[str]:
-        """failover：移除心跳超时的失效节点，清理其插件状态与 vRAM。"""
         from fusion_plugins_ecosystem import cluster_bridge
 
         return cluster_bridge.cluster_evict_stale_nodes()
 
+    # Whether the plugin is enabled on any node in the cluster. Returns False when the cluster is not enabled.
     def is_plugin_enabled_anywhere(self, plugin_id: str) -> bool:
-        """集群内任意节点是否已启用该插件。集群未启用返回 False。"""
         from fusion_plugins_ecosystem import cluster_bridge
 
         return cluster_bridge.is_plugin_enabled_anywhere(plugin_id)
 
+    # List of this plugin's states across cluster nodes. Returns an empty list when the cluster is not enabled.
     def plugin_state_across_cluster(self, plugin_id: str) -> list[dict[str, Any]]:
-        """该插件在集群各节点的状态列表。集群未启用返回空列表。"""
         from fusion_plugins_ecosystem import cluster_bridge
 
         return cluster_bridge.plugin_state_across_cluster(plugin_id)
 
-    # ── 显存调度 ──
+    # ── vRAM scheduling ──
 
+    # Request vRAM from Desk (resize semantics, not additive).
+    # Calling again with the same plugin_id replaces the previous allocation
+    # instead of accumulating on top of it.
+    # check-then-set is done atomically inside the lock, removing the TOCTOU
+    # where concurrent requests could exceed the budget (P2-2).
     def acquire_vram(self, plugin_id: str, mb: int) -> bool:
-        """向 Desk 申请显存（调整大小语义，非累加）。
-
-        同一 plugin_id 再次调用会替换之前的分配量，
-        而非在旧值上累加。
-
-        check-then-set 在锁内原子完成，消除并发申请越过预算的 TOCTOU（P2-2）。
-        """
         with self._vram_lock:
             if mb <= 0:
                 self.vram_allocations.pop(plugin_id, None)
@@ -260,43 +264,46 @@ class DeskRuntime:
             used = sum(self.vram_allocations.values())
             if self.vram_total_mb > 0 and used + delta > self.vram_total_mb:
                 logger.warning(
-                    "desk_runtime: 插件 %s 显存申请失败（%dMB 超预算 %dMB）",
+                    "desk_runtime: vRAM request denied for plugin %s (%dMB exceeds budget %dMB)",
                     plugin_id,
                     mb,
                     self.vram_total_mb,
                 )
                 return False
             self.vram_allocations[plugin_id] = mb
-            logger.info("desk_runtime: 插件 %s 显存 %dMB→%dMB", plugin_id, current, mb)
-            self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(
+            logger.info("desk_runtime: plugin %s vRAM %dMB→%dMB", plugin_id, current, mb)
+            self.metrics.gauge("vram_used_mb", "allocated vRAM (MB)").set(
                 sum(self.vram_allocations.values())
             )
-            # 步骤 4：同步 vRAM 分配到集群共享存储（跨节点可见）
+            # Step 4: sync vRAM allocation to cluster shared storage (visible cross-node)
             from fusion_plugins_ecosystem import cluster_bridge
 
             cluster_bridge.record_vram(plugin_id, mb)
             return True
 
+    # Release the vRAM held by a plugin.
     def release_vram(self, plugin_id: str) -> None:
-        """释放插件占用的显存。"""
         with self._vram_lock:
             freed = self.vram_allocations.pop(plugin_id, 0)
         if freed:
-            logger.info("desk_runtime: 插件 %s 释放 %dMB 显存", plugin_id, freed)
-        self.metrics.gauge("vram_used_mb", "已分配显存（MB）").set(
+            logger.info("desk_runtime: plugin %s released %dMB vRAM", plugin_id, freed)
+        self.metrics.gauge("vram_used_mb", "allocated vRAM (MB)").set(
             sum(self.vram_allocations.values())
         )
-        # 步骤 4：同步释放到集群共享存储
+        # Step 4: sync release to cluster shared storage
         from fusion_plugins_ecosystem import cluster_bridge
 
         cluster_bridge.release_vram(plugin_id)
 
+    # Return a snapshot of the current vRAM ledger.
     def vram_usage(self) -> dict[str, int]:
-        """返回当前显存台账快照。"""
         return dict(self.vram_allocations)
 
-    # ── 日志采集 ──
+    # ── Log collection ──
 
+    # Unified log collection entry point (solves the "subagent has no logs" pain point).
+    # All plugin logs funnel through here into the Desk full-chain log panel,
+    # and are also written to the ring buffer for consumers to query history.
     def log(
         self,
         plugin_id: str,
@@ -304,11 +311,6 @@ class DeskRuntime:
         message: str,
         **kwargs: Any,
     ) -> None:
-        """统一日志采集入口（解决「子代理无日志」痛点）。
-
-        所有插件日志经此汇集到 Desk 全链路日志面板，
-        同时写入环形缓冲区供消费端查询历史日志。
-        """
         log_level = getattr(logging, level.upper(), logging.INFO)
         extra = f" {kwargs}" if kwargs else ""
         if self.desk_logger is not None:
@@ -327,8 +329,9 @@ class DeskRuntime:
                 message,
                 extra,
             )
-        # 写入环形缓冲区（供 plugins/logs.stream 查询）
-        # counter 自增 + append 在锁内，避免并发 id 重复或 deque 调度丢条目
+        # Write to the ring buffer (queried via plugins/logs.stream)
+        # counter increment + append inside the lock to avoid duplicate ids
+        # or dropped entries from deque scheduling under concurrency
         with self._log_lock:
             self._log_counter += 1
             self.log_entries.append(
@@ -341,6 +344,14 @@ class DeskRuntime:
                 }
             )
 
+    # Unified infra event collection (P2-9: fixes the split dual log stream).
+    # Base-layer errors from transport/jsonrpc/lifecycle/server previously went
+    # only to the module logger (stderr), invisible to ops tailing
+    # plugins/logs.stream — illegal state transitions, handler errors, auth
+    # denials, and write-back failures were unqueryable. They funnel here into
+    # the ring buffer (plugin_id="_infra") while still reaching stderr via
+    # desk_logger, forming one queryable stream. component goes into kwargs
+    # for per-subsystem filtering.
     def infra_log(
         self,
         component: str,
@@ -348,35 +359,27 @@ class DeskRuntime:
         message: str,
         **kwargs: Any,
     ) -> None:
-        """基础设施事件统一采集（P2-9：双日志流割裂修复）。
-
-        transport/jsonrpc/lifecycle/server 等基础层错误此前只走模块 logger
-        (stderr)，运维 tail plugins/logs.stream 看不到——非法状态转移、
-        handler 错误、鉴权拒绝、写回失败均不可查询。经此汇集到环形缓冲
-        （plugin_id="_infra"），同时仍经 desk_logger 输出 stderr，形成
-        单一可查询流。component 记入 kwargs 供按子系统过滤。
-        """
         self.log(
             "_infra", level, f"[{component}] {message}", component=component, **kwargs
         )
 
+    # Query the log buffer (filter by plugin/level, return the most recent
+    # `limit` entries).
+    # Consumed by the plugins/logs.stream JSON-RPC method.
+    # Reverse iteration + early termination: only the most recent `limit`
+    # entries are needed, so no full list() copy + slice (P3-2).
     def get_logs(
         self,
         plugin_id: str | None = None,
         level: str | None = None,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
-        """查询日志缓冲区（支持按插件/级别过滤，返回最近 limit 条）。
-
-        供 plugins/logs.stream JSON-RPC 方法消费。
-
-        逆序遍历 + 提前终止：只需最近 limit 条，不必全量 list() 拷贝再切片（P3-2）。
-        """
         need_pid = plugin_id
         need_lvl = level.upper() if level is not None else None
         collected: list[dict[str, Any]] = []
-        # R7：读路径快照 deque 后释放锁，避免长时间持锁阻塞并发写日志。
-        # 环形缓冲上限 2000，浅拷贝开销可忽略。
+        # R7: snapshot the deque on the read path then release the lock, so a
+        # long-held lock cannot block concurrent log writes.
+        # Ring buffer cap is 2000; the shallow copy cost is negligible.
         with self._log_lock:
             snapshot = list(reversed(self.log_entries))
         for entry in snapshot:
@@ -390,105 +393,102 @@ class DeskRuntime:
         collected.reverse()
         return collected
 
-    # ── 文件权限 ──
+    # ── File permissions ──
 
+    # Check whether a plugin has access to the given path (paths normalized).
+    # P1-6: resolve symlinks with realpath before prefix matching, preventing
+    # a plugin from requesting permission with a legitimate prefix path then
+    # reaching an out-of-whitelist target via a symlink.
     def check_file_permission(self, plugin_id: str, path: str) -> bool:
-        """检查插件是否具备对指定路径的访问权限（路径标准化）。
-
-        P1-6：用 realpath 解析符号链接后再前缀匹配，防止插件以合法前缀路径
-        申请权限后经符号链接指向白名单外目标越权访问。
-        """
         perms = self.plugin_permissions.get(plugin_id, {})
         allowed = perms.get("allowed_paths", [])
-        # 空白名单 = 允许全部（测试便利）
+        # Empty whitelist = allow all (test convenience)
         if not allowed:
             return True
         normalized = _safe_realpath(path)
         for allowed_path in allowed:
             norm_allowed = _safe_realpath(allowed_path)
-            # 精确匹配或前缀匹配（带分隔符）
+            # Exact match or prefix match (with separator)
             if normalized == norm_allowed:
                 return True
             if normalized.startswith(norm_allowed + os.sep):
                 return True
         return False
 
+    # Grant a plugin path access permissions.
     def grant_permission(self, plugin_id: str, allowed_paths: list[str]) -> None:
-        """授予插件路径访问权限。"""
         self.plugin_permissions.setdefault(plugin_id, {})["allowed_paths"] = (
             allowed_paths
         )
 
-    # ── API 密钥 ──
+    # ── API keys ──
 
+    # Read an API key stored by Desk.
+    # Compatible with Volcengine Claude Coding Plan auth:
+    # provider="volcengine_claude" returns the Volcengine API key.
     def get_api_key(self, provider: str) -> str | None:
-        """读取 Desk 存储的 API 密钥。
-
-        兼容火山方舟 Claude Coding Plan 套餐鉴权：
-        provider="volcengine_claude" 返回火山方舟 API key。
-        """
         if self.config_center is None:
             return None
-        # 约定：config_center.get(f"api_keys.{provider}") 返回密文
+        # Convention: config_center.get(f"api_keys.{provider}") returns ciphertext
         try:
             stored = self.config_center.get(f"api_keys.{provider}")
             return _decrypt_key(stored)
         except Exception:
             return None
 
+    # Write an API key to the Desk config center (encrypted at rest, R6).
     def set_api_key(self, provider: str, key: str) -> None:
-        """写入 API 密钥到 Desk 配置中心（加密落盘，R6）。"""
         if self.config_center is None:
             return
         try:
             self.config_center.set(f"api_keys.{provider}", _encrypt_key(key))
         except Exception as exc:
-            logger.warning("desk_runtime: 写入 API 密钥失败: %s", exc)
+            logger.warning("desk_runtime: failed to write API key: %s", exc)
 
-    # ── MLX 推理 ──
+    # ── MLX inference ──
 
+    # Call fusion-mlx local inference (fusion-mlx as the Claude vision/image
+    # generation backend).
     async def mlx_chat(self, model: str, messages: list[dict], **kwargs: Any) -> Any:
-        """调用 fusion-mlx 本地推理（fusion-mlx 作为 Claude 视觉/图像生成后端）。"""
         if self.mlx_client is None:
-            raise RuntimeError("fusion-mlx 客户端未注入")
+            raise RuntimeError("fusion-mlx client not injected")
         return await self.mlx_client.chat(model, messages, **kwargs)
 
+    # Call fusion-mlx to generate text embeddings.
     async def mlx_embed(self, text: str, model: str = "BGE-M3") -> Any:
-        """调用 fusion-mlx 生成文本向量。"""
         if self.mlx_client is None:
-            raise RuntimeError("fusion-mlx 客户端未注入")
+            raise RuntimeError("fusion-mlx client not injected")
         return await self.mlx_client.embed(text, model=model)
 
+    # Check whether fusion-mlx is healthy.
     async def mlx_health(self) -> bool:
-        """检查 fusion-mlx 是否健康。"""
         if self.mlx_client is None:
             return False
         return await self.mlx_client.health()
 
-    # ── 节点注册表桥 ──
+    # ── Node registry bridge ──
 
+    # List node types registered in fusion-cowork.
     def list_nodes(self) -> list[dict[str, Any]]:
-        """列出 fusion-cowork 已注册的节点类型。"""
         if self.node_registry is None:
             return []
         return self.node_registry.list()
 
+    # Resolve a node name (aliases supported) and return the node class.
     def resolve_node(self, name: str) -> Any | None:
-        """解析节点名称（支持别名）并返回节点类。"""
         if self.node_registry is None:
             return None
         return self.node_registry.get(name)
 
-    # ── 任务调度器桥 ──
+    # ── Task scheduler bridge ──
 
+    # List all scheduled tasks in fusion-cowork.
     def list_scheduled_tasks(self) -> list[Any]:
-        """列出 fusion-cowork 的全部定时任务。"""
         if self.task_scheduler is None:
             return []
         return self.task_scheduler.list_tasks()
 
-    def gateway_info(self) -> dict[str, Any]:
-        """返回 MCP 网关信息（供 Claude Desktop / Claude Code 对接）。"""
+    # Return MCP gateway info (for Claude Desktop / Claude Code integration).
         return {
             "transport": "stdio",
             "port": self.mcp_gateway_port,
