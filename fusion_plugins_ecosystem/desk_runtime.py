@@ -489,6 +489,7 @@ class DeskRuntime:
         return self.task_scheduler.list_tasks()
 
     # Return MCP gateway info (for Claude Desktop / Claude Code integration).
+    def gateway_info(self) -> dict[str, Any]:
         return {
             "transport": "stdio",
             "port": self.mcp_gateway_port,
